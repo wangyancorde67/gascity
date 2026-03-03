@@ -19,6 +19,7 @@ import (
 // Provider adapts [Tmux] to the [session.Provider] interface.
 type Provider struct {
 	tm       *Tmux
+	cfg      Config
 	mu       sync.Mutex
 	workDirs map[string]string // session name → workDir (for CopyTo)
 }
@@ -26,9 +27,19 @@ type Provider struct {
 // Compile-time check.
 var _ session.Provider = (*Provider)(nil)
 
-// NewProvider returns a [Provider] backed by a real tmux installation.
+// NewProvider returns a [Provider] backed by a real tmux installation
+// with default configuration.
 func NewProvider() *Provider {
-	return &Provider{tm: NewTmux(), workDirs: make(map[string]string)}
+	return NewProviderWithConfig(DefaultConfig())
+}
+
+// NewProviderWithConfig returns a [Provider] with the given configuration.
+func NewProviderWithConfig(cfg Config) *Provider {
+	return &Provider{
+		tm:       NewTmuxWithConfig(cfg),
+		cfg:      cfg,
+		workDirs: make(map[string]string),
+	}
 }
 
 // Start creates a new detached tmux session and performs a multi-step
@@ -63,7 +74,7 @@ func (p *Provider) Start(name string, cfg session.Config) error {
 		_ = overlay.CopyFileOrDir(cf.Src, dst, io.Discard)
 	}
 
-	return doStartSession(&tmuxStartOps{tm: p.tm}, name, cfg)
+	return doStartSession(&tmuxStartOps{tm: p.tm}, name, cfg, p.cfg.SetupTimeout)
 }
 
 // Stop destroys the named session and kills its entire process tree.
@@ -295,9 +306,11 @@ func (o *tmuxStartOps) runSetupCommand(cmd string, env map[string]string, timeou
 
 // doStartSession is the pure startup orchestration logic.
 // Testable via fakeStartOps without a real tmux server.
-func doStartSession(ops startOps, name string, cfg session.Config) error {
+// The setupTimeout parameter controls the per-command timeout for
+// session_setup, session_setup_script, and pre_start commands.
+func doStartSession(ops startOps, name string, cfg session.Config, setupTimeout time.Duration) error {
 	// Step 0: Run pre-start commands (directory/worktree preparation).
-	runPreStart(ops, name, cfg, os.Stderr)
+	runPreStart(ops, name, cfg, os.Stderr, setupTimeout)
 
 	// Step 1: Ensure fresh session (zombie detection).
 	if err := ensureFreshSession(ops, name, cfg); err != nil {
@@ -347,7 +360,7 @@ func doStartSession(ops startOps, name string, cfg session.Config) error {
 	}
 
 	// Step 5.5: Run session setup commands and script.
-	runSessionSetup(ops, name, cfg, os.Stderr)
+	runSessionSetup(ops, name, cfg, os.Stderr, setupTimeout)
 
 	// Step 6: Send nudge text if configured.
 	if cfg.Nudge != "" {
@@ -357,12 +370,9 @@ func doStartSession(ops startOps, name string, cfg session.Config) error {
 	return nil
 }
 
-// setupTimeout is the per-command/script timeout for session setup.
-const setupTimeout = 10 * time.Second
-
 // runSessionSetup runs session_setup commands then session_setup_script.
 // Non-fatal: warnings on failure, session still works.
-func runSessionSetup(ops startOps, name string, cfg session.Config, stderr io.Writer) {
+func runSessionSetup(ops startOps, name string, cfg session.Config, stderr io.Writer, setupTimeout time.Duration) {
 	if len(cfg.SessionSetup) == 0 && cfg.SessionSetupScript == "" {
 		return
 	}
@@ -391,7 +401,7 @@ func runSessionSetup(ops startOps, name string, cfg session.Config, stderr io.Wr
 
 // runPreStart runs pre_start commands before session creation.
 // Used for directory/worktree preparation. Non-fatal: warnings on failure.
-func runPreStart(ops startOps, _ string, cfg session.Config, stderr io.Writer) {
+func runPreStart(ops startOps, _ string, cfg session.Config, stderr io.Writer, setupTimeout time.Duration) {
 	if len(cfg.PreStart) == 0 {
 		return
 	}

@@ -355,6 +355,94 @@ type SessionConfig struct {
 	Provider string `toml:"provider,omitempty"`
 	// K8s holds Kubernetes-specific settings for the native K8s provider.
 	K8s K8sConfig `toml:"k8s,omitempty"`
+	// SetupTimeout is the per-command/script timeout for session setup and
+	// pre_start commands. Duration string (e.g., "10s", "30s"). Defaults to "10s".
+	SetupTimeout string `toml:"setup_timeout,omitempty" jsonschema:"default=10s"`
+	// NudgeReadyTimeout is how long to wait for the agent to be ready before
+	// sending nudge text. Duration string. Defaults to "10s".
+	NudgeReadyTimeout string `toml:"nudge_ready_timeout,omitempty" jsonschema:"default=10s"`
+	// NudgeRetryInterval is the retry interval between nudge readiness polls.
+	// Duration string. Defaults to "500ms".
+	NudgeRetryInterval string `toml:"nudge_retry_interval,omitempty" jsonschema:"default=500ms"`
+	// NudgeLockTimeout is how long to wait to acquire the per-session nudge lock.
+	// Duration string. Defaults to "30s".
+	NudgeLockTimeout string `toml:"nudge_lock_timeout,omitempty" jsonschema:"default=30s"`
+	// DebounceMs is the default debounce interval in milliseconds for send-keys.
+	// Defaults to 500.
+	DebounceMs *int `toml:"debounce_ms,omitempty" jsonschema:"default=500"`
+	// DisplayMs is the default display duration in milliseconds for status messages.
+	// Defaults to 5000.
+	DisplayMs *int `toml:"display_ms,omitempty" jsonschema:"default=5000"`
+}
+
+// SetupTimeoutDuration returns the setup timeout as a time.Duration.
+// Defaults to 10s if empty or unparseable.
+func (s *SessionConfig) SetupTimeoutDuration() time.Duration {
+	if s.SetupTimeout == "" {
+		return 10 * time.Second
+	}
+	d, err := time.ParseDuration(s.SetupTimeout)
+	if err != nil {
+		return 10 * time.Second
+	}
+	return d
+}
+
+// NudgeReadyTimeoutDuration returns the nudge ready timeout as a time.Duration.
+// Defaults to 10s if empty or unparseable.
+func (s *SessionConfig) NudgeReadyTimeoutDuration() time.Duration {
+	if s.NudgeReadyTimeout == "" {
+		return 10 * time.Second
+	}
+	d, err := time.ParseDuration(s.NudgeReadyTimeout)
+	if err != nil {
+		return 10 * time.Second
+	}
+	return d
+}
+
+// NudgeRetryIntervalDuration returns the nudge retry interval as a time.Duration.
+// Defaults to 500ms if empty or unparseable.
+func (s *SessionConfig) NudgeRetryIntervalDuration() time.Duration {
+	if s.NudgeRetryInterval == "" {
+		return 500 * time.Millisecond
+	}
+	d, err := time.ParseDuration(s.NudgeRetryInterval)
+	if err != nil {
+		return 500 * time.Millisecond
+	}
+	return d
+}
+
+// NudgeLockTimeoutDuration returns the nudge lock timeout as a time.Duration.
+// Defaults to 30s if empty or unparseable.
+func (s *SessionConfig) NudgeLockTimeoutDuration() time.Duration {
+	if s.NudgeLockTimeout == "" {
+		return 30 * time.Second
+	}
+	d, err := time.ParseDuration(s.NudgeLockTimeout)
+	if err != nil {
+		return 30 * time.Second
+	}
+	return d
+}
+
+// DebounceMsOrDefault returns the debounce interval in milliseconds.
+// Defaults to 500 if nil.
+func (s *SessionConfig) DebounceMsOrDefault() int {
+	if s.DebounceMs == nil {
+		return 500
+	}
+	return *s.DebounceMs
+}
+
+// DisplayMsOrDefault returns the display duration in milliseconds.
+// Defaults to 5000 if nil.
+func (s *SessionConfig) DisplayMsOrDefault() int {
+	if s.DisplayMs == nil {
+		return 5000
+	}
+	return *s.DisplayMs
 }
 
 // K8sConfig holds native K8s session provider settings.

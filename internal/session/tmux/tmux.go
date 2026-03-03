@@ -29,13 +29,30 @@ import (
 // regressions (timing, debounce, shell detection).
 // ---------------------------------------------------------------------------
 
-const (
-	defaultDebounceMs  = 500
-	defaultDisplayMs   = 5000
-	pollInterval       = 100 * time.Millisecond
-	nudgeReadyTimeout  = 10 * time.Second
-	nudgeRetryInterval = 500 * time.Millisecond
-)
+const pollInterval = 100 * time.Millisecond
+
+// Config holds configurable timeouts and intervals for the tmux provider.
+// All fields have sensible defaults matching the original hardcoded values.
+type Config struct {
+	SetupTimeout       time.Duration
+	NudgeReadyTimeout  time.Duration
+	NudgeRetryInterval time.Duration
+	NudgeLockTimeout   time.Duration
+	DebounceMs         int
+	DisplayMs          int
+}
+
+// DefaultConfig returns a Config with the original hardcoded values.
+func DefaultConfig() Config {
+	return Config{
+		SetupTimeout:       10 * time.Second,
+		NudgeReadyTimeout:  10 * time.Second,
+		NudgeRetryInterval: 500 * time.Millisecond,
+		NudgeLockTimeout:   30 * time.Second,
+		DebounceMs:         500,
+		DisplayMs:          5000,
+	}
+}
 
 // supportedShells lists shell binaries that can be detected in tmux panes.
 var supportedShells = []string{"bash", "zsh", "sh", "fish", "tcsh", "ksh"}
@@ -78,12 +95,6 @@ type RuntimeTmuxConfig struct {
 // timed lock acquisition — preventing permanent lockout if a nudge hangs.
 var sessionNudgeLocks sync.Map // map[string]chan struct{}
 
-// nudgeLockTimeout is how long to wait to acquire the per-session nudge lock.
-// If a previous nudge is still holding the lock after this duration, we give up
-// rather than blocking forever. This prevents a hung tmux from permanently
-// blocking all future nudges to that session.
-const nudgeLockTimeout = 30 * time.Second
-
 // validSessionNameRe validates session names to prevent shell injection
 var validSessionNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
@@ -107,11 +118,16 @@ func validateSessionName(name string) error {
 }
 
 // Tmux wraps tmux operations.
-type Tmux struct{}
+type Tmux struct{ cfg Config }
 
-// NewTmux creates a new Tmux wrapper.
+// NewTmux creates a new Tmux wrapper with default configuration.
 func NewTmux() *Tmux {
-	return &Tmux{}
+	return &Tmux{cfg: DefaultConfig()}
+}
+
+// NewTmuxWithConfig creates a new Tmux wrapper with the given configuration.
+func NewTmuxWithConfig(cfg Config) *Tmux {
+	return &Tmux{cfg: cfg}
 }
 
 // run executes a tmux command and returns stdout.
@@ -846,7 +862,7 @@ func (t *Tmux) ListSessionIDs() (map[string]string, error) {
 // Always sends Enter as a separate command for reliability.
 // Uses a debounce delay between paste and Enter to ensure paste completes.
 func (t *Tmux) SendKeys(session, keys string) error {
-	return t.SendKeysDebounced(session, keys, defaultDebounceMs) // 100ms default debounce
+	return t.SendKeysDebounced(session, keys, t.cfg.DebounceMs)
 }
 
 // SendKeysDebounced sends keystrokes with a configurable delay before Enter.
@@ -1000,7 +1016,7 @@ func isTransientSendKeysError(err error) bool {
 // initialized yet, causing tmux send-keys to fail with "not in a mode".
 func (t *Tmux) sendKeysLiteralWithRetry(target, text string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	interval := nudgeRetryInterval
+	interval := t.cfg.NudgeRetryInterval
 	var lastErr error
 
 	for time.Now().Before(deadline) {
@@ -1048,7 +1064,7 @@ func (t *Tmux) sendKeysLiteralWithRetry(target, text string, timeout time.Durati
 func (t *Tmux) NudgeSession(session, message string) error {
 	// Serialize nudges to this session to prevent interleaving.
 	// Use a timed lock to avoid permanent blocking if a previous nudge hung.
-	if !acquireNudgeLock(session, nudgeLockTimeout) {
+	if !acquireNudgeLock(session, t.cfg.NudgeLockTimeout) {
 		return fmt.Errorf("nudge lock timeout for session %q: previous nudge may be hung", session)
 	}
 	defer releaseNudgeLock(session)
@@ -1061,7 +1077,7 @@ func (t *Tmux) NudgeSession(session, message string) error {
 	}
 
 	// 1. Send text in literal mode with retry on transient errors
-	if err := t.sendKeysLiteralWithRetry(target, message, nudgeReadyTimeout); err != nil {
+	if err := t.sendKeysLiteralWithRetry(target, message, t.cfg.NudgeReadyTimeout); err != nil {
 		return err
 	}
 
@@ -1097,13 +1113,13 @@ func (t *Tmux) NudgeSession(session, message string) error {
 func (t *Tmux) NudgePane(pane, message string) error {
 	// Serialize nudges to this pane to prevent interleaving.
 	// Use a timed lock to avoid permanent blocking if a previous nudge hung.
-	if !acquireNudgeLock(pane, nudgeLockTimeout) {
+	if !acquireNudgeLock(pane, t.cfg.NudgeLockTimeout) {
 		return fmt.Errorf("nudge lock timeout for pane %q: previous nudge may be hung", pane)
 	}
 	defer releaseNudgeLock(pane)
 
 	// 1. Send text in literal mode with retry on transient errors
-	if err := t.sendKeysLiteralWithRetry(pane, message, nudgeReadyTimeout); err != nil {
+	if err := t.sendKeysLiteralWithRetry(pane, message, t.cfg.NudgeReadyTimeout); err != nil {
 		return err
 	}
 
@@ -1593,7 +1609,7 @@ func (t *Tmux) DisplayMessage(session, message string, durationMs int) error {
 
 // DisplayMessageDefault shows a message with default duration (5 seconds).
 func (t *Tmux) DisplayMessageDefault(session, message string) error {
-	return t.DisplayMessage(session, message, defaultDisplayMs)
+	return t.DisplayMessage(session, message, t.cfg.DisplayMs)
 }
 
 // SendNotificationBanner sends a visible notification banner to a tmux session.

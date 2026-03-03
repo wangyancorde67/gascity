@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/steveyegge/gascity/internal/beads"
+	"github.com/steveyegge/gascity/internal/config"
 	"github.com/steveyegge/gascity/internal/events"
 	eventsexec "github.com/steveyegge/gascity/internal/events/exec"
 	"github.com/steveyegge/gascity/internal/mail"
@@ -35,6 +36,19 @@ func sessionProviderName() string {
 	return ""
 }
 
+// tmuxConfigFromSession converts a config.SessionConfig into a
+// sessiontmux.Config with resolved durations and defaults.
+func tmuxConfigFromSession(sc config.SessionConfig) sessiontmux.Config {
+	return sessiontmux.Config{
+		SetupTimeout:       sc.SetupTimeoutDuration(),
+		NudgeReadyTimeout:  sc.NudgeReadyTimeoutDuration(),
+		NudgeRetryInterval: sc.NudgeRetryIntervalDuration(),
+		NudgeLockTimeout:   sc.NudgeLockTimeoutDuration(),
+		DebounceMs:         sc.DebounceMsOrDefault(),
+		DisplayMs:          sc.DisplayMsOrDefault(),
+	}
+}
+
 // newSessionProviderByName constructs a session.Provider from a provider name.
 // Returns error instead of os.Exit, making it safe for the hot-reload path.
 //
@@ -44,7 +58,7 @@ func sessionProviderName() string {
 //   - "exec:<script>" → user-supplied script (absolute path or PATH lookup)
 //   - "k8s" → native Kubernetes provider (client-go)
 //   - default → real tmux provider
-func newSessionProviderByName(name string) (session.Provider, error) {
+func newSessionProviderByName(name string, sc config.SessionConfig) (session.Provider, error) {
 	if strings.HasPrefix(name, "exec:") {
 		return sessionexec.NewProvider(strings.TrimPrefix(name, "exec:")), nil
 	}
@@ -58,9 +72,9 @@ func newSessionProviderByName(name string) (session.Provider, error) {
 	case "k8s":
 		return sessionk8s.NewProvider()
 	case "hybrid":
-		return newHybridProvider()
+		return newHybridProvider(sc)
 	default:
-		return sessiontmux.NewProvider(), nil
+		return sessiontmux.NewProviderWithConfig(tmuxConfigFromSession(sc)), nil
 	}
 }
 
@@ -68,7 +82,13 @@ func newSessionProviderByName(name string) (session.Provider, error) {
 // name (env var → city.toml → default). This allows txtar tests to exercise
 // session-dependent commands without real tmux. Startup path — exits on error.
 func newSessionProvider() session.Provider {
-	sp, err := newSessionProviderByName(sessionProviderName())
+	var sc config.SessionConfig
+	if cp, err := resolveCity(); err == nil {
+		if cfg, err := loadCityConfig(cp); err == nil {
+			sc = cfg.Session
+		}
+	}
+	sp, err := newSessionProviderByName(sessionProviderName(), sc)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err) //nolint:errcheck // best-effort stderr
 		os.Exit(1)
@@ -225,8 +245,8 @@ func openCityEventsProvider(stderr io.Writer, cmdName string) (events.Provider, 
 // newHybridProvider constructs a composite provider that routes sessions to
 // tmux (local) or k8s (remote) based on session name. The GC_HYBRID_REMOTE_MATCH
 // env var controls which sessions go to k8s (default: "polecat").
-func newHybridProvider() (session.Provider, error) {
-	local := sessiontmux.NewProvider()
+func newHybridProvider(sc config.SessionConfig) (session.Provider, error) {
+	local := sessiontmux.NewProviderWithConfig(tmuxConfigFromSession(sc))
 	remote, err := sessionk8s.NewProvider()
 	if err != nil {
 		return nil, fmt.Errorf("hybrid: k8s backend: %w", err)

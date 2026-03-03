@@ -2518,3 +2518,177 @@ func TestDefaultSlingTargetRoundTrip(t *testing.T) {
 		t.Errorf("DefaultSlingTarget = %q, want %q", got.Rigs[0].DefaultSlingTarget, "hello-world/polecat")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// SessionConfig accessor tests
+// ---------------------------------------------------------------------------
+
+func TestSessionSetupTimeoutDefault(t *testing.T) {
+	s := SessionConfig{}
+	got := s.SetupTimeoutDuration()
+	if got != 10*time.Second {
+		t.Errorf("SetupTimeoutDuration() = %v, want 10s", got)
+	}
+}
+
+func TestSessionSetupTimeoutCustom(t *testing.T) {
+	s := SessionConfig{SetupTimeout: "30s"}
+	got := s.SetupTimeoutDuration()
+	if got != 30*time.Second {
+		t.Errorf("SetupTimeoutDuration() = %v, want 30s", got)
+	}
+}
+
+func TestSessionSetupTimeoutInvalid(t *testing.T) {
+	s := SessionConfig{SetupTimeout: "not-a-duration"}
+	got := s.SetupTimeoutDuration()
+	if got != 10*time.Second {
+		t.Errorf("SetupTimeoutDuration() = %v, want 10s (default for invalid)", got)
+	}
+}
+
+func TestSessionNudgeReadyTimeoutDefault(t *testing.T) {
+	s := SessionConfig{}
+	got := s.NudgeReadyTimeoutDuration()
+	if got != 10*time.Second {
+		t.Errorf("NudgeReadyTimeoutDuration() = %v, want 10s", got)
+	}
+}
+
+func TestSessionNudgeReadyTimeoutCustom(t *testing.T) {
+	s := SessionConfig{NudgeReadyTimeout: "5s"}
+	got := s.NudgeReadyTimeoutDuration()
+	if got != 5*time.Second {
+		t.Errorf("NudgeReadyTimeoutDuration() = %v, want 5s", got)
+	}
+}
+
+func TestSessionNudgeReadyTimeoutInvalid(t *testing.T) {
+	s := SessionConfig{NudgeReadyTimeout: "bad"}
+	got := s.NudgeReadyTimeoutDuration()
+	if got != 10*time.Second {
+		t.Errorf("NudgeReadyTimeoutDuration() = %v, want 10s (default for invalid)", got)
+	}
+}
+
+func TestSessionNudgeRetryIntervalDefault(t *testing.T) {
+	s := SessionConfig{}
+	got := s.NudgeRetryIntervalDuration()
+	if got != 500*time.Millisecond {
+		t.Errorf("NudgeRetryIntervalDuration() = %v, want 500ms", got)
+	}
+}
+
+func TestSessionNudgeRetryIntervalCustom(t *testing.T) {
+	s := SessionConfig{NudgeRetryInterval: "1s"}
+	got := s.NudgeRetryIntervalDuration()
+	if got != time.Second {
+		t.Errorf("NudgeRetryIntervalDuration() = %v, want 1s", got)
+	}
+}
+
+func TestSessionNudgeRetryIntervalInvalid(t *testing.T) {
+	s := SessionConfig{NudgeRetryInterval: "nope"}
+	got := s.NudgeRetryIntervalDuration()
+	if got != 500*time.Millisecond {
+		t.Errorf("NudgeRetryIntervalDuration() = %v, want 500ms (default for invalid)", got)
+	}
+}
+
+func TestSessionNudgeLockTimeoutDefault(t *testing.T) {
+	s := SessionConfig{}
+	got := s.NudgeLockTimeoutDuration()
+	if got != 30*time.Second {
+		t.Errorf("NudgeLockTimeoutDuration() = %v, want 30s", got)
+	}
+}
+
+func TestSessionNudgeLockTimeoutCustom(t *testing.T) {
+	s := SessionConfig{NudgeLockTimeout: "1m"}
+	got := s.NudgeLockTimeoutDuration()
+	if got != time.Minute {
+		t.Errorf("NudgeLockTimeoutDuration() = %v, want 1m", got)
+	}
+}
+
+func TestSessionNudgeLockTimeoutInvalid(t *testing.T) {
+	s := SessionConfig{NudgeLockTimeout: "xyz"}
+	got := s.NudgeLockTimeoutDuration()
+	if got != 30*time.Second {
+		t.Errorf("NudgeLockTimeoutDuration() = %v, want 30s (default for invalid)", got)
+	}
+}
+
+func TestSessionDebounceMsDefault(t *testing.T) {
+	s := SessionConfig{}
+	got := s.DebounceMsOrDefault()
+	if got != 500 {
+		t.Errorf("DebounceMsOrDefault() = %d, want 500", got)
+	}
+}
+
+func TestSessionDebounceMsCustom(t *testing.T) {
+	v := 200
+	s := SessionConfig{DebounceMs: &v}
+	got := s.DebounceMsOrDefault()
+	if got != 200 {
+		t.Errorf("DebounceMsOrDefault() = %d, want 200", got)
+	}
+}
+
+func TestSessionDisplayMsDefault(t *testing.T) {
+	s := SessionConfig{}
+	got := s.DisplayMsOrDefault()
+	if got != 5000 {
+		t.Errorf("DisplayMsOrDefault() = %d, want 5000", got)
+	}
+}
+
+func TestSessionDisplayMsCustom(t *testing.T) {
+	v := 3000
+	s := SessionConfig{DisplayMs: &v}
+	got := s.DisplayMsOrDefault()
+	if got != 3000 {
+		t.Errorf("DisplayMsOrDefault() = %d, want 3000", got)
+	}
+}
+
+func TestParseSessionTimeouts(t *testing.T) {
+	toml := `
+[workspace]
+name = "test"
+
+[session]
+setup_timeout = "20s"
+nudge_ready_timeout = "15s"
+nudge_retry_interval = "1s"
+nudge_lock_timeout = "45s"
+debounce_ms = 300
+display_ms = 8000
+
+[[agents]]
+name = "a"
+`
+	cfg, err := Parse([]byte(toml))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := cfg.Session.SetupTimeoutDuration(); got != 20*time.Second {
+		t.Errorf("SetupTimeoutDuration() = %v, want 20s", got)
+	}
+	if got := cfg.Session.NudgeReadyTimeoutDuration(); got != 15*time.Second {
+		t.Errorf("NudgeReadyTimeoutDuration() = %v, want 15s", got)
+	}
+	if got := cfg.Session.NudgeRetryIntervalDuration(); got != time.Second {
+		t.Errorf("NudgeRetryIntervalDuration() = %v, want 1s", got)
+	}
+	if got := cfg.Session.NudgeLockTimeoutDuration(); got != 45*time.Second {
+		t.Errorf("NudgeLockTimeoutDuration() = %v, want 45s", got)
+	}
+	if got := cfg.Session.DebounceMsOrDefault(); got != 300 {
+		t.Errorf("DebounceMsOrDefault() = %d, want 300", got)
+	}
+	if got := cfg.Session.DisplayMsOrDefault(); got != 8000 {
+		t.Errorf("DisplayMsOrDefault() = %d, want 8000", got)
+	}
+}

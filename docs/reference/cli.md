@@ -1250,6 +1250,9 @@ installs agent hooks if configured, generates cross-rig routes, and
 appends the rig to city.toml. Use --topology to apply a topology
 directory that defines the rig's agent configuration.
 
+Use --start-suspended to add the rig in a suspended state (dormant-by-default).
+The rig's agents won't spawn until explicitly resumed with "gc rig resume".
+
 ```
 gc rig add <path> [flags]
 ```
@@ -1259,10 +1262,12 @@ gc rig add <path> [flags]
 ```
 gc rig add /path/to/project
   gc rig add ./my-project --topology topologies/gastown
+  gc rig add ./my-project --topology topologies/gastown --start-suspended
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--start-suspended` | bool |  | add rig in suspended state (dormant-by-default) |
 | `--topology` | string |  | topology directory for rig agents |
 
 ## gc rig list

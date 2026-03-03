@@ -302,7 +302,7 @@ func controllerLoop(
 							gracefulStopAll(running, sp, cfg.Daemon.ShutdownTimeoutDuration(), rec, stdout, stderr)
 						}
 						// Construct new provider.
-						newSp, spErr := newSessionProviderByName(newProviderName)
+						newSp, spErr := newSessionProviderByName(newProviderName, cfg.Session)
 						if spErr != nil {
 							fmt.Fprintf(stderr, "gc start: new session provider %q: %v (keeping old provider)\n", //nolint:errcheck // best-effort stderr
 								newProviderName, spErr)

@@ -158,7 +158,7 @@ func TestDoStartSession_FireAndForget(t *testing.T) {
 	err := doStartSession(ops, "test-sess", session.Config{
 		WorkDir: "/w",
 		Command: "sleep 300",
-	})
+	}, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestDoStartSession_FullSequence(t *testing.T) {
 		EmitsPermissionWarning: true,
 	}
 
-	err := doStartSession(ops, "gc-city-mayor", cfg)
+	err := doStartSession(ops, "gc-city-mayor", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestDoStartSession_CreateFails(t *testing.T) {
 		createErrs: []error{errors.New("tmux not found")},
 	}
 
-	err := doStartSession(ops, "test", session.Config{Command: "sleep 300"})
+	err := doStartSession(ops, "test", session.Config{Command: "sleep 300"}, DefaultConfig().SetupTimeout)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -278,7 +278,7 @@ func TestDoStartSession_SessionDiesDuringStartup(t *testing.T) {
 		ProcessNames: []string{"claude"},
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -297,7 +297,7 @@ func TestDoStartSession_HasSessionError(t *testing.T) {
 		ProcessNames: []string{"claude"},
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -320,7 +320,7 @@ func TestDoStartSession_ProcessNamesOnly(t *testing.T) {
 		ProcessNames: []string{"codex"},
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestDoStartSession_ReadyPromptPrefixOnly(t *testing.T) {
 		ReadyPromptPrefix: "❯ ",
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestDoStartSession_ReadyDelayOnly(t *testing.T) {
 		ReadyDelayMs: 3000,
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -409,7 +409,7 @@ func TestDoStartSession_EmitsPermissionWarningOnly(t *testing.T) {
 		EmitsPermissionWarning: true,
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestDoStartSession_ProcessNamesAndReadyPrefix(t *testing.T) {
 		ReadyPromptPrefix: "> ",
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -458,7 +458,7 @@ func TestDoStartSession_SetRemainOnExit(t *testing.T) {
 	err := doStartSession(ops, "test-sess", session.Config{
 		WorkDir: "/w",
 		Command: "sleep 300",
-	})
+	}, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestDoStartSession_SetRemainOnExitErrorIgnored(t *testing.T) {
 	err := doStartSession(ops, "test", session.Config{
 		WorkDir: "/w",
 		Command: "sleep 300",
-	})
+	}, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestDoStartSession_SessionSetupRunsAfterAlive(t *testing.T) {
 		},
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -556,7 +556,7 @@ func TestDoStartSession_SessionSetupScriptRunsAfterCommands(t *testing.T) {
 		Nudge:              "start working",
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -597,7 +597,7 @@ func TestDoStartSession_NoSetupConfigured(t *testing.T) {
 		ProcessNames: []string{"claude"},
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -623,7 +623,7 @@ func TestDoStartSession_SetupFailureNonFatal(t *testing.T) {
 		Nudge:        "continue",
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("setup failure should be non-fatal, got: %v", err)
 	}
@@ -647,7 +647,7 @@ func TestDoStartSession_SetupOnlyTriggersHints(t *testing.T) {
 		SessionSetup: []string{"tmux set mouse on"},
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -680,7 +680,7 @@ func TestDoStartSession_SetupScriptOnlyTriggersHints(t *testing.T) {
 		SessionSetupScript: "/city/scripts/setup.sh",
 	}
 
-	err := doStartSession(ops, "test", cfg)
+	err := doStartSession(ops, "test", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -708,7 +708,7 @@ func TestDoStartSession_SetupEnvPassthrough(t *testing.T) {
 		SessionSetup: []string{"echo setup"},
 	}
 
-	err := doStartSession(ops, "test-sess", cfg)
+	err := doStartSession(ops, "test-sess", cfg, DefaultConfig().SetupTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
