@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/steveyegge/gascity/internal/beads"
 )
 
@@ -187,6 +188,44 @@ func EnsureRunning(cityPath string) error {
 		_ = conn.Close()
 		return nil
 	}
+
+	// Acquire exclusive lock to prevent concurrent starts.
+	gcDir := filepath.Join(cityPath, ".gc")
+	if err := os.MkdirAll(gcDir, 0o755); err != nil {
+		return fmt.Errorf("creating .gc dir: %w", err)
+	}
+	lockFile := filepath.Join(gcDir, "dolt.lock")
+	fileLock := flock.New(lockFile)
+	locked, err := fileLock.TryLock()
+	if err != nil {
+		// Lock file may be corrupted — remove and retry once.
+		_ = os.Remove(lockFile)
+		locked, err = fileLock.TryLock()
+		if err != nil {
+			return fmt.Errorf("acquiring dolt.lock: %w", err)
+		}
+	}
+	if !locked {
+		// Retry a few times with short waits (the holder may be finishing).
+		for i := 0; i < 6; i++ {
+			time.Sleep(500 * time.Millisecond)
+			locked, err = fileLock.TryLock()
+			if err == nil && locked {
+				break
+			}
+		}
+		if !locked {
+			// Still locked after retries — remove stale lock and try once more.
+			fmt.Fprintf(os.Stderr, "Warning: dolt.lock held for >3s — removing stale lock\n")
+			_ = os.Remove(lockFile)
+			fileLock = flock.New(lockFile)
+			locked, err = fileLock.TryLock()
+			if err != nil || !locked {
+				return fmt.Errorf("another gc dolt start is in progress (lock held after recovery)")
+			}
+		}
+	}
+	defer func() { _ = fileLock.Unlock() }()
 
 	running, _, err := IsRunningCity(cityPath)
 	if err != nil {
@@ -501,8 +540,8 @@ func IsUnhealthy(cityPath string) (bool, string) {
 // Package-level state, keyed by cityPath.
 
 const (
-	doltBackoffWindow    = 60 * time.Second
-	doltBackoffMaxStarts = 3
+	doltBackoffWindow    = 10 * time.Minute
+	doltBackoffMaxStarts = 5
 )
 
 // doltBackoffTracker tracks dolt server restart timestamps per city.
@@ -530,6 +569,20 @@ func (t *doltBackoffTracker) isBackedOff(cityPath string, now time.Time) bool {
 	return len(t.starts[cityPath]) >= doltBackoffMaxStarts
 }
 
+// resetIfHealthy clears all backoff state for a city if no restarts have
+// been recorded in the last doltBackoffWindow. Called on successful health
+// checks so a long-stable server doesn't carry stale restart history.
+func (t *doltBackoffTracker) resetIfHealthy(cityPath string, now time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.prune(cityPath, now)
+	// After pruning, if no recent starts remain, the server has been
+	// stable for the entire window — clear all state.
+	if len(t.starts[cityPath]) == 0 {
+		delete(t.starts, cityPath)
+	}
+}
+
 func (t *doltBackoffTracker) prune(cityPath string, now time.Time) {
 	times := t.starts[cityPath]
 	if len(times) == 0 {
@@ -546,6 +599,13 @@ func (t *doltBackoffTracker) prune(cityPath string, now time.Time) {
 	if len(t.starts[cityPath]) == 0 {
 		delete(t.starts, cityPath)
 	}
+}
+
+// ResetBackoffIfHealthy clears the restart backoff tracker for a city
+// if the server has been stable (no restarts) for the entire backoff window.
+// Called by the health check lifecycle after a successful probe.
+func ResetBackoffIfHealthy(cityPath string) {
+	doltRestarts.resetIfHealthy(cityPath, time.Now())
 }
 
 // IsRunningCity checks if a dolt server is running for the given city.
@@ -646,6 +706,38 @@ func startCityServer(config *Config, _ io.Writer) error {
 		return fmt.Errorf("creating data directory: %w", err)
 	}
 
+	// Quarantine corrupted/phantom database dirs before server launch.
+	// Dolt auto-discovers ALL dirs in --data-dir. A phantom dir with a broken
+	// noms store (missing manifest) crashes the ENTIRE server.
+	if entries, readErr := os.ReadDir(config.DataDir); readErr == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			dbDir := filepath.Join(config.DataDir, entry.Name())
+			doltDir := filepath.Join(dbDir, ".dolt")
+			if _, statErr := os.Stat(doltDir); statErr != nil {
+				continue // Not a dolt dir at all — skip.
+			}
+			manifest := filepath.Join(doltDir, "noms", "manifest")
+			if _, statErr := os.Stat(manifest); statErr != nil {
+				// Corrupted phantom — remove it so Dolt won't try to load it.
+				fmt.Fprintf(os.Stderr, "Quarantine: removing corrupted database dir %q (missing noms/manifest)\n", entry.Name())
+				_ = os.RemoveAll(dbDir)
+				continue
+			}
+			// Valid DB dir — clean up stale LOCK files.
+			if err := cleanupStaleDoltLock(dbDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+			}
+		}
+	}
+
+	// Pre-check: dolt must be in PATH (after quarantine so cleanup runs regardless).
+	if _, err := exec.LookPath("dolt"); err != nil {
+		return fmt.Errorf("dolt not found in PATH: %w", err)
+	}
+
 	// Open log file.
 	logFile, err := os.OpenFile(config.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -666,12 +758,20 @@ func startCityServer(config *Config, _ io.Writer) error {
 	cmd.Stderr = logFile
 	cmd.Stdin = nil
 
+	// Detach into own process group so signals to gc don't cascade to dolt.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
 		return fmt.Errorf("starting dolt server: %w", err)
 	}
 
-	_ = logFile.Close()
+	// Close log file in parent after child has inherited the fd.
+	// Wait for the child in a goroutine to avoid zombie processes.
+	go func() {
+		_ = cmd.Wait()
+		_ = logFile.Close()
+	}()
 
 	// Wait for server to accept connections with retry.
 	processExited := false

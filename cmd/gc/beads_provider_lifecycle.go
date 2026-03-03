@@ -199,6 +199,9 @@ func healthBeadsProvider(cityPath string) error {
 				return fmt.Errorf("unhealthy (%w) and recovery failed: %w", err, recErr)
 			}
 			dolt.ClearUnhealthy(cityPath)
+		} else {
+			// Server is healthy — reset backoff tracker if stable.
+			dolt.ResetBackoffIfHealthy(cityPath)
 		}
 		return nil
 	}

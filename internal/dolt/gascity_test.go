@@ -3,9 +3,11 @@ package dolt
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/gascity/internal/beads"
 )
@@ -493,5 +495,137 @@ func TestRemoveDatabaseCity_NotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+// ── Backoff tracker tests ────────────────────────────────────────────
+
+func TestBackoffLoosenedParams(t *testing.T) {
+	if doltBackoffWindow != 10*time.Minute {
+		t.Errorf("doltBackoffWindow = %v, want 10m", doltBackoffWindow)
+	}
+	if doltBackoffMaxStarts != 5 {
+		t.Errorf("doltBackoffMaxStarts = %d, want 5", doltBackoffMaxStarts)
+	}
+}
+
+func TestBackoffReset(t *testing.T) {
+	tracker := &doltBackoffTracker{
+		starts: make(map[string][]time.Time),
+	}
+	city := "/tmp/test-reset"
+	now := time.Now()
+
+	// Record some starts within the window.
+	tracker.recordStart(city, now.Add(-5*time.Minute))
+	tracker.recordStart(city, now.Add(-3*time.Minute))
+
+	// Should have 2 starts.
+	tracker.mu.Lock()
+	count := len(tracker.starts[city])
+	tracker.mu.Unlock()
+	if count != 2 {
+		t.Fatalf("expected 2 starts, got %d", count)
+	}
+
+	// resetIfHealthy should NOT clear because starts are within the window.
+	tracker.resetIfHealthy(city, now)
+	tracker.mu.Lock()
+	count = len(tracker.starts[city])
+	tracker.mu.Unlock()
+	if count != 2 {
+		t.Fatalf("expected 2 starts still present, got %d", count)
+	}
+
+	// Advance past the backoff window — all starts are now expired.
+	future := now.Add(doltBackoffWindow + time.Second)
+	tracker.resetIfHealthy(city, future)
+	tracker.mu.Lock()
+	_, exists := tracker.starts[city]
+	tracker.mu.Unlock()
+	if exists {
+		t.Error("expected city entry to be deleted after resetIfHealthy past window")
+	}
+}
+
+func TestStartCityServer_LookPath(t *testing.T) {
+	// Use an empty PATH so dolt won't be found.
+	t.Setenv("PATH", t.TempDir())
+
+	config := &Config{
+		TownRoot: t.TempDir(),
+		Port:     39999,
+		DataDir:  filepath.Join(t.TempDir(), "data"),
+		LogFile:  filepath.Join(t.TempDir(), "dolt.log"),
+	}
+
+	err := startCityServer(config, os.Stderr)
+	if err == nil {
+		t.Fatal("startCityServer should fail when dolt is not in PATH")
+	}
+	if !strings.Contains(err.Error(), "dolt not found") {
+		t.Errorf("error should mention 'dolt not found', got: %v", err)
+	}
+
+	// Verify exec.LookPath actually fails with the empty PATH.
+	if _, lookErr := exec.LookPath("dolt"); lookErr == nil {
+		t.Skip("dolt unexpectedly found in empty PATH, cannot verify LookPath check")
+	}
+}
+
+func TestQuarantineCorruptDB(t *testing.T) {
+	// Verify the quarantine logic by calling startCityServer with a real
+	// dolt binary (or failing fast at LookPath). We test quarantine as a
+	// side effect: startCityServer creates data dir, quarantines, then
+	// either proceeds (dolt installed) or fails at LookPath/Start.
+	dataDir := t.TempDir()
+
+	// Create a valid DB dir with noms/manifest.
+	validDB := filepath.Join(dataDir, "valid-db")
+	if err := os.MkdirAll(filepath.Join(validDB, ".dolt", "noms"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(validDB, ".dolt", "noms", "manifest"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a corrupt DB dir with .dolt but NO noms/manifest.
+	corruptDB := filepath.Join(dataDir, "corrupt-db")
+	if err := os.MkdirAll(filepath.Join(corruptDB, ".dolt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a non-dolt dir (should be left alone).
+	plainDir := filepath.Join(dataDir, "plain-dir")
+	if err := os.MkdirAll(plainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	logDir := t.TempDir()
+	config := &Config{
+		TownRoot: t.TempDir(),
+		Port:     39999,
+		DataDir:  dataDir,
+		LogFile:  filepath.Join(logDir, "dolt.log"),
+	}
+
+	// startCityServer will quarantine corrupt DBs then either fail at
+	// LookPath (no dolt) or at cmd.Start / port bind. We only care about
+	// the quarantine side effect.
+	_ = startCityServer(config, os.Stderr)
+
+	// Valid DB should still exist.
+	if _, err := os.Stat(filepath.Join(validDB, ".dolt", "noms", "manifest")); err != nil {
+		t.Errorf("valid DB was incorrectly removed: %v", err)
+	}
+
+	// Corrupt DB should be removed.
+	if _, err := os.Stat(corruptDB); !os.IsNotExist(err) {
+		t.Error("corrupt DB was not quarantined (still exists)")
+	}
+
+	// Plain dir should still exist.
+	if _, err := os.Stat(plainDir); err != nil {
+		t.Errorf("plain dir was incorrectly removed: %v", err)
 	}
 }
