@@ -12,7 +12,8 @@ import (
 // the agent should be restarted (via drain when drain ops are available).
 //
 // Included: Command, Env, FingerprintExtra (pool config, etc.),
-// Nudge, PreStart, SessionSetup, SessionSetupScript, OverlayDir, CopyFiles.
+// Nudge, PreStart, SessionSetup, SessionSetupScript, OverlayDir, CopyFiles,
+// SessionLive.
 //
 // Excluded (observation-only hints): WorkDir, ReadyPromptPrefix,
 // ReadyDelayMs, ProcessNames, EmitsPermissionWarning.
@@ -21,6 +22,31 @@ import (
 // hash regardless of map iteration order.
 func ConfigFingerprint(cfg Config) string {
 	h := sha256.New()
+	hashCoreFields(h, cfg)
+	hashLiveFields(h, cfg)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// CoreFingerprint returns a hash of only the "core" config fields —
+// everything except SessionLive. A change to core fields triggers a
+// drain + restart. A change to only SessionLive triggers re-apply
+// without restart.
+func CoreFingerprint(cfg Config) string {
+	h := sha256.New()
+	hashCoreFields(h, cfg)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// LiveFingerprint returns a hash of only the SessionLive fields.
+// Used by the reconciler to detect live-only drift.
+func LiveFingerprint(cfg Config) string {
+	h := sha256.New()
+	hashLiveFields(h, cfg)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// hashCoreFields writes all config fields except SessionLive to the hash.
+func hashCoreFields(h hash.Hash, cfg Config) {
 	h.Write([]byte(cfg.Command)) //nolint:errcheck // hash.Write never errors
 	h.Write([]byte{0})           //nolint:errcheck // hash.Write never errors
 
@@ -66,8 +92,15 @@ func ConfigFingerprint(cfg Config) string {
 		h.Write([]byte(cf.RelDst)) //nolint:errcheck // hash.Write never errors
 		h.Write([]byte{0})         //nolint:errcheck // hash.Write never errors
 	}
+}
 
-	return fmt.Sprintf("%x", h.Sum(nil))
+// hashLiveFields writes SessionLive fields to the hash.
+func hashLiveFields(h hash.Hash, cfg Config) {
+	for _, sl := range cfg.SessionLive {
+		h.Write([]byte(sl)) //nolint:errcheck // hash.Write never errors
+		h.Write([]byte{0})  //nolint:errcheck // hash.Write never errors
+	}
+	h.Write([]byte{1}) //nolint:errcheck // sentinel
 }
 
 // hashSortedMap writes map entries to h in deterministic sorted-key order.

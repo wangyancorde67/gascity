@@ -33,7 +33,7 @@ prompt_template = "prompts/mayor.md.tmpl"
 nudge = "Check mail and hook status, then act accordingly."
 overlay_dir = "overlays/default"
 idle_timeout = "1h"
-session_setup = [
+session_live = [
     "{{.ConfigDir}}/scripts/tmux-theme.sh {{.Session}} {{.Agent}} {{.ConfigDir}}",
     "{{.ConfigDir}}/scripts/tmux-keybindings.sh {{.ConfigDir}}",
 ]
@@ -46,7 +46,7 @@ prompt_template = "prompts/deacon.md.tmpl"
 nudge = "Run 'gc prime' to check patrol status and begin heartbeat cycle."
 overlay_dir = "overlays/default"
 idle_timeout = "1h"
-session_setup = [
+session_live = [
     "{{.ConfigDir}}/scripts/tmux-theme.sh {{.Session}} {{.Agent}} {{.ConfigDir}}",
     "{{.ConfigDir}}/scripts/tmux-keybindings.sh {{.ConfigDir}}",
 ]
@@ -66,7 +66,7 @@ prompt_template = "prompts/witness.md.tmpl"
 nudge = "Run 'gc prime' to check worker status and begin patrol cycle."
 overlay_dir = "overlays/witness"
 idle_timeout = "1h"
-session_setup = [
+session_live = [
     "{{.ConfigDir}}/scripts/tmux-theme.sh {{.Session}} {{.Agent}} {{.ConfigDir}}",
     "{{.ConfigDir}}/scripts/tmux-keybindings.sh {{.ConfigDir}}",
 ]
@@ -80,7 +80,7 @@ nudge = "Run 'gc prime' to check merge queue and begin processing."
 overlay_dir = "overlays/default"
 pre_start = ["{{.ConfigDir}}/scripts/worktree-setup.sh {{.WorkDir}} {{.Agent}} {{.CityRoot}} --sync"]
 idle_timeout = "2h"
-session_setup = [
+session_live = [
     "{{.ConfigDir}}/scripts/tmux-theme.sh {{.Session}} {{.Agent}} {{.ConfigDir}}",
     "{{.ConfigDir}}/scripts/tmux-keybindings.sh {{.ConfigDir}}",
 ]
@@ -94,7 +94,7 @@ nudge = "Check your hook for work assignments."
 overlay_dir = "overlays/default"
 pre_start = ["{{.ConfigDir}}/scripts/worktree-setup.sh {{.WorkDir}} {{.Agent}} {{.CityRoot}} --sync"]
 idle_timeout = "2h"
-session_setup = [
+session_live = [
     "{{.ConfigDir}}/scripts/tmux-theme.sh {{.Session}} {{.Agent}} {{.ConfigDir}}",
     "{{.ConfigDir}}/scripts/tmux-keybindings.sh {{.ConfigDir}}",
 ]
@@ -112,7 +112,7 @@ prompt_template = "../maintenance/prompts/dog.md.tmpl"
 nudge = "Check your hook for work assignments."
 overlay_dir = "../maintenance/overlays/default"
 idle_timeout = "2h"
-session_setup = [
+session_live = [
     "{{.ConfigDir}}/scripts/tmux-theme.sh {{.Session}} {{.Agent}} {{.ConfigDir}}",
     "{{.ConfigDir}}/scripts/tmux-keybindings.sh {{.ConfigDir}}",
 ]

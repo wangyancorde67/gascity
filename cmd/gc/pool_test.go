@@ -534,6 +534,7 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 		HooksInstalled:         &trueVal,
 		SessionSetup:           []string{"setup-cmd"},
 		SessionSetupScript:     "scripts/setup.sh",
+		SessionLive:            []string{"live-cmd"},
 		OverlayDir:             "overlays/test",
 		SourceDir:              "/src",
 		DefaultSlingFormula:    "mol-work",

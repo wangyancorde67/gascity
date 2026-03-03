@@ -54,6 +54,8 @@ type AgentPatch struct {
 	// SessionSetupScript overrides the agent's session_setup_script path.
 	// Relative paths resolve against the city directory.
 	SessionSetupScript *string `toml:"session_setup_script,omitempty"`
+	// SessionLive overrides the agent's session_live commands.
+	SessionLive []string `toml:"session_live,omitempty"`
 	// OverlayDir overrides the agent's overlay_dir path. Copies contents
 	// additively into the agent's working directory at startup.
 	// Relative paths resolve against the city directory.
@@ -67,6 +69,8 @@ type AgentPatch struct {
 	PreStartAppend []string `toml:"pre_start_append,omitempty"`
 	// SessionSetupAppend appends commands to the agent's session_setup list.
 	SessionSetupAppend []string `toml:"session_setup_append,omitempty"`
+	// SessionLiveAppend appends commands to the agent's session_live list.
+	SessionLiveAppend []string `toml:"session_live_append,omitempty"`
 	// InstallAgentHooksAppend appends to the agent's install_agent_hooks list.
 	InstallAgentHooksAppend []string `toml:"install_agent_hooks_append,omitempty"`
 	// InjectFragmentsAppend appends to the agent's inject_fragments list.
@@ -208,6 +212,12 @@ func applyAgentPatchFields(a *Agent, p *AgentPatch) {
 	}
 	if p.SessionSetupScript != nil {
 		a.SessionSetupScript = *p.SessionSetupScript
+	}
+	if len(p.SessionLive) > 0 {
+		a.SessionLive = append([]string(nil), p.SessionLive...)
+	}
+	if len(p.SessionLiveAppend) > 0 {
+		a.SessionLive = append(a.SessionLive, p.SessionLiveAppend...)
 	}
 	if p.OverlayDir != nil {
 		a.OverlayDir = *p.OverlayDir

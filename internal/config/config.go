@@ -172,6 +172,8 @@ type AgentOverride struct {
 	// SessionSetupScript overrides the agent's session_setup_script path.
 	// Relative paths resolve against the city directory.
 	SessionSetupScript *string `toml:"session_setup_script,omitempty"`
+	// SessionLive overrides the agent's session_live commands.
+	SessionLive []string `toml:"session_live,omitempty"`
 	// OverlayDir overrides the agent's overlay_dir path. Copies contents
 	// additively into the agent's working directory at startup.
 	// Relative paths resolve against the city directory.
@@ -185,6 +187,8 @@ type AgentOverride struct {
 	PreStartAppend []string `toml:"pre_start_append,omitempty"`
 	// SessionSetupAppend appends commands to the agent's session_setup list.
 	SessionSetupAppend []string `toml:"session_setup_append,omitempty"`
+	// SessionLiveAppend appends commands to the agent's session_live list.
+	SessionLiveAppend []string `toml:"session_live_append,omitempty"`
 	// InstallAgentHooksAppend appends to the agent's install_agent_hooks list.
 	InstallAgentHooksAppend []string `toml:"install_agent_hooks_append,omitempty"`
 	// InjectFragmentsAppend appends to the agent's inject_fragments list.
@@ -837,6 +841,12 @@ type Agent struct {
 	// Relative paths resolve against the city directory. The script receives
 	// context via environment variables (GC_SESSION plus existing GC_* vars).
 	SessionSetupScript string `toml:"session_setup_script,omitempty"`
+	// SessionLive is a list of shell commands that are safe to re-apply
+	// without restarting the agent. Run at startup (after session_setup)
+	// and re-applied on config change without triggering a restart.
+	// Must be idempotent. Typical use: tmux theming, keybindings, status bars.
+	// Same template placeholders as session_setup.
+	SessionLive []string `toml:"session_live,omitempty"`
 	// OverlayDir is a directory whose contents are recursively copied (additive)
 	// into the agent's working directory at startup. Existing files are not
 	// overwritten. Relative paths resolve against the declaring config file's

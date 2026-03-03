@@ -729,6 +729,12 @@ func applyAgentOverride(a *Agent, ov *AgentOverride) {
 	if ov.SessionSetupScript != nil {
 		a.SessionSetupScript = *ov.SessionSetupScript
 	}
+	if len(ov.SessionLive) > 0 {
+		a.SessionLive = append([]string(nil), ov.SessionLive...)
+	}
+	if len(ov.SessionLiveAppend) > 0 {
+		a.SessionLive = append(a.SessionLive, ov.SessionLiveAppend...)
+	}
 	if ov.OverlayDir != nil {
 		a.OverlayDir = *ov.OverlayDir
 	}

@@ -27,6 +27,16 @@ type reconcileOps interface {
 	// configHash retrieves the previously stored config hash for a session.
 	// Returns ("", nil) if no hash was stored (e.g., session predates hashing).
 	configHash(name string) (string, error)
+
+	// storeLiveHash persists the session_live hash separately.
+	storeLiveHash(name, hash string) error
+
+	// liveHash retrieves the previously stored session_live hash.
+	// Returns ("", nil) if no hash was stored.
+	liveHash(name string) (string, error)
+
+	// runLive re-applies session_live commands to a running session.
+	runLive(name string, cfg session.Config) error
 }
 
 // providerReconcileOps implements reconcileOps using session.Provider metadata.
@@ -49,6 +59,22 @@ func (o *providerReconcileOps) configHash(name string) (string, error) {
 		return "", nil
 	}
 	return val, nil
+}
+
+func (o *providerReconcileOps) storeLiveHash(name, hash string) error {
+	return o.sp.SetMeta(name, "GC_LIVE_HASH", hash)
+}
+
+func (o *providerReconcileOps) liveHash(name string) (string, error) {
+	val, err := o.sp.GetMeta(name, "GC_LIVE_HASH")
+	if err != nil {
+		return "", nil
+	}
+	return val, nil
+}
+
+func (o *providerReconcileOps) runLive(name string, cfg session.Config) error {
+	return o.sp.RunLive(name, cfg)
 }
 
 // newReconcileOps creates a reconcileOps from a session.Provider.
@@ -208,8 +234,9 @@ func doReconcileAgents(agents []agent.Agent,
 					ct.recordStart(a.SessionName(), time.Now())
 				}
 				if rops != nil {
-					hash := session.ConfigFingerprint(a.SessionConfig())
-					_ = rops.storeConfigHash(a.SessionName(), hash)
+					cfg := a.SessionConfig()
+					_ = rops.storeConfigHash(a.SessionName(), session.CoreFingerprint(cfg))
+					_ = rops.storeLiveHash(a.SessionName(), session.LiveFingerprint(cfg))
 				}
 				continue
 			}
@@ -244,8 +271,9 @@ func doReconcileAgents(agents []agent.Agent,
 				ct.recordStart(a.SessionName(), time.Now())
 			}
 			if rops != nil {
-				hash := session.ConfigFingerprint(a.SessionConfig())
-				_ = rops.storeConfigHash(a.SessionName(), hash) // best-effort
+				cfg := a.SessionConfig()
+				_ = rops.storeConfigHash(a.SessionName(), session.CoreFingerprint(cfg)) // best-effort
+				_ = rops.storeLiveHash(a.SessionName(), session.LiveFingerprint(cfg))
 			}
 			continue
 		}
@@ -283,8 +311,9 @@ func doReconcileAgents(agents []agent.Agent,
 						ct.recordStart(a.SessionName(), time.Now())
 					}
 					if rops != nil {
-						hash := session.ConfigFingerprint(a.SessionConfig())
-						_ = rops.storeConfigHash(a.SessionName(), hash)
+						cfg := a.SessionConfig()
+						_ = rops.storeConfigHash(a.SessionName(), session.CoreFingerprint(cfg))
+						_ = rops.storeLiveHash(a.SessionName(), session.LiveFingerprint(cfg))
 					}
 				}
 				continue // skip normal drift check — already handling it
@@ -296,48 +325,67 @@ func doReconcileAgents(agents []agent.Agent,
 			continue // Row 2: no reconcile ops, skip.
 		}
 
-		stored, err := rops.configHash(a.SessionName())
-		if err != nil || stored == "" {
+		storedCore, err := rops.configHash(a.SessionName())
+		if err != nil || storedCore == "" {
 			// No stored hash — graceful upgrade, don't restart.
 			continue
 		}
 
-		current := session.ConfigFingerprint(a.SessionConfig())
-		if stored == current {
-			continue // Row 2: hash matches, healthy.
+		cfg := a.SessionConfig()
+		currentCore := session.CoreFingerprint(cfg)
+		if storedCore != currentCore {
+			// Core drift → drain + restart (existing behavior).
+			if dops != nil {
+				_ = dops.setDrain(a.SessionName())
+				_ = dops.setDriftRestart(a.SessionName())
+				fmt.Fprintf(stdout, "Config changed for '%s', draining for restart...\n", a.Name()) //nolint:errcheck // best-effort stdout
+				rec.Record(events.Event{
+					Type:    events.AgentDraining,
+					Actor:   "gc",
+					Subject: a.Name(),
+					Message: "config drift detected",
+				})
+			} else {
+				// No drain ops — fall back to hard restart (backward compat).
+				fmt.Fprintf(stdout, "Config changed for '%s', restarting...\n", a.Name()) //nolint:errcheck // best-effort stdout
+				if err := a.Stop(); err != nil {
+					fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+					continue
+				}
+				if err := a.Start(context.Background()); err != nil {
+					fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+					continue
+				}
+				_ = sp.ClearScrollback(a.SessionName())
+				fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
+				rec.Record(events.Event{
+					Type:    events.AgentStarted,
+					Actor:   "gc",
+					Subject: a.Name(),
+				})
+				_ = rops.storeConfigHash(a.SessionName(), currentCore)
+				_ = rops.storeLiveHash(a.SessionName(), session.LiveFingerprint(cfg))
+			}
+			continue
 		}
 
-		// Row 5: drift detected → drain for graceful restart.
-		if dops != nil {
-			_ = dops.setDrain(a.SessionName())
-			_ = dops.setDriftRestart(a.SessionName())
-			fmt.Fprintf(stdout, "Config changed for '%s', draining for restart...\n", a.Name()) //nolint:errcheck // best-effort stdout
+		// Core matches — check live-only drift.
+		storedLive, _ := rops.liveHash(a.SessionName())
+		if storedLive == "" {
+			continue // No stored live hash — graceful upgrade, don't re-apply.
+		}
+		currentLive := session.LiveFingerprint(cfg)
+		if storedLive != currentLive {
+			// Live-only drift → re-apply session_live without restart.
+			fmt.Fprintf(stdout, "Live config changed for '%s', re-applying...\n", a.Name()) //nolint:errcheck // best-effort stdout
+			_ = rops.runLive(a.SessionName(), cfg)
+			_ = rops.storeLiveHash(a.SessionName(), currentLive)
 			rec.Record(events.Event{
-				Type:    events.AgentDraining,
+				Type:    events.AgentUpdated,
 				Actor:   "gc",
 				Subject: a.Name(),
-				Message: "config drift detected",
+				Message: "session_live re-applied",
 			})
-		} else {
-			// No drain ops — fall back to hard restart (backward compat).
-			fmt.Fprintf(stdout, "Config changed for '%s', restarting...\n", a.Name()) //nolint:errcheck // best-effort stdout
-			if err := a.Stop(); err != nil {
-				fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
-				continue
-			}
-			if err := a.Start(context.Background()); err != nil {
-				fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
-				continue
-			}
-			_ = sp.ClearScrollback(a.SessionName())
-			fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
-			rec.Record(events.Event{
-				Type:    events.AgentStarted,
-				Actor:   "gc",
-				Subject: a.Name(),
-			})
-			hash := session.ConfigFingerprint(a.SessionConfig())
-			_ = rops.storeConfigHash(a.SessionName(), hash)
 		}
 	}
 
@@ -401,10 +449,11 @@ func doReconcileAgents(agents []agent.Agent,
 			Subject: r.agent.Name(),
 		})
 		telemetry.RecordAgentStart(context.Background(), r.agent.SessionName(), r.agent.Name(), nil)
-		// Store config hash after successful start.
+		// Store config hashes after successful start.
 		if rops != nil {
-			hash := session.ConfigFingerprint(r.agent.SessionConfig())
-			_ = rops.storeConfigHash(r.agent.SessionName(), hash) // best-effort
+			cfg := r.agent.SessionConfig()
+			_ = rops.storeConfigHash(r.agent.SessionName(), session.CoreFingerprint(cfg)) // best-effort
+			_ = rops.storeLiveHash(r.agent.SessionName(), session.LiveFingerprint(cfg))
 		}
 	}
 

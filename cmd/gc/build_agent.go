@@ -149,6 +149,7 @@ func buildOneAgent(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName st
 	expandedSetup := expandSessionSetup(cfgAgent.SessionSetup, setupCtx)
 	resolvedScript := resolveSetupScript(cfgAgent.SessionSetupScript, p.cityPath)
 	expandedPreStart := expandSessionSetup(cfgAgent.PreStart, setupCtx)
+	expandedLive := expandSessionSetup(cfgAgent.SessionLive, setupCtx)
 
 	hints := agent.StartupHints{
 		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
@@ -159,6 +160,7 @@ func buildOneAgent(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName st
 		PreStart:               expandedPreStart,
 		SessionSetup:           expandedSetup,
 		SessionSetupScript:     resolvedScript,
+		SessionLive:            expandedLive,
 		OverlayDir:             overlayDir,
 		CopyFiles:              copyFiles,
 	}

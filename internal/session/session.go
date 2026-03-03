@@ -85,6 +85,11 @@ type Provider interface {
 	// Best-effort: returns nil if the session doesn't exist or the
 	// provider doesn't support interactive input.
 	SendKeys(name string, keys ...string) error
+
+	// RunLive re-applies session_live commands to a running session.
+	// Called by the reconciler when only session_live config has changed
+	// (no restart needed). Best-effort: warnings on failure.
+	RunLive(name string, cfg Config) error
 }
 
 // CopyEntry describes a file or directory to stage in the session's
@@ -138,6 +143,11 @@ type Config struct {
 	// SessionSetupScript is a script path run after session_setup commands.
 	// Receives context via env vars (GC_SESSION plus existing GC_* vars).
 	SessionSetupScript string
+
+	// SessionLive is a list of idempotent shell commands run at startup
+	// (after session_setup) and re-applied on config change without restart.
+	// Typical use: tmux theming, keybindings, status bars.
+	SessionLive []string
 
 	// OverlayDir is the host-side overlay directory whose contents should
 	// be copied into the session's working directory. Used by the exec

@@ -117,3 +117,8 @@ func (p *Provider) CopyTo(name, src, relDst string) error {
 func (p *Provider) SendKeys(name string, keys ...string) error {
 	return p.route(name).SendKeys(name, keys...)
 }
+
+// RunLive delegates to the routed backend.
+func (p *Provider) RunLive(name string, cfg session.Config) error {
+	return p.route(name).RunLive(name, cfg)
+}

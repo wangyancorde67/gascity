@@ -42,6 +42,7 @@ func TestAgentFieldSync(t *testing.T) {
 		"EnvRemove":               true, // remove modifier, no Agent field
 		"PreStartAppend":          true, // append modifier, no Agent field
 		"SessionSetupAppend":      true, // append modifier, no Agent field
+		"SessionLiveAppend":       true, // append modifier, no Agent field
 		"InstallAgentHooksAppend": true, // append modifier, no Agent field
 		"InjectFragmentsAppend":   true, // append modifier, no Agent field
 	}
@@ -127,11 +128,13 @@ func TestApplyAgentPatchCoversAllFields(t *testing.T) {
 		HooksInstalled:          &trueVal,
 		SessionSetup:            []string{"setup-cmd"},
 		SessionSetupScript:      strVal("scripts/setup.sh"),
+		SessionLive:             []string{"live-cmd"},
 		OverlayDir:              strVal("overlays/test"),
 		DefaultSlingFormula:     strVal("mol-work"),
 		InjectFragments:         []string{"frag1"},
 		PreStartAppend:          []string{"pre-append"},
 		SessionSetupAppend:      []string{"setup-append"},
+		SessionLiveAppend:       []string{"live-append"},
 		InstallAgentHooksAppend: []string{"gemini"},
 		InjectFragmentsAppend:   []string{"frag2"},
 		EnvRemove:               []string{"REMOVE_ME"},
@@ -159,6 +162,7 @@ func TestApplyAgentPatchCoversAllFields(t *testing.T) {
 		"EnvRemove":               true,
 		"PreStartAppend":          true,
 		"SessionSetupAppend":      true,
+		"SessionLiveAppend":       true,
 		"InstallAgentHooksAppend": true,
 		"InjectFragmentsAppend":   true,
 	}
@@ -208,6 +212,9 @@ func TestApplyAgentPatchCoversAllFields(t *testing.T) {
 	if len(agent.SessionSetup) != 2 || agent.SessionSetup[1] != "setup-append" {
 		t.Errorf("SessionSetupAppend not applied: %v", agent.SessionSetup)
 	}
+	if len(agent.SessionLive) != 2 || agent.SessionLive[1] != "live-append" {
+		t.Errorf("SessionLiveAppend not applied: %v", agent.SessionLive)
+	}
 	if len(agent.InstallAgentHooks) != 2 || agent.InstallAgentHooks[1] != "gemini" {
 		t.Errorf("InstallAgentHooksAppend not applied: %v", agent.InstallAgentHooks)
 	}
@@ -242,11 +249,13 @@ func TestApplyAgentOverrideCoversAllFields(t *testing.T) {
 		HooksInstalled:          &trueVal,
 		SessionSetup:            []string{"setup-cmd"},
 		SessionSetupScript:      strVal("scripts/setup.sh"),
+		SessionLive:             []string{"live-cmd"},
 		OverlayDir:              strVal("overlays/test"),
 		DefaultSlingFormula:     strVal("mol-work"),
 		InjectFragments:         []string{"frag1"},
 		PreStartAppend:          []string{"pre-append"},
 		SessionSetupAppend:      []string{"setup-append"},
+		SessionLiveAppend:       []string{"live-append"},
 		InstallAgentHooksAppend: []string{"gemini"},
 		InjectFragmentsAppend:   []string{"frag2"},
 	}
@@ -271,6 +280,7 @@ func TestApplyAgentOverrideCoversAllFields(t *testing.T) {
 		"EnvRemove":               true,
 		"PreStartAppend":          true,
 		"SessionSetupAppend":      true,
+		"SessionLiveAppend":       true,
 		"InstallAgentHooksAppend": true,
 		"InjectFragmentsAppend":   true,
 	}

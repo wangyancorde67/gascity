@@ -134,6 +134,13 @@
           "type": "string",
           "description": "SessionSetupScript is the path to a script run after session_setup commands.\nRelative paths resolve against the city directory. The script receives\ncontext via environment variables (GC_SESSION plus existing GC_* vars)."
         },
+        "session_live": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "SessionLive is a list of shell commands that are safe to re-apply\nwithout restarting the agent. Run at startup (after session_setup)\nand re-applied on config change without triggering a restart.\nMust be idempotent. Typical use: tmux theming, keybindings, status bars.\nSame template placeholders as session_setup."
+        },
         "overlay_dir": {
           "type": "string",
           "description": "OverlayDir is a directory whose contents are recursively copied (additive)\ninto the agent's working directory at startup. Existing files are not\noverwritten. Relative paths resolve against the declaring config file's\ndirectory (pack-safe)."
@@ -246,6 +253,13 @@
           "type": "string",
           "description": "SessionSetupScript overrides the agent's session_setup_script path.\nRelative paths resolve against the city directory."
         },
+        "session_live": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "SessionLive overrides the agent's session_live commands."
+        },
         "overlay_dir": {
           "type": "string",
           "description": "OverlayDir overrides the agent's overlay_dir path. Copies contents\nadditively into the agent's working directory at startup.\nRelative paths resolve against the city directory."
@@ -274,6 +288,13 @@
           },
           "type": "array",
           "description": "SessionSetupAppend appends commands to the agent's session_setup list."
+        },
+        "session_live_append": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "SessionLiveAppend appends commands to the agent's session_live list."
         },
         "install_agent_hooks_append": {
           "items": {
@@ -382,6 +403,13 @@
           "type": "string",
           "description": "SessionSetupScript overrides the agent's session_setup_script path.\nRelative paths resolve against the city directory."
         },
+        "session_live": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "SessionLive overrides the agent's session_live commands."
+        },
         "overlay_dir": {
           "type": "string",
           "description": "OverlayDir overrides the agent's overlay_dir path. Copies contents\nadditively into the agent's working directory at startup.\nRelative paths resolve against the city directory."
@@ -410,6 +438,13 @@
           },
           "type": "array",
           "description": "SessionSetupAppend appends commands to the agent's session_setup list."
+        },
+        "session_live_append": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "SessionLiveAppend appends commands to the agent's session_live list."
         },
         "install_agent_hooks_append": {
           "items": {

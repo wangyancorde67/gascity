@@ -323,6 +323,11 @@ func (p *Provider) SendKeys(name string, keys ...string) error {
 	return nil
 }
 
+// RunLive re-applies session_live commands. Not yet supported for K8s.
+func (p *Provider) RunLive(_ string, _ session.Config) error {
+	return nil
+}
+
 // SetMeta stores a key-value pair in the tmux environment.
 func (p *Provider) SetMeta(name, key, value string) error {
 	ctx := context.Background()

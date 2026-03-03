@@ -77,6 +77,13 @@ func (p *Provider) Start(_ context.Context, name string, cfg session.Config) err
 	return doStartSession(&tmuxStartOps{tm: p.tm}, name, cfg, p.cfg.SetupTimeout)
 }
 
+// RunLive re-applies session_live commands to a running session.
+// Called by the reconciler when only session_live config has changed.
+func (p *Provider) RunLive(name string, cfg session.Config) error {
+	runSessionLive(&tmuxStartOps{tm: p.tm}, name, cfg, os.Stderr, p.cfg.SetupTimeout)
+	return nil
+}
+
 // Stop destroys the named session and kills its entire process tree.
 // Returns nil if it doesn't exist (idempotent).
 func (p *Provider) Stop(name string) error {
@@ -337,7 +344,8 @@ func doStartSession(ops startOps, name string, cfg session.Config, setupTimeout 
 
 	hasHints := cfg.ReadyPromptPrefix != "" || cfg.ReadyDelayMs > 0 ||
 		len(cfg.ProcessNames) > 0 || cfg.EmitsPermissionWarning ||
-		cfg.Nudge != "" || len(cfg.PreStart) > 0 || len(cfg.SessionSetup) > 0 || cfg.SessionSetupScript != ""
+		cfg.Nudge != "" || len(cfg.PreStart) > 0 || len(cfg.SessionSetup) > 0 || cfg.SessionSetupScript != "" ||
+		len(cfg.SessionLive) > 0
 
 	if !hasHints {
 		return nil // fire-and-forget
@@ -382,6 +390,9 @@ func doStartSession(ops startOps, name string, cfg session.Config, setupTimeout 
 		_ = ops.sendKeys(name, cfg.Nudge) // best-effort
 	}
 
+	// Step 6.5: Run session_live commands (idempotent, re-applicable).
+	runSessionLive(ops, name, cfg, os.Stderr, setupTimeout)
+
 	return nil
 }
 
@@ -410,6 +421,28 @@ func runSessionSetup(ops startOps, name string, cfg session.Config, stderr io.Wr
 	if cfg.SessionSetupScript != "" {
 		if err := ops.runSetupCommand(cfg.SessionSetupScript, setupEnv, setupTimeout); err != nil {
 			_, _ = fmt.Fprintf(stderr, "gc: session_setup_script warning: %v\n", err)
+		}
+	}
+}
+
+// runSessionLive runs session_live commands (idempotent, re-applicable).
+// Called at startup after nudge, and by the reconciler on live-only drift.
+// Non-fatal: warnings on failure, session still works.
+func runSessionLive(ops startOps, name string, cfg session.Config, stderr io.Writer, setupTimeout time.Duration) {
+	if len(cfg.SessionLive) == 0 {
+		return
+	}
+
+	// Build env vars for live commands.
+	setupEnv := make(map[string]string, len(cfg.Env)+1)
+	for k, v := range cfg.Env {
+		setupEnv[k] = v
+	}
+	setupEnv["GC_SESSION"] = name
+
+	for i, cmd := range cfg.SessionLive {
+		if err := ops.runSetupCommand(cmd, setupEnv, setupTimeout); err != nil {
+			_, _ = fmt.Fprintf(stderr, "gc: session_live[%d] warning: %v\n", i, err)
 		}
 	}
 }

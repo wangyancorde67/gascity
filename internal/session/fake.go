@@ -290,3 +290,14 @@ func (f *Fake) SendKeys(name string, keys ...string) error {
 	}
 	return nil
 }
+
+// RunLive records the call and returns nil (or error if broken).
+func (f *Fake) RunLive(name string, _ Config) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Calls = append(f.Calls, Call{Method: "RunLive", Name: name})
+	if f.broken {
+		return fmt.Errorf("session unavailable")
+	}
+	return nil
+}

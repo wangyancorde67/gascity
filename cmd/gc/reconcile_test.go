@@ -16,8 +16,10 @@ import (
 
 // fakeReconcileOps is a test double for reconcileOps.
 type fakeReconcileOps struct {
-	running map[string]bool   // session names that exist
-	hashes  map[string]string // stored config hashes
+	running    map[string]bool   // session names that exist
+	hashes     map[string]string // stored config hashes (core)
+	liveHashes map[string]string // stored live hashes
+	liveCalls  []string          // session names that had runLive called
 
 	listErr       error // injected error for listRunning
 	storeHashErr  error // injected error for storeConfigHash
@@ -26,8 +28,9 @@ type fakeReconcileOps struct {
 
 func newFakeReconcileOps() *fakeReconcileOps {
 	return &fakeReconcileOps{
-		running: make(map[string]bool),
-		hashes:  make(map[string]string),
+		running:    make(map[string]bool),
+		hashes:     make(map[string]string),
+		liveHashes: make(map[string]string),
 	}
 }
 
@@ -63,6 +66,24 @@ func (f *fakeReconcileOps) configHash(name string) (string, error) {
 	return h, nil
 }
 
+func (f *fakeReconcileOps) storeLiveHash(name, hash string) error {
+	f.liveHashes[name] = hash
+	return nil
+}
+
+func (f *fakeReconcileOps) liveHash(name string) (string, error) {
+	h, ok := f.liveHashes[name]
+	if !ok {
+		return "", nil
+	}
+	return h, nil
+}
+
+func (f *fakeReconcileOps) runLive(name string, _ session.Config) error {
+	f.liveCalls = append(f.liveCalls, name)
+	return nil
+}
+
 func TestReconcileStartsNewAgents(t *testing.T) {
 	f := agent.NewFake("mayor", "mayor")
 	rops := newFakeReconcileOps()
@@ -96,7 +117,7 @@ func TestReconcileSkipsHealthy(t *testing.T) {
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
 	// Store the same hash that the agent's config would produce.
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
@@ -154,7 +175,7 @@ func TestReconcileRestartsOnDrift(t *testing.T) {
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
 	// Store old hash (different command).
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old-flag"})
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
@@ -187,7 +208,7 @@ func TestReconcileRestartsOnDrift(t *testing.T) {
 	}
 
 	// New hash should be stored.
-	expected := session.ConfigFingerprint(session.Config{Command: "claude --new-flag"})
+	expected := session.CoreFingerprint(session.Config{Command: "claude --new-flag"})
 	if rops.hashes["mayor"] != expected {
 		t.Errorf("hash after restart = %q, want %q", rops.hashes["mayor"], expected)
 	}
@@ -226,7 +247,7 @@ func TestReconcileDriftDrainSignal(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old-flag"})
 	sp := session.NewFake()
 	dops := newFakeDrainOps()
 	rec := events.NewFake()
@@ -259,7 +280,7 @@ func TestReconcileDriftDrainSignal(t *testing.T) {
 		t.Errorf("events = %v, want one AgentDraining event", rec.Events)
 	}
 	// Hash should NOT be updated yet (restart hasn't completed).
-	oldHash := session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	oldHash := session.CoreFingerprint(session.Config{Command: "claude --old-flag"})
 	if rops.hashes["mayor"] != oldHash {
 		t.Error("hash should not change until restart completes")
 	}
@@ -274,7 +295,7 @@ func TestReconcileDriftDrainAcked(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old-flag"})
 	sp := session.NewFake()
 	dops := newFakeDrainOps()
 	// Simulate: drain was set previously and agent acked.
@@ -313,7 +334,7 @@ func TestReconcileDriftDrainAcked(t *testing.T) {
 		t.Error("drain flag should be cleared")
 	}
 	// New hash should be stored.
-	expected := session.ConfigFingerprint(session.Config{Command: "claude --new-flag"})
+	expected := session.CoreFingerprint(session.Config{Command: "claude --new-flag"})
 	if rops.hashes["mayor"] != expected {
 		t.Errorf("hash after restart = %q, want %q", rops.hashes["mayor"], expected)
 	}
@@ -328,7 +349,7 @@ func TestReconcileDriftDrainTimeout(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old-flag"})
 	sp := session.NewFake()
 	dops := newFakeDrainOps()
 	// Simulate: drain was set long ago, no ack.
@@ -376,7 +397,7 @@ func TestReconcileDriftDrainWaiting(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old-flag"})
 	sp := session.NewFake()
 	dops := newFakeDrainOps()
 	// Simulate: drain set recently, no ack yet.
@@ -414,7 +435,7 @@ func TestReconcileDriftNoDopsHardRestart(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old-flag"})
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
@@ -453,7 +474,7 @@ func TestReconcileDriftDrainNotClearedByDesiredSet(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old-flag"})
 	sp := session.NewFake()
 	dops := newFakeDrainOps()
 	// Simulate: drift drain in progress (draining + driftRestart set).
@@ -631,7 +652,7 @@ func TestReconcileDriftStopErrorSkipsRestart(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old"})
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
@@ -685,10 +706,10 @@ func TestReconcileMixedStates(t *testing.T) {
 	rops := newFakeReconcileOps()
 	// Healthy agent: hash matches.
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	// Drifted agent: hash differs.
 	rops.running["builder"] = true
-	rops.hashes["builder"] = session.ConfigFingerprint(session.Config{Command: "claude --v1"})
+	rops.hashes["builder"] = session.CoreFingerprint(session.Config{Command: "claude --v1"})
 	// Orphan session: not in config.
 	rops.running["oldagent"] = true
 
@@ -768,7 +789,7 @@ func TestReconcileRecordsEventOnDriftRestart(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old"})
 	sp := session.NewFake()
 	rec := events.NewFake()
 
@@ -798,7 +819,7 @@ func TestReconcileNoEventOnSkip(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 	rec := events.NewFake()
 
@@ -1000,8 +1021,8 @@ func TestReconcileDrainsExcessPool(t *testing.T) {
 	rops.running["worker-1"] = true
 	rops.running["worker-2"] = true
 	rops.running["worker-3"] = true
-	rops.hashes["worker-1"] = session.ConfigFingerprint(session.Config{Command: "claude"})
-	rops.hashes["worker-2"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["worker-1"] = session.CoreFingerprint(session.Config{Command: "claude"})
+	rops.hashes["worker-2"] = session.CoreFingerprint(session.Config{Command: "claude"})
 
 	dops := newFakeDrainOps()
 	poolSessions := map[string]time.Duration{
@@ -1134,7 +1155,7 @@ func TestReconcileUndrainOnScaleUp(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["worker-3"] = true
-	rops.hashes["worker-3"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["worker-3"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	dops := newFakeDrainOps()
 	dops.draining["worker-3"] = true // was draining
 	sp := session.NewFake()
@@ -1472,7 +1493,7 @@ func TestReconcileRestartRequestedRestartsAgent(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 	rec := events.NewFake()
 
@@ -1522,7 +1543,7 @@ func TestReconcileRestartRequestedNotSet(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 
 	dops := newFakeDrainOps()
@@ -1547,7 +1568,7 @@ func TestReconcileRestartRequestedRecordsCrashTracker(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 
 	dops := newFakeDrainOps()
@@ -1571,7 +1592,7 @@ func TestReconcileRestartRequestedNilDops(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
@@ -1596,7 +1617,7 @@ func TestReconcileIdleAgentRestarted(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 	rec := events.NewFake()
 
@@ -1636,7 +1657,7 @@ func TestReconcileNonIdleAgentLeftAlone(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 
 	it := newFakeIdleTracker()
@@ -1660,7 +1681,7 @@ func TestReconcileNilIdleTrackerSkips(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 
 	// nil idle tracker → backward compatible, no idle check.
@@ -1682,7 +1703,7 @@ func TestReconcileIdleKillCountsAsRestart(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 
 	ct := newFakeCrashTracker()
@@ -1906,7 +1927,7 @@ func TestReconcileClearScrollbackOnDrift(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude --old-flag"})
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
@@ -1931,7 +1952,7 @@ func TestReconcileClearScrollbackOnRestartRequested(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 
 	dops := newFakeDrainOps()
@@ -1958,7 +1979,7 @@ func TestReconcileClearScrollbackOnIdleRestart(t *testing.T) {
 
 	rops := newFakeReconcileOps()
 	rops.running["mayor"] = true
-	rops.hashes["mayor"] = session.ConfigFingerprint(session.Config{Command: "claude"})
+	rops.hashes["mayor"] = session.CoreFingerprint(session.Config{Command: "claude"})
 	sp := session.NewFake()
 
 	it := newFakeIdleTracker()

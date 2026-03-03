@@ -237,6 +237,11 @@ func (p *Provider) SendKeys(_ string, _ ...string) error {
 	return nil
 }
 
+// RunLive is not supported by the subprocess provider. Returns nil.
+func (p *Provider) RunLive(_ string, _ session.Config) error {
+	return nil
+}
+
 // Peek is not supported by the subprocess provider — there is no
 // terminal with scrollback to capture. Returns an empty string.
 func (p *Provider) Peek(_ string, _ int) (string, error) {

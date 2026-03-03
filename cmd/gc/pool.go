@@ -163,6 +163,10 @@ func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
 		dst.SessionSetup = make([]string, len(src.SessionSetup))
 		copy(dst.SessionSetup, src.SessionSetup)
 	}
+	if len(src.SessionLive) > 0 {
+		dst.SessionLive = make([]string, len(src.SessionLive))
+		copy(dst.SessionLive, src.SessionLive)
+	}
 	if len(src.InjectFragments) > 0 {
 		dst.InjectFragments = make([]string, len(src.InjectFragments))
 		copy(dst.InjectFragments, src.InjectFragments)

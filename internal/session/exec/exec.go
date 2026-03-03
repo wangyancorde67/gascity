@@ -238,6 +238,12 @@ func (p *Provider) SendKeys(name string, keys ...string) error {
 	return err
 }
 
+// RunLive re-applies session_live commands. For exec providers, runs
+// commands via the adapter script. Best-effort: returns nil on failure.
+func (p *Provider) RunLive(_ string, _ session.Config) error {
+	return nil // exec providers don't support live re-apply yet
+}
+
 // GetLastActivity returns the last activity time: script get-last-activity <name>
 // Expects RFC3339 on stdout, or empty for unsupported. Malformed → zero time.
 func (p *Provider) GetLastActivity(name string) (time.Time, error) {
