@@ -27,7 +27,7 @@ fi
 # MkdirAll may have created an empty dir — remove it for git worktree.
 rmdir "$WT" 2>/dev/null || true
 mkdir -p "$(dirname "$WT")"
-git -C "$REPO" worktree add "$WT" -b "gc-$AGENT" || exit 0
+GIT_LFS_SKIP_SMUDGE=1 git -C "$REPO" worktree add "$WT" -b "gc-$AGENT" || exit 0
 
 # Bead redirect for filesystem beads.
 mkdir -p "$WT/.beads"

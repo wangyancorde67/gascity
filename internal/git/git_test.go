@@ -79,39 +79,12 @@ func TestDefaultBranch_NoRemote(t *testing.T) {
 	}
 }
 
-func TestWorktreeAdd(t *testing.T) {
-	repo := initTestRepo(t)
-	g := New(repo)
-
-	wtPath := filepath.Join(t.TempDir(), "wt")
-	if err := g.WorktreeAdd(wtPath, "feature-1"); err != nil {
-		t.Fatalf("WorktreeAdd: %v", err)
-	}
-
-	// Verify the worktree directory exists.
-	if _, err := os.Stat(wtPath); err != nil {
-		t.Errorf("worktree dir not created: %v", err)
-	}
-
-	// Verify it's on the right branch.
-	wg := New(wtPath)
-	branch, err := wg.CurrentBranch()
-	if err != nil {
-		t.Fatalf("CurrentBranch in worktree: %v", err)
-	}
-	if branch != "feature-1" {
-		t.Errorf("worktree branch = %q, want %q", branch, "feature-1")
-	}
-}
-
 func TestWorktreeRemove(t *testing.T) {
 	repo := initTestRepo(t)
 	g := New(repo)
 
 	wtPath := filepath.Join(t.TempDir(), "wt")
-	if err := g.WorktreeAdd(wtPath, "to-remove"); err != nil {
-		t.Fatalf("WorktreeAdd: %v", err)
-	}
+	runGit(t, repo, "worktree", "add", "-b", "to-remove", wtPath)
 
 	if err := g.WorktreeRemove(wtPath, false); err != nil {
 		t.Fatalf("WorktreeRemove: %v", err)
@@ -128,9 +101,7 @@ func TestWorktreeRemoveForce(t *testing.T) {
 	g := New(repo)
 
 	wtPath := filepath.Join(t.TempDir(), "wt")
-	if err := g.WorktreeAdd(wtPath, "dirty-wt"); err != nil {
-		t.Fatalf("WorktreeAdd: %v", err)
-	}
+	runGit(t, repo, "worktree", "add", "-b", "dirty-wt", wtPath)
 
 	// Create an uncommitted file to make the worktree dirty.
 	if err := os.WriteFile(filepath.Join(wtPath, "dirty.txt"), []byte("dirty"), 0o644); err != nil {
@@ -148,9 +119,7 @@ func TestWorktreeList(t *testing.T) {
 	g := New(repo)
 
 	wtPath := filepath.Join(t.TempDir(), "wt")
-	if err := g.WorktreeAdd(wtPath, "listed"); err != nil {
-		t.Fatalf("WorktreeAdd: %v", err)
-	}
+	runGit(t, repo, "worktree", "add", "-b", "listed", wtPath)
 
 	worktrees, err := g.WorktreeList()
 	if err != nil {

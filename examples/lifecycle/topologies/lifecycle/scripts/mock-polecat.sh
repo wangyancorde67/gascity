@@ -91,13 +91,13 @@ if [ -d "$WT_DIR" ] && [ ! -f "$WT_DIR/.git" ]; then
     rm -rf "$WT_DIR"
 fi
 
-if ! git worktree add "$WT_DIR" -b "$BRANCH" HEAD 2>/dev/null; then
+if ! GIT_LFS_SKIP_SMUDGE=1 git worktree add "$WT_DIR" -b "$BRANCH" HEAD 2>/dev/null; then
     # Branch might already exist from a previous run — try using it.
     git branch -D "$BRANCH" 2>/dev/null || true
     # Remove stale worktree entry.
     git worktree prune 2>/dev/null || true
     rm -rf "$WT_DIR" 2>/dev/null || true
-    git worktree add "$WT_DIR" -b "$BRANCH" HEAD 2>/dev/null || {
+    GIT_LFS_SKIP_SMUDGE=1 git worktree add "$WT_DIR" -b "$BRANCH" HEAD 2>/dev/null || {
         echo "[$AGENT_SHORT] Failed to create worktree. Exiting."
         exit 1
     }

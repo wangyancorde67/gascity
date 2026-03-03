@@ -55,16 +55,6 @@ func (g *Git) DefaultBranch() (string, error) {
 	return ref, nil
 }
 
-// WorktreeAdd creates a new worktree at path with a new branch.
-// Equivalent to: git worktree add -b <branch> <path>
-func (g *Git) WorktreeAdd(path, branch string) error {
-	_, err := g.run("worktree", "add", "-b", branch, path)
-	if err != nil {
-		return fmt.Errorf("adding worktree at %q branch %q: %w", path, branch, err)
-	}
-	return nil
-}
-
 // WorktreeRemove removes a worktree. If force is true, removes even with
 // uncommitted changes.
 func (g *Git) WorktreeRemove(path string, force bool) error {
