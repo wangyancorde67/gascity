@@ -86,24 +86,30 @@ Every mail creates a permanent Dolt commit. Nudges are free (tmux send-keys).
   role prompts in examples/gastown.~~ DONE.
 
 ### 3b. Mail-to-nudge conversions (Go + formula)
-- [ ] **7a578c2b** — Six mail sends converted to nudges: MERGE_FAILED,
+- [x] **7a578c2b** — Six mail sends converted to nudges: MERGE_FAILED,
   CONVOY_NEEDS_FEEDING, worker rejection, MERGE_READY, RECOVERY_NEEDED,
   HandleMergeFailed. Mail preserved only for convoy completion (handoff
   context) and escalation to mayor.
-- [ ] **5872d9af** — LIFECYCLE:Shutdown, MERGED, MERGE_READY, MERGE_FAILED
+  **Done:** All role prompts updated with role-specific comm rules. Generic
+  nudge-first-mail-rarely principle extracted to `operational-awareness`
+  global fragment. MERGE_FAILED as nudge in refinery. Protocol messages
+  listed as ephemeral in global fragment.
+- [x] **5872d9af** — LIFECYCLE:Shutdown, MERGED, MERGE_READY, MERGE_FAILED
   are now ephemeral wisps instead of permanent beads.
-- [ ] **98767fa2** — WORK_DONE messages from `gt done` are ephemeral wisps.
-- **Action:** Update refinery and witness prompt communication protocol
-  sections to emphasize nudge for routine, mail for must-survive-session-death.
+  **Done:** Listed as ephemeral protocol messages in global fragment.
+- [x] **98767fa2** — WORK_DONE messages from `gt done` are ephemeral wisps.
+  **Done:** Listed as ephemeral in global fragment.
 
 ### 3c. Mail drain + improved instructions
-- [ ] **655620a1** — Witness patrol v8: `gt mail drain` step archives stale
+- [x] **655620a1** — Witness patrol v8: `gt mail drain` step archives stale
   protocol messages (>30 min). Batch processing when inbox > 10 messages.
-- [ ] **9fb00901** — Overhauled mail instructions in crew and polecat templates:
+  **Done:** Added Mail Drain section to witness prompt.
+- [x] **9fb00901** — Overhauled mail instructions in crew and polecat templates:
   `--stdin` heredoc pattern, address format docs, common mistakes section.
-- [ ] **8eb3d8bb** — Generic names (`alice/`) in crew template mail examples.
-- **Action:** Update crew, polecat, and witness formulas/prompts with improved
-  mail instructions and drain capability.
+  **Done:** `--stdin` heredoc pattern in global fragment. Common mail mistakes
+  + address format in crew prompt.
+- [x] **8eb3d8bb** — Generic names (`alice/`) in crew template mail examples.
+  **Done:** Changed wolf → alice in crew prompt examples.
 
 ---
 
@@ -251,44 +257,51 @@ From batch 3 analysis (session summary).
 ## 9. Prompt Template Updates
 
 ### 9a. Mayor
-- [ ] **4c9309c8** — Rig Wake/Sleep Protocol: dormant-by-default workflow.
-  All rigs start docked. Mayor undocks/docks as needed.
-- [ ] **faf45d1c** — Fix-Merging Community PRs: `Co-Authored-By` attribution.
-- [ ] **39962be0** — `auto_start_on_boot` renamed to `auto_start_on_up`.
-- **Action:** Add Rig Wake/Sleep Protocol + community PR attribution to
-  mayor prompt.
+- [x] **4c9309c8** — Rig Wake/Sleep Protocol: dormant-by-default workflow.
+  All rigs start suspended. Mayor resumes/suspends as needed.
+  **Done:** Added Rig Wake/Sleep Protocol section + suspend/resume command table.
+- [-] **faf45d1c** — Fix-Merging Community PRs: `Co-Authored-By` attribution.
+  N/A — not present in Gas Town upstream mayor template either.
+- [-] **39962be0** — `auto_start_on_boot` renamed to `auto_start_on_up`.
+  N/A — Gas City uses `Suspended` field, not `auto_start_on_boot`.
 
 ### 9b. Crew
-- [ ] **12cf3217** — Identity clarification: "You are the AI agent (crew/{{.Polecat}}).
+- [x] **12cf3217** — Identity clarification: "You are the AI agent (crew/...).
   The human is the Overseer."
-- [ ] **faf45d1c** — Fix-Merging Community PRs section.
-- [ ] **9fb00901** — Improved mail instructions with `--stdin` heredoc pattern,
+  **Done:** Added explicit identity line to crew prompt.
+- [-] **faf45d1c** — Fix-Merging Community PRs section.
+  N/A — not present in Gas Town upstream crew template either.
+- [x] **9fb00901** — Improved mail instructions with `--stdin` heredoc pattern,
   common mistakes section.
-- **Action:** Add identity clarification + improved mail instructions to
-  crew prompt.
+  **Done:** Added `--stdin` heredoc pattern and common mail mistakes to crew
+  prompt. Generic example names (alice instead of wolf).
 
 ### 9c. Boot
-- [ ] **383945fb** — ZFC fix: removed Go decision engine from degraded triage.
+- [x] **383945fb** — ZFC fix: removed Go decision engine from degraded triage.
   Decisions (heartbeat staleness, idle detection, backoff labels, molecule
   progress) now belong in boot formula, not Go code.
-- **Action:** Ensure boot prompt includes sufficient triage decision guidance.
+  **Done:** Boot already uses judgment-based triage (ZFC-correct). Added
+  decision summary table, mail inbox check step, and explicit guidance.
 
 ### 9d. Template path fix
-- [ ] (batch 3) Template paths changed from `~/gt` to `{{ .TownRoot }}`.
-- **Action:** Verify all template references use `{{ .CityRoot }}` or
-  equivalent, not hardcoded paths.
+- [x] (batch 3) Template paths changed from `~/gt` to `{{ .TownRoot }}`.
+  **Done:** All `~/gt` references replaced with `{{ .CityRoot }}` in mayor,
+  crew, and polecat prompts.
 
 ---
 
 ## 10. Formula System Enhancements
 
-- [ ] **67b0cdfe** — Formula parser now supports: Extends (composition), Compose,
+- [-] **67b0cdfe** — Formula parser now supports: Extends (composition), Compose,
   Advice/Pointcuts (AOP), Squash (completion behavior), Gate (conditional
   step execution), Preset (leg selection). Previously silently discarded.
-- [ ] **330664c2** — GatesParallel=true by default: typecheck, lint, build,
+  N/A — Gas City's formula parser is intentionally minimal (Name, Steps with
+  DAG Needs). Advanced features (convoys, AOP, presets) are spec-level concepts
+  to be added when needed, not ported from Gas Town's accretion.
+- [-] **330664c2** — GatesParallel=true by default: typecheck, lint, build,
   test run concurrently in merge queue (~2x gate speedup).
-- **Action:** Document available formula features. Consider adding `[gate]`
-  sections to formula steps where conditional execution is needed.
+  N/A — Gas City formulas use `Needs` for DAG ordering. Gate step types
+  don't exist yet. When added, parallelism would be the default.
 
 ---
 
@@ -296,16 +309,26 @@ From batch 3 analysis (session summary).
 
 Go code making decisions that belong in prompts — moved to prompts.
 
-- [ ] **915f1b7e + f61ff0ac** — Remove auto-close of permanent issues from
+- [-] **915f1b7e + f61ff0ac** — Remove auto-close of permanent issues from
   wisp reaper. Reaper only operates on ephemeral wisps.
-- [ ] **977953d8** — Witness handlers report data, don't make policy decisions.
-- [ ] **3bf979db** — Remove hardcoded role names from witness error messages.
-- [ ] **383945fb** — Remove boot triage decision engine from Go.
-- [ ] **89ccc218** — Doctor dog: advisory recommendations, not automated actions.
-- [ ] **eb530d85** — Restart tracker crash-loop params configurable via
+  N/A — Gas City wisp GC only deletes closed molecules past TTL. No
+  auto-close decisions in Go.
+- [x] **977953d8** — Witness handlers report data, don't make policy decisions.
+  Done in Section 6d.
+- [x] **3bf979db** — Remove hardcoded role names from witness error messages.
+  Done in Section 6d.
+- [-] **383945fb** — Remove boot triage decision engine from Go.
+  N/A — Gas City reconciler is purely mechanical. Triage is data collection;
+  all decisions driven by config (`max_restarts`, `restart_window`,
+  `idle_timeout`) and agent requests.
+- [x] **89ccc218** — Doctor dog: advisory recommendations, not automated actions.
+  Done in Section 8a.
+- [-] **eb530d85** — Restart tracker crash-loop params configurable via
   `patrols.restart_tracker`.
-- **Action:** Ensure all moved decisions are reflected in role prompts.
-  Verify no hardcoded role names in examples/gastown.
+  N/A — Gas City's `[daemon]` config has `max_restarts` and `restart_window`
+  fully configurable since inception. Crash tracker disabled if max_restarts ≤ 0.
+- **Remaining:** `roleEmoji` map in `tmux.go` is a display-only hardcode
+  (see 12a — deferred, low priority).
 
 ---
 
@@ -363,11 +386,18 @@ Go code making decisions that belong in prompts — moved to prompts.
 ## 13. New Formulas (from batch 3)
 
 - [ ] 9 new formula files identified: idea-to-plan pipeline + dog formulas.
+  Dog formulas done (Section 8). Idea-to-plan pipeline blocked on Section 1
+  (persistent polecat pool changes dispatch model).
 - [ ] Witness behavioral fixes: persistent polecat model, swim lane rule.
+  Blocked on Section 1 (persistent polecat pool).
 - [ ] Polecat persist-findings.
+  Blocked on Sections 1/2 (polecat lifecycle).
 - [ ] Settings: `skipDangerousModePermissionPrompt`.
+  Add to overlay settings.json files.
 - [ ] Dangerous-command guard hooks.
-- **Action:** Review each formula for relevance to examples/gastown topology.
+  Add pre-tool hooks to overlay files.
+- **Action:** Items 1-3 unblock after Sections 1/2. Items 4-5 are
+  independent overlay additions.
 
 ---
 
@@ -375,12 +405,12 @@ Go code making decisions that belong in prompts — moved to prompts.
 
 1. [ ] **Persistent Polecat Pool** (Section 1) — foundational, affects everything
 2. [ ] **Polecat Work Formula v7** (Section 2) — directly updates a key formula
-3. [ ] **Communication Hygiene** (Section 3) — affects all role prompts
+3. [x] **Communication Hygiene** (Section 3) — nudge-first in global fragment + role-specific rules
 4. [x] **Batch-then-Bisect MQ** (Section 4) — refinery formula rewrite
 5. [x] **Witness Patrol** (Section 6) — many behavioral changes
-6. [ ] **Prompt Updates** (Section 9) — role-by-role prompt updates
-7. [ ] **ZFC Fixes** (Section 11) — ensure no Go-level decisions leak in
+6. [x] **Prompt Updates** (Section 9) — wake/sleep, identity, triage, paths
+7. [x] **ZFC Fixes** (Section 11) — all clean, Gas City designed ZFC-first
 8. [x] **Infrastructure Dogs** (Section 8) — new formulas + dolt-health extraction + fallback agents
 9. [x] **Config/Operational** (Section 12) — SDK-level features
-10. [ ] **Formula System** (Section 10) — new capabilities
-11. [ ] Remaining sections (5, 7, 13) as needed
+10. [-] **Formula System** (Section 10) — N/A, designed minimal-first
+11. [ ] Remaining sections (5, 7, 13) — 5+7 done; 13 blocked on S1/S2

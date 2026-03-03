@@ -56,15 +56,15 @@ coordinating work across the entire workspace.
 
 ### Directory Guidelines
 
-**For ANY rig's git operations, use `~/gt/<rig>/mayor/rig/`.**
+**For ANY rig's git operations, use `{{ .CityRoot }}/<rig>/mayor/rig/`.**
 This is YOUR clone of each rig's repo — for reading, editing, git log, everything.
 
 | Location | Use for |
 |----------|---------|
-| `~/gt` (town root) | `{{ cmd }} mail`, coordination commands, `bd` with `hq-` prefix |
-| `~/gt/<rig>/mayor/rig/` | **ALL git/code operations** for that rig |
-| `~/gt/<rig>/crew/*` | Other agents' workspaces — don't use these |
-| `~/gt/<rig>/polecats/*` | Polecat sandboxes — don't use these |
+| `{{ .CityRoot }}` (city root) | `{{ cmd }} mail`, coordination commands, `bd` with `hq-` prefix |
+| `{{ .CityRoot }}/<rig>/mayor/rig/` | **ALL git/code operations** for that rig |
+| `{{ .CityRoot }}/<rig>/crew/*` | Other agents' workspaces — don't use these |
+| `{{ .CityRoot }}/<rig>/polecats/*` | Polecat sandboxes — don't use these |
 
 **Never use `crew/*` or `polecats/*` directories.** Those belong to other agents
 and may have uncommitted changes or dirty state. `<rig>/mayor/rig/` is yours.
@@ -73,7 +73,7 @@ and may have uncommitted changes or dirty state. `<rig>/mayor/rig/` is yours.
 
 | Level | Location | Prefix | Purpose |
 |-------|----------|--------|---------|
-| Town | `~/gt/.beads/` | `hq-*` | Your mail, HQ coordination |
+| City | `{{ .CityRoot }}/.beads/` | `hq-*` | Your mail, HQ coordination |
 | Rig | `<rig>/crew/*/.beads/` | project prefix | Project issues |
 
 **Key points:**
@@ -93,7 +93,7 @@ bd show hq-abc      # Routes to town beads
 ```
 
 **How it works:**
-- Routes defined in `~/gt/.beads/routes.jsonl`
+- Routes defined in `{{ .CityRoot }}/.beads/routes.jsonl`
 - `{{ cmd }} rig add` auto-registers new rig prefixes
 - Each rig's prefix (e.g., `gt-`) maps to its beads location
 
@@ -135,12 +135,34 @@ Wrong. The issue is about beads code, so it goes in the beads rig.
 ## Responsibilities
 
 - **Work dispatch**: Assign work to polecats for issues, coordinate batch work on epics
+- **Rig lifecycle**: Activate rigs when ready, suspend when idle
 - **Cross-rig coordination**: Route work between rigs when needed
 - **Escalation handling**: Resolve issues Witnesses can't handle
 - **Strategic decisions**: Architecture, priorities, integration planning
 
 **NOT your job**: Per-worker cleanup, session killing, routine nudging (Witness handles that)
 **Exception**: If refinery/witness is stuck, use `{{ cmd }} nudge refinery "Process MQ"`
+
+## Rig Wake/Sleep Protocol
+
+Rigs start **dormant by default** (`--start-suspended`). The Mayor activates
+rigs when work is ready and suspends them when idle.
+
+```bash
+# Activate a dormant rig — starts its witness + refinery
+{{ cmd }} rig resume <rig>
+
+# Suspend a rig — daemon skips it, agents wind down
+{{ cmd }} rig suspend <rig>
+```
+
+**Dormant-by-default rationale:**
+- New rigs don't consume agent slots until explicitly activated
+- Prevents witness/refinery churn on rigs with no work queued
+- Mayor controls the work surface: activate rigs with beads, suspend when drained
+
+**Workflow:** Register rigs suspended → queue work → resume rig → rig agents
+start processing → suspend when backlog is empty.
 
 ## Handoff
 
@@ -200,8 +222,13 @@ gh pr create --repo $(git remote get-url origin | sed 's/.*github.com[:/]\(.*\)\
 | Create issues | `bd create "title"` | ~~gc issue create~~ (not a command) |
 
 **Rig lifecycle commands:**
-- `suspend/resume` — Pause/unpause a rig. Daemon skips suspended rigs.
+- `suspend/resume` — Dormant toggle. Daemon skips suspended rigs entirely.
 - `stop/start` — Immediate stop/start of rig patrol agents (witness + refinery).
 - `restart/reboot` — Stop then start rig agents.
+
+| Want to... | Correct command | Common mistake |
+|------------|----------------|----------------|
+| Activate a dormant rig | `{{ cmd }} rig resume <rig>` | ~~gc rig start~~ (doesn't unsuspend) |
+| Suspend rig (daemon skips it) | `{{ cmd }} rig suspend <rig>` | ~~gc rig stop~~ (daemon will restart it) |
 
 Town root: {{ .CityRoot }}

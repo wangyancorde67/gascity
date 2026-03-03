@@ -12,7 +12,7 @@ Your branch-setup step creates a git worktree and records it in `metadata.worktr
 on your work bead. Once created, **stay in your worktree.**
 
 - **ALL file edits** must be within your worktree directory
-- **NEVER edit files in** `~/gt/{{ .RigName }}/` (rig root) — that's not a git working tree
+- **NEVER edit files in** `{{ .CityRoot }}/{{ .RigName }}/` (rig root) — that's not a git working tree
 
 The failure mode: You `cd` to the rig root, edit files there. **YOUR WORK IS LOST** — the
 rig root has no `.git`, so your edits were never committed.
@@ -155,31 +155,19 @@ After escalating: continue if possible, otherwise `bd update <bead> --status=esc
 ## Communication
 
 ```bash
-gc mail send {{ .RigName }}/witness -s "Question" -m "..."
-gc mail send {{ .RigName }}/refinery -s "Merge question" -m "..."
-gc mail send mayor/ -s "Need coordination" -m "..."
+gc nudge {{ .RigName }}/witness "Quick question about bead status"   # Default: nudge
+gc mail send {{ .RigName }}/witness -s "HELP: Blocked on X" -m "..."  # Escalation: mail
+gc mail send mayor/ -s "BLOCKED: Need coordination" -m "..."          # Cross-rig: mail
 ```
 
-### Communication Hygiene
+### Polecat Communication Rules
 
-**Polecats should almost NEVER send mail.** Your mail budget is 0-1 messages per session.
+**Your mail budget is 0-1 messages per session.**
 
 - **Escalation**: Mail to witness as HELP — this is the ONE allowed mail use
-- **Everything else**: Use `gc nudge` — it's ephemeral and creates zero Dolt overhead
-- **Completion**: The done sequence handles notification automatically — do NOT mail "I'm done"
+- **Everything else**: Use `gc nudge` — ephemeral, zero Dolt overhead
+- **Completion**: The done sequence handles notification — do NOT mail "I'm done"
 - **Status updates**: If asked for status, respond via nudge, not mail
-
-Every `gc mail send` creates a permanent bead with a Dolt commit. Nudges are free.
-
-### Dolt Health: Your Part
-
-Dolt is git, not Postgres. Every `bd create`, `bd update`, `gc mail send` generates
-a permanent Dolt commit. You contribute to Dolt health by:
-
-- **Nudge, don't mail.** `gc nudge` costs zero. `gc mail send` costs 1 commit forever.
-  Only mail when the message must survive session death (HELP to witness).
-- **Don't create unnecessary beads.** File real work, not scratchpads.
-- **Close your beads.** Open beads that linger become pollution.
 
 ### Nudge Resilience
 
