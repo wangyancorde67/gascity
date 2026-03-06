@@ -26,7 +26,7 @@ segments to show (0 = all). Use -f to follow new messages as they arrive.`,
 		Example: `  gc agent logs mayor
   gc agent logs mayor --tail 0
   gc agent logs myrig/polecat-1 -f`,
-		Args: cobra.ArbitraryArgs,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if cmdAgentLogs(args, follow, tail, stdout, stderr) != 0 {
 				return errExit
@@ -41,10 +41,6 @@ segments to show (0 = all). Use -f to follow new messages as they arrive.`,
 
 // cmdAgentLogs is the CLI entry point for viewing agent session logs.
 func cmdAgentLogs(args []string, follow bool, tail int, stdout, stderr io.Writer) int {
-	if len(args) < 1 {
-		fmt.Fprintln(stderr, "gc agent logs: missing agent name") //nolint:errcheck // best-effort stderr
-		return 1
-	}
 	agentName := args[0]
 
 	cityPath, err := resolveCity()
@@ -97,6 +93,11 @@ func resolveAgentWorkDir(a config.Agent, cfg *config.City, cityPath string) stri
 // doAgentLogs reads the session file and prints messages. If follow is true,
 // it polls for new messages every 2 seconds.
 func doAgentLogs(path string, follow bool, tail int, stdout, stderr io.Writer) int {
+	if tail < 0 {
+		fmt.Fprintln(stderr, "gc agent logs: --tail must be >= 0") //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
 	sess, err := sessionlog.ReadFile(path, tail)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc agent logs: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -114,14 +115,23 @@ func doAgentLogs(path string, follow bool, tail int, stdout, stderr io.Writer) i
 	}
 
 	// Follow mode: poll every 2 seconds for new messages.
+	// Use tail=0 (all) for re-reads so compaction boundaries don't cause
+	// missed messages. The seen map prevents re-printing.
+	const maxConsecErrors = 5
+	consecErrors := 0
 	for {
 		time.Sleep(2 * time.Second)
 
-		sess, err = sessionlog.ReadFile(path, tail)
+		sess, err = sessionlog.ReadFile(path, 0)
 		if err != nil {
-			// File might be temporarily unavailable during writes; skip.
+			consecErrors++
+			if consecErrors >= maxConsecErrors {
+				fmt.Fprintf(stderr, "gc agent logs: %d consecutive read errors, last: %v\n", consecErrors, err) //nolint:errcheck // best-effort stderr
+				return 1
+			}
 			continue
 		}
+		consecErrors = 0
 
 		for _, msg := range sess.Messages {
 			if seen[msg.UUID] {

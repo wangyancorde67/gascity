@@ -129,6 +129,69 @@ func TestDoAgentLogsToolUse(t *testing.T) {
 	}
 }
 
+func TestDoAgentLogsStringEncodedMessage(t *testing.T) {
+	searchBase := t.TempDir()
+	workDir := t.TempDir()
+
+	// Message content is a JSON-encoded string (double-escaped), as some
+	// Claude JSONL files produce.
+	writeTestSession(t, searchBase, workDir,
+		`{"uuid":"1","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"string encoded\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+	)
+
+	path := sessionlog.FindSessionFile([]string{searchBase}, workDir)
+	if path == "" {
+		t.Fatal("session file not found")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doAgentLogs(path, false, 0, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "string encoded") {
+		t.Errorf("output should contain string-encoded message content, got: %s", out)
+	}
+}
+
+func TestDoAgentLogsToolResultError(t *testing.T) {
+	searchBase := t.TempDir()
+	workDir := t.TempDir()
+
+	writeTestSession(t, searchBase, workDir,
+		`{"uuid":"1","parentUuid":"","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"permission denied"}]},"timestamp":"2025-01-01T00:00:00Z"}`,
+	)
+
+	path := sessionlog.FindSessionFile([]string{searchBase}, workDir)
+	if path == "" {
+		t.Fatal("session file not found")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doAgentLogs(path, false, 0, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "tool_result: error") {
+		t.Errorf("output should contain tool_result error, got: %s", out)
+	}
+}
+
+func TestDoAgentLogsNegativeTail(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := doAgentLogs("/nonexistent", false, -1, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1 for negative tail", code)
+	}
+	if !strings.Contains(stderr.String(), "--tail must be >= 0") {
+		t.Errorf("stderr should mention invalid tail, got: %s", stderr.String())
+	}
+}
+
 func TestPrintLogEntryTimestamp(t *testing.T) {
 	searchBase := t.TempDir()
 	workDir := t.TempDir()
