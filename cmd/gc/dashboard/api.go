@@ -1462,7 +1462,8 @@ func (h *APIHandler) handleCrewAPI(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// hasQuestionInOutput checks recent agent output for question indicators.
+// hasQuestionInOutput checks recent assistant output for question indicators.
+// Only checks assistant turns to avoid false positives from user prompts.
 func (h *APIHandler) hasQuestionInOutput(agentName string) bool {
 	body, err := h.apiGet("/v0/agent/" + agentName + "/output")
 	if err != nil {
@@ -1470,6 +1471,7 @@ func (h *APIHandler) hasQuestionInOutput(agentName string) bool {
 	}
 	var outputResp struct {
 		Turns []struct {
+			Role string `json:"role"`
 			Text string `json:"text"`
 		} `json:"turns"`
 	}
@@ -1477,19 +1479,19 @@ func (h *APIHandler) hasQuestionInOutput(agentName string) bool {
 		return false
 	}
 
-	// Check text from the last few turns for question indicators.
-	start := 0
-	if len(outputResp.Turns) > 3 {
-		start = len(outputResp.Turns) - 3
+	// Find the last assistant turn.
+	var lastAssistantText string
+	for i := len(outputResp.Turns) - 1; i >= 0; i-- {
+		if outputResp.Turns[i].Role == "assistant" {
+			lastAssistantText = strings.ToLower(outputResp.Turns[i].Text)
+			break
+		}
 	}
-	var texts []string
-	for _, t := range outputResp.Turns[start:] {
-		texts = append(texts, t.Text)
+	if lastAssistantText == "" {
+		return false
 	}
-	lastText := strings.ToLower(strings.Join(texts, "\n"))
 
 	for _, indicator := range []string{
-		"?",
 		"what do you think",
 		"should i",
 		"would you like",
@@ -1499,7 +1501,7 @@ func (h *APIHandler) hasQuestionInOutput(agentName string) bool {
 		"your thoughts",
 		"let me know",
 	} {
-		if strings.Contains(lastText, indicator) {
+		if strings.Contains(lastAssistantText, indicator) {
 			return true
 		}
 	}

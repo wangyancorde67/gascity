@@ -187,8 +187,12 @@ func entryToTurn(e *sessionlog.Entry) outputTurn {
 					parts = append(parts, "["+b.Name+"]")
 				}
 			case "tool_result":
-				if b.Text != "" {
-					parts = append(parts, b.Text)
+				text := extractToolResultText(b.Content)
+				if text != "" {
+					if len(text) > 500 {
+						text = text[:500] + "…"
+					}
+					parts = append(parts, "[result] "+text)
 				}
 			case "thinking":
 				// Redact thinking blocks — internal model reasoning
@@ -204,6 +208,32 @@ func entryToTurn(e *sessionlog.Entry) outputTurn {
 	// containing JSON. Unwrap and try again.
 	turn.Text = unwrapDoubleEncoded(e.Message)
 	return turn
+}
+
+// extractToolResultText extracts human-readable text from a tool_result
+// Content field (json.RawMessage). The content can be a plain string or
+// an array of content blocks (e.g., [{type:"text", text:"..."}]).
+func extractToolResultText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	// Try plain string.
+	var s string
+	if json.Unmarshal(raw, &s) == nil && s != "" {
+		return s
+	}
+	// Try array of content blocks.
+	var blocks []sessionlog.ContentBlock
+	if json.Unmarshal(raw, &blocks) == nil {
+		var parts []string
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return ""
 }
 
 // outputStreamPollInterval controls how often the stream checks for new output.
@@ -282,17 +312,18 @@ func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, na
 		if err != nil {
 			return
 		}
-		if info.Size() == lastSize {
+		currentSize := info.Size()
+		if currentSize == lastSize {
 			return // file hasn't grown
 		}
-		lastSize = info.Size()
 
 		// Use tail=1 (last compaction segment) to limit parsing scope.
 		// For streaming, we only care about recent activity.
 		sess, err := sessionlog.ReadFile(logPath, 1)
 		if err != nil {
-			return
+			return // don't update lastSize — retry on next poll
 		}
+		lastSize = currentSize
 
 		turns := make([]outputTurn, 0, len(sess.Messages))
 		uuids := make([]string, 0, len(sess.Messages))
