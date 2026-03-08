@@ -222,11 +222,21 @@ func (g *Git) AheadBehindCtx(ctx context.Context) (ahead, behind int, err error)
 // so subprocess git commands use the intended workDir, not a parent repo.
 // This prevents leakage from pre-commit hooks or other git tooling.
 var gitEnvBlacklist = map[string]bool{
+	"GIT_COMMON_DIR":                   true,
+	"GIT_CONFIG":                       true,
+	"GIT_CONFIG_COUNT":                 true,
+	"GIT_CONFIG_PARAMETERS":            true,
 	"GIT_DIR":                          true,
+	"GIT_GRAFT_FILE":                   true,
+	"GIT_IMPLICIT_WORK_TREE":           true,
 	"GIT_WORK_TREE":                    true,
 	"GIT_INDEX_FILE":                   true,
 	"GIT_OBJECT_DIRECTORY":             true,
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+	"GIT_NO_REPLACE_OBJECTS":           true,
+	"GIT_PREFIX":                       true,
+	"GIT_REPLACE_REF_BASE":             true,
+	"GIT_SHALLOW_FILE":                 true,
 }
 
 // run executes a git command in the working directory. Git environment

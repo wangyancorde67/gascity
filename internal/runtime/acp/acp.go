@@ -58,7 +58,10 @@ type Provider struct {
 }
 
 // Compile-time check.
-var _ runtime.Provider = (*Provider)(nil)
+var (
+	_ runtime.Provider            = (*Provider)(nil)
+	_ runtime.InteractionProvider = (*Provider)(nil)
+)
 
 // NewProvider returns an ACP [Provider] that stores socket files in
 // a default temporary directory.
@@ -490,6 +493,20 @@ func (p *Provider) Nudge(name, message string) error {
 	}()
 
 	return nil
+}
+
+// Pending reports structured pending interactions. ACP only tracks whether an
+// outbound prompt is in flight; that busy state is not a user-facing blocking
+// interaction, so the provider intentionally reports this capability as
+// unsupported.
+func (p *Provider) Pending(_ string) (*runtime.PendingInteraction, error) {
+	return nil, runtime.ErrInteractionUnsupported
+}
+
+// Respond resolves a pending structured interaction. ACP does not currently
+// expose those interactions over the protocol, so responses are unsupported.
+func (p *Provider) Respond(_ string, _ runtime.InteractionResponse) error {
+	return runtime.ErrInteractionUnsupported
 }
 
 // SendKeys is a no-op for ACP sessions (no terminal).

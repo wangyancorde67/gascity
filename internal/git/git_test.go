@@ -27,9 +27,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 	cmd.Dir = dir
 	for _, e := range os.Environ() {
 		k, _, _ := strings.Cut(e, "=")
-		switch k {
-		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
-			"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES":
+		if gitEnvBlacklist[k] {
 			continue
 		}
 		cmd.Env = append(cmd.Env, e)
@@ -48,6 +46,7 @@ func TestIsRepo(t *testing.T) {
 	}
 
 	notRepo := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(notRepo))
 	g2 := New(notRepo)
 	if g2.IsRepo() {
 		t.Error("IsRepo() = true for non-repo, want false")

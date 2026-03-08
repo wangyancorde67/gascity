@@ -25,8 +25,10 @@ type Provider struct {
 	routes map[string]bool // true = ACP
 }
 
-var _ runtime.Provider = (*Provider)(nil)
-var _ runtime.InteractionProvider = (*Provider)(nil)
+var (
+	_ runtime.Provider            = (*Provider)(nil)
+	_ runtime.InteractionProvider = (*Provider)(nil)
+)
 
 // New creates a composite provider. defaultSP handles sessions not
 // registered as ACP. acpSP handles sessions registered via RouteACP.

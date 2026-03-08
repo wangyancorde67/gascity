@@ -17,8 +17,10 @@ type Provider struct {
 	isRemote func(name string) bool
 }
 
-var _ runtime.Provider = (*Provider)(nil)
-var _ runtime.InteractionProvider = (*Provider)(nil)
+var (
+	_ runtime.Provider            = (*Provider)(nil)
+	_ runtime.InteractionProvider = (*Provider)(nil)
+)
 
 // New creates a hybrid provider. isRemote returns true for sessions
 // that should be managed by the remote provider.

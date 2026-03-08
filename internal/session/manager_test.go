@@ -11,6 +11,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/runtime"
+	sessionauto "github.com/gastownhall/gascity/internal/runtime/auto"
 	"github.com/gastownhall/gascity/internal/sessionlog"
 )
 
@@ -72,6 +73,25 @@ func TestCreate(t *testing.T) {
 	}
 	if !hasLabel {
 		t.Errorf("bead missing label %q", LabelSession)
+	}
+}
+
+func TestCreateRoutesACPSessionsThroughAutoProvider(t *testing.T) {
+	store := beads.NewMemStore()
+	defaultSP := runtime.NewFake()
+	acpSP := runtime.NewFake()
+	mgr := NewManager(store, sessionauto.New(defaultSP, acpSP))
+
+	info, err := mgr.Create(context.Background(), "helper", "acp chat", "claude", "/tmp", "acp", nil, ProviderResume{}, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if defaultSP.IsRunning(info.SessionName) {
+		t.Fatalf("default backend should not own ACP session %q", info.SessionName)
+	}
+	if !acpSP.IsRunning(info.SessionName) {
+		t.Fatalf("ACP backend should own session %q", info.SessionName)
 	}
 }
 

@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -558,6 +559,17 @@ func TestSendKeysAndRunLive_NoOp(t *testing.T) {
 	}
 	if err := p.RunLive("any", runtime.Config{}); err != nil {
 		t.Errorf("RunLive: %v", err)
+	}
+}
+
+func TestPendingAndRespondUnsupported(t *testing.T) {
+	p := newTestProvider(t)
+
+	if _, err := p.Pending("any"); !errors.Is(err, runtime.ErrInteractionUnsupported) {
+		t.Fatalf("Pending error = %v, want ErrInteractionUnsupported", err)
+	}
+	if err := p.Respond("any", runtime.InteractionResponse{Action: "approve"}); !errors.Is(err, runtime.ErrInteractionUnsupported) {
+		t.Fatalf("Respond error = %v, want ErrInteractionUnsupported", err)
 	}
 }
 
