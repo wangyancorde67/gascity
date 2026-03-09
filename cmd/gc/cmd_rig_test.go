@@ -138,6 +138,44 @@ func TestDoRigAdd_IdempotentSameNameSamePath(t *testing.T) {
 	}
 }
 
+func TestDoRigAdd_ReAddWarnsDifferingFlags(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	rigPath := filepath.Join(t.TempDir(), "my-frontend")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Existing rig is NOT suspended.
+	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agents]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\n"
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GC_DOLT", "skip")
+	t.Setenv("GC_BEADS", "file")
+
+	// Re-add with --start-suspended=true (differs from existing).
+	var stdout, stderr bytes.Buffer
+	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "packs/new", true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doRigAdd should succeed, got code %d, stderr: %s", code, stderr.String())
+	}
+	errMsg := stderr.String()
+	if !strings.Contains(errMsg, "warning") {
+		t.Errorf("stderr should warn about flag mismatch: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "--start-suspended") {
+		t.Errorf("stderr should mention --start-suspended: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "--include") {
+		t.Errorf("stderr should mention --include: %s", errMsg)
+	}
+}
+
 func TestDoRigAdd_NotADirectory(t *testing.T) {
 	cityPath := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {

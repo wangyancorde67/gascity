@@ -40,7 +40,7 @@ import (
 // ensure-ready → init+hooks(city) → init+hooks(each rig) → regenerate routes.
 // Called by gc start and controller config reload. Rigs must have absolute
 // paths before calling (resolve relative paths first).
-func startBeadsLifecycle(cityPath, cityName string, cfg *config.City, _ io.Writer) error {
+func startBeadsLifecycle(cityPath, cityName string, cfg *config.City, stderr io.Writer) error {
 	if err := ensureBeadsProvider(cityPath); err != nil {
 		return fmt.Errorf("bead store: %w", err)
 	}
@@ -55,11 +55,15 @@ func startBeadsLifecycle(cityPath, cityName string, cfg *config.City, _ io.Write
 		}
 	}
 	// Install agent hooks (Claude, Gemini, etc.) for city and all rigs.
-	// Idempotent — safe to run on every start.
+	// Idempotent — safe to run on every start. Non-fatal but logged.
 	if ih := cfg.Workspace.InstallAgentHooks; len(ih) > 0 {
-		_ = hooks.Install(fsys.OSFS{}, cityPath, cityPath, ih)
+		if err := hooks.Install(fsys.OSFS{}, cityPath, cityPath, ih); err != nil {
+			fmt.Fprintf(stderr, "gc start: installing agent hooks for city: %v\n", err) //nolint:errcheck // best-effort stderr
+		}
 		for i := range cfg.Rigs {
-			_ = hooks.Install(fsys.OSFS{}, cityPath, cfg.Rigs[i].Path, ih)
+			if err := hooks.Install(fsys.OSFS{}, cityPath, cfg.Rigs[i].Path, ih); err != nil {
+				fmt.Fprintf(stderr, "gc start: installing agent hooks for rig %q: %v\n", cfg.Rigs[i].Name, err) //nolint:errcheck // best-effort stderr
+			}
 		}
 	}
 	// Regenerate routes for cross-rig routing.

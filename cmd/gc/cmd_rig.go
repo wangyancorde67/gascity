@@ -146,14 +146,20 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include string, startSuspended bool
 
 	// Check for existing rig with same name.
 	var reAdd bool
-	for _, r := range cfg.Rigs {
+	var existingRig *config.Rig
+	for i, r := range cfg.Rigs {
 		if r.Name == name {
-			if filepath.Clean(r.Path) != filepath.Clean(rigPath) {
+			existPath := r.Path
+			if !filepath.IsAbs(existPath) {
+				existPath = filepath.Join(cityPath, existPath)
+			}
+			if filepath.Clean(existPath) != filepath.Clean(rigPath) {
 				fmt.Fprintf(stderr, "gc rig add: rig %q already registered at %s (not %s)\n", //nolint:errcheck // best-effort stderr
 					name, r.Path, rigPath)
 				return 1
 			}
 			reAdd = true
+			existingRig = &cfg.Rigs[i]
 			break
 		}
 	}
@@ -166,6 +172,15 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include string, startSuspended bool
 	w := func(s string) { fmt.Fprintln(stdout, s) } //nolint:errcheck // best-effort stdout
 	if reAdd {
 		w(fmt.Sprintf("Re-initializing rig '%s'...", name))
+		// Warn if provided flags differ from existing config.
+		if startSuspended != existingRig.Suspended {
+			fmt.Fprintf(stderr, "gc rig add: warning: --start-suspended=%v ignored (existing: suspended=%v); edit city.toml to change\n", //nolint:errcheck // best-effort stderr
+				startSuspended, existingRig.Suspended)
+		}
+		if include != "" && (len(existingRig.Includes) == 0 || existingRig.Includes[0] != include) {
+			fmt.Fprintf(stderr, "gc rig add: warning: --include=%s ignored (existing: %v); edit city.toml to change\n", //nolint:errcheck // best-effort stderr
+				include, existingRig.Includes)
+		}
 	} else {
 		w(fmt.Sprintf("Adding rig '%s'...", name))
 	}
