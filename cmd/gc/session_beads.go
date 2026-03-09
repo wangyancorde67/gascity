@@ -20,10 +20,16 @@ import (
 // consolidates the old "gc:agent_session" and session manager's "gc:session"
 // into a single label. New beads are created with this label; legacy beads
 // are still readable via loadSessionBeads.
+//
+// Migration: this is a one-way upgrade. Stores written by Phase 2+ binaries
+// use "gc:session"; older binaries only query "gc:agent_session" and will
+// miss new beads. Mixed-version operation (old daemon + new CLI or vice
+// versa) is not supported — upgrade all binaries together.
 const sessionBeadLabel = "gc:session"
 
 // legacySessionBeadLabel is the old label used by syncSessionBeads before
 // Phase 2 label unification. Retained for reading legacy beads only.
+// Read paths query both labels; write paths use sessionBeadLabel exclusively.
 const legacySessionBeadLabel = "gc:agent_session"
 
 // sessionBeadType is the bead type for session beads.

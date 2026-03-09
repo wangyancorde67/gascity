@@ -556,6 +556,79 @@ func TestDiscoverSessionBeads_SkipsNoTemplate(t *testing.T) {
 	}
 }
 
+func TestFindSessionNameByTemplate_MultipleBeadsSameTemplate(t *testing.T) {
+	store := beads.NewMemStore()
+
+	// Create two open beads for the same template.
+	_, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   "session",
+		Labels: []string{"gc:session", "template:worker"},
+		Metadata: map[string]string{
+			"template":     "worker",
+			"session_name": "s-gc-first",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   "session",
+		Labels: []string{"gc:session", "template:worker"},
+		Metadata: map[string]string{
+			"template":     "worker",
+			"session_name": "s-gc-second",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should return one of them (non-deterministic, but non-empty).
+	got := findSessionNameByTemplate(store, "worker")
+	if got == "" {
+		t.Error("findSessionNameByTemplate with two beads returned empty, want non-empty")
+	}
+	if got != "s-gc-first" && got != "s-gc-second" {
+		t.Errorf("findSessionNameByTemplate returned %q, want s-gc-first or s-gc-second", got)
+	}
+}
+
+func TestDiscoverSessionBeads_RigQualifiedTemplate(t *testing.T) {
+	store := beads.NewMemStore()
+
+	// Create a bead with a rig-qualified template (as cmdSessionNew now stores).
+	_, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   "session",
+		Labels: []string{sessionBeadLabel, "template:myrig/worker"},
+		Metadata: map[string]string{
+			"template":     "myrig/worker",
+			"session_name": "s-gc-300",
+			"state":        "creating",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", Dir: "myrig"},
+		},
+	}
+	sp := runtime.NewFake()
+	bp := newAgentBuildParams("test", t.TempDir(), cfg, sp, time.Now(), store, io.Discard)
+
+	desired := make(map[string]TemplateParams)
+	discoverSessionBeads(bp, cfg, store, desired, io.Discard)
+
+	if _, ok := desired["s-gc-300"]; !ok {
+		t.Errorf("expected rig-qualified bead session s-gc-300 in desired state, got keys: %v", mapKeys(desired))
+	}
+}
+
 func mapKeys(m map[string]TemplateParams) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

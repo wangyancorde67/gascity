@@ -21,6 +21,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// indefiniteHoldDuration is the canonical "suspended indefinitely" sentinel
+// used when setting held_until on a session bead. The reconciler treats any
+// held_until in the future as "do not wake." 100 years is effectively forever
+// without risking time arithmetic overflow.
+const indefiniteHoldDuration = 100 * 365 * 24 * time.Hour
+
 func newSessionCmd(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "session",
@@ -128,10 +134,14 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 	// Build the work directory.
 	workDir := resolveWorkDir(cityPath, &found)
 
+	// Store the canonical qualified name so the reconciler can match it
+	// via findAgentByTemplate (which compares against QualifiedName()).
+	canonicalTemplate := found.QualifiedName()
+
 	// Try reconciler-first path: create bead, poke controller.
 	if pokeErr := pokeController(cityPath); pokeErr == nil {
 		// Controller is running — create bead only, let reconciler start it.
-		info, err := mgr.CreateBeadOnly(templateName, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, session.ProviderResume{
+		info, err := mgr.CreateBeadOnly(canonicalTemplate, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, session.ProviderResume{
 			ResumeFlag:    resolved.ResumeFlag,
 			ResumeStyle:   resolved.ResumeStyle,
 			SessionIDFlag: resolved.SessionIDFlag,
@@ -144,7 +154,7 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 		// Poke again after bead creation to trigger immediate reconciler tick.
 		_ = pokeController(cityPath)
 
-		fmt.Fprintf(stdout, "Session %s created from template %q (reconciler will start it).\n", info.ID, templateName) //nolint:errcheck // best-effort stdout
+		fmt.Fprintf(stdout, "Session %s created from template %q (reconciler will start it).\n", info.ID, canonicalTemplate) //nolint:errcheck // best-effort stdout
 
 		if !shouldAttachNewSession(noAttach, found.Session) {
 			if found.Session == "acp" && !noAttach {
@@ -155,7 +165,7 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 
 		// Wait for the reconciler to start the session before attaching.
 		fmt.Fprintln(stdout, "Waiting for session to start...") //nolint:errcheck // best-effort stdout
-		if waitErr := waitForSession(sp, info.SessionName, 30*time.Second); waitErr != nil {
+		if waitErr := waitForSession(sp, info.SessionName, 30*time.Second, store, info.ID, stderr); waitErr != nil {
 			fmt.Fprintf(stderr, "gc session new: %v\n", waitErr) //nolint:errcheck // best-effort stderr
 			return 1
 		}
@@ -180,14 +190,13 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 		SessionIDFlag: resolved.SessionIDFlag,
 	}
 
-	templateQN := found.QualifiedName()
-	info, err := mgr.CreateWithTransport(context.Background(), templateQN, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, resume, hints)
+	info, err := mgr.CreateWithTransport(context.Background(), canonicalTemplate, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, resume, hints)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "Session %s created from template %q.\n", info.ID, templateQN) //nolint:errcheck // best-effort stdout
+	fmt.Fprintf(stdout, "Session %s created from template %q.\n", info.ID, canonicalTemplate) //nolint:errcheck // best-effort stdout
 
 	if !shouldAttachNewSession(noAttach, found.Session) {
 		if found.Session == "acp" && !noAttach {
@@ -218,15 +227,31 @@ func resolveSessionTemplate(cfg *config.City, input, currentRigDir string) (conf
 }
 
 // waitForSession polls the provider until the session is running or timeout.
-func waitForSession(sp runtime.Provider, sessionName string, timeout time.Duration) error {
+// If a bead store is provided, it checks for early failure (bead transitioned
+// to "closed" state) and logs progress every 5 seconds.
+func waitForSession(sp runtime.Provider, sessionName string, timeout time.Duration, store beads.Store, beadID string, stderr io.Writer) error {
 	deadline := time.Now().Add(timeout)
+	lastProgress := time.Now()
 	for time.Now().Before(deadline) {
 		if sp.IsRunning(sessionName) {
 			return nil
 		}
+		// Check for early failure: bead closed or stuck in creating.
+		if store != nil && beadID != "" {
+			if b, err := store.Get(beadID); err == nil {
+				if b.Status == "closed" {
+					return fmt.Errorf("session %q failed to start (bead %s closed)", sessionName, beadID)
+				}
+			}
+		}
+		// Log progress every 5 seconds.
+		if time.Since(lastProgress) >= 5*time.Second {
+			fmt.Fprintf(stderr, "  still waiting for session %q...\n", sessionName) //nolint:errcheck
+			lastProgress = time.Now()
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return fmt.Errorf("session %q did not start within %s", sessionName, timeout)
+	return fmt.Errorf("session %q did not start within %s (bead %s may be stuck in creating state — check controller logs)", sessionName, timeout, beadID)
 }
 
 // newSessionListCmd creates the "gc session list" command.
@@ -526,7 +551,7 @@ func cmdSessionSuspend(args []string, stdout, stderr io.Writer) int {
 		if pokeErr := pokeController(cityPath); pokeErr == nil {
 			// Controller is running — metadata-only suspend.
 			// Set held_until far in the future so the reconciler drains/stops the session.
-			heldUntil := time.Now().Add(100 * 365 * 24 * time.Hour).UTC().Format(time.RFC3339)
+			heldUntil := time.Now().Add(indefiniteHoldDuration).UTC().Format(time.RFC3339)
 			if err := store.SetMetadataBatch(sessionID, map[string]string{
 				"held_until": heldUntil,
 				"state":      "suspended",

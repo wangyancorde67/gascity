@@ -183,6 +183,7 @@ func discoverSessionBeads(
 	}
 	all, err := store.ListByLabel(sessionBeadLabel, 0)
 	if err != nil {
+		fmt.Fprintf(stderr, "buildDesiredState: listing session beads: %v\n", err) //nolint:errcheck
 		return
 	}
 	for _, b := range all {
