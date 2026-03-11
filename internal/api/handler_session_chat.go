@@ -122,22 +122,44 @@ func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvid
 
 func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config) {
 	cmd := session.BuildResumeCommand(info)
-	resolved, workDir, _, _, err := s.resolveSessionTemplate(info.Template)
+
+	// Check persisted kind to avoid agent/provider name collisions.
+	// If kind is "provider", skip the agent template lookup entirely.
+	kind := s.sessionKind(info.ID)
+
+	if kind != "provider" {
+		resolved, workDir, _, _, err := s.resolveSessionTemplate(info.Template)
+		if err == nil {
+			if info.WorkDir != "" {
+				workDir = info.WorkDir
+			}
+			return cmd, sessionResumeHints(resolved, workDir)
+		}
+	}
+
+	// Provider path (explicit kind=provider, or agent template not found).
+	resolved, err := s.resolveBareProvider(info.Template)
 	if err != nil {
-		// Template not found as agent — try as bare provider so that
-		// provider-kind sessions still get env/ready hints on resume.
-		resolved, err = s.resolveBareProvider(info.Template)
-		if err != nil {
-			return cmd, runtime.Config{WorkDir: info.WorkDir}
-		}
-		workDir = info.WorkDir
-		if workDir == "" {
-			workDir = s.state.CityPath()
-		}
-	} else if info.WorkDir != "" {
-		workDir = info.WorkDir
+		return cmd, runtime.Config{WorkDir: info.WorkDir}
+	}
+	workDir := info.WorkDir
+	if workDir == "" {
+		workDir = s.state.CityPath()
 	}
 	return cmd, sessionResumeHints(resolved, workDir)
+}
+
+// sessionKind reads the persisted mc_session_kind from bead metadata.
+func (s *Server) sessionKind(sessionID string) string {
+	store := s.state.CityBeadStore()
+	if store == nil {
+		return ""
+	}
+	b, err := store.Get(sessionID)
+	if err != nil {
+		return ""
+	}
+	return b.Metadata["mc_session_kind"]
 }
 
 // resolveBareProvider resolves a provider by name without an agent template.
@@ -1079,6 +1101,10 @@ func (s *Server) streamSessionPeek(ctx context.Context, w http.ResponseWriter, i
 func shellJoinArgs(args []string) string {
 	var parts []string
 	for _, a := range args {
+		if a == "" {
+			parts = append(parts, "''")
+			continue
+		}
 		if strings.ContainsAny(a, " \t\n\"'\\|&;$!(){}[]<>?*~#`") {
 			a = "'" + strings.ReplaceAll(a, "'", "'\"'\"'") + "'"
 		}

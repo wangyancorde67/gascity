@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -145,4 +146,36 @@ func TestResolveOptions_NilSchema(t *testing.T) {
 	}
 	_ = args
 	_ = meta
+}
+
+func TestValidateOptionsSchema_ValidDefaults(t *testing.T) {
+	schema := []ProviderOption{
+		{Key: "mode", Default: "a", Choices: []OptionChoice{{Value: "a"}, {Value: "b"}}},
+		{Key: "empty", Default: "", Choices: []OptionChoice{{Value: ""}}},
+	}
+	if err := ValidateOptionsSchema(schema); err != nil {
+		t.Fatalf("valid schema should pass: %v", err)
+	}
+}
+
+func TestValidateOptionsSchema_InvalidDefault(t *testing.T) {
+	schema := []ProviderOption{
+		{Key: "mode", Default: "missing", Choices: []OptionChoice{{Value: "a"}}},
+	}
+	err := ValidateOptionsSchema(schema)
+	if err == nil {
+		t.Fatal("expected error for invalid default")
+	}
+	if !strings.Contains(err.Error(), "not a valid choice") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateOptionsSchema_NoDefault(t *testing.T) {
+	schema := []ProviderOption{
+		{Key: "mode", Default: "", Choices: []OptionChoice{{Value: "a"}}},
+	}
+	if err := ValidateOptionsSchema(schema); err != nil {
+		t.Fatalf("empty default should pass: %v", err)
+	}
 }

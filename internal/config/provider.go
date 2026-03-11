@@ -14,9 +14,12 @@ type ProviderOption struct {
 
 // OptionChoice is one allowed value for a "select" option.
 type OptionChoice struct {
-	Value    string   `toml:"value"     json:"value"`
-	Label    string   `toml:"label"     json:"label"`
-	FlagArgs []string `toml:"flag_args" json:"-"` // CLI args injected when chosen (server-only)
+	Value string `toml:"value"     json:"value"`
+	Label string `toml:"label"     json:"label"`
+	// FlagArgs are the CLI arguments injected when this choice is selected.
+	// json:"-" is intentional: FlagArgs must never appear in the public API DTO
+	// (security boundary — prevents clients from seeing internal CLI flags).
+	FlagArgs []string `toml:"flag_args" json:"-"`
 }
 
 // ProviderSpec defines a named provider's startup parameters.

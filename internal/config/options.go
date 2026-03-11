@@ -2,6 +2,17 @@ package config
 
 import "fmt"
 
+// ValidateOptionsSchema checks that every option default resolves to a declared choice.
+// Call at config load time to catch misconfigured providers early.
+func ValidateOptionsSchema(schema []ProviderOption) error {
+	for _, opt := range schema {
+		if opt.Default != "" && findChoice(opt.Choices, opt.Default) == nil {
+			return fmt.Errorf("option %q: default %q is not a valid choice", opt.Key, opt.Default)
+		}
+	}
+	return nil
+}
+
 // ResolveOptions validates user-specified options against a provider's schema
 // and produces extra CLI args to inject into the command. Options not specified
 // by the user have their schema defaults applied. Returns the extra args and

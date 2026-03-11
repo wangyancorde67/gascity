@@ -4,6 +4,8 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"os/exec"
+	"sync"
 	"time"
 )
 
@@ -20,6 +22,42 @@ type Server struct {
 
 	// idem caches responses for Idempotency-Key replay on create endpoints.
 	idem *idempotencyCache
+
+	// lookPathCache caches exec.LookPath results with a short TTL to avoid
+	// repeated filesystem scans on every GET /v0/agents request.
+	lookPathMu      sync.Mutex
+	lookPathEntries map[string]lookPathEntry
+
+	// LookPathFunc can be overridden in tests. Defaults to exec.LookPath.
+	LookPathFunc func(string) (string, error)
+}
+
+type lookPathEntry struct {
+	found   bool
+	expires time.Time
+}
+
+// cachedLookPath checks if a binary is in PATH, caching the result for lookPathCacheTTL.
+func (s *Server) cachedLookPath(binary string) bool {
+	s.lookPathMu.Lock()
+	defer s.lookPathMu.Unlock()
+
+	if s.lookPathEntries == nil {
+		s.lookPathEntries = make(map[string]lookPathEntry)
+	}
+
+	if e, ok := s.lookPathEntries[binary]; ok && time.Now().Before(e.expires) {
+		return e.found
+	}
+
+	lookPath := s.LookPathFunc
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	_, err := lookPath(binary)
+	found := err == nil
+	s.lookPathEntries[binary] = lookPathEntry{found: found, expires: time.Now().Add(lookPathCacheTTL)}
+	return found
 }
 
 // New creates a Server with all routes registered. Does not start listening.

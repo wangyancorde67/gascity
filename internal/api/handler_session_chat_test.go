@@ -13,7 +13,7 @@ func TestShellJoinArgs(t *testing.T) {
 		{"two clean args", []string{"--model", "opus"}, "--model opus"},
 		{"arg with space", []string{"hello world"}, "'hello world'"},
 		{"arg with single quote", []string{"it's"}, "'it'\"'\"'s'"},
-		{"empty string arg", []string{""}, ""},
+		{"empty string arg", []string{""}, "''"},
 		{"mixed clean and dirty", []string{"--flag", "value with space", "--other"}, "--flag 'value with space' --other"},
 		{"arg with special chars", []string{"$(whoami)"}, "'$(whoami)'"},
 		{"arg with semicolon", []string{"foo;bar"}, "'foo;bar'"},
