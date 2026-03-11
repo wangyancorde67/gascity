@@ -46,6 +46,10 @@
           "type": "string",
           "description": "Name is the unique identifier for this agent."
         },
+        "description": {
+          "type": "string",
+          "description": "Description is a human-readable description shown in MC's session creation UI."
+        },
         "dir": {
           "type": "string",
           "description": "Dir is the working directory for the agent session."
@@ -974,6 +978,31 @@
       "type": "object",
       "description": "MailConfig holds mail provider settings."
     },
+    "OptionChoice": {
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "flag_args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "CLI args injected when chosen (server-only)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "value",
+        "label",
+        "flag_args"
+      ],
+      "description": "OptionChoice is one allowed value for a \"select\" option."
+    },
     "PackSource": {
       "properties": {
         "source": {
@@ -1093,6 +1122,39 @@
       "additionalProperties": false,
       "type": "object",
       "description": "PoolOverride modifies pool configuration fields."
+    },
+    "ProviderOption": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "description": "\"select\" only (v1)"
+        },
+        "default": {
+          "type": "string"
+        },
+        "choices": {
+          "items": {
+            "$ref": "#/$defs/OptionChoice"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "key",
+        "label",
+        "type",
+        "default",
+        "choices"
+      ],
+      "description": "ProviderOption declares a single configurable option for a provider."
     },
     "ProviderPatch": {
       "properties": {
@@ -1247,6 +1309,13 @@
           },
           "type": "object",
           "description": "PermissionModes maps permission mode names to CLI flags.\nExample: {\"unrestricted\": \"--dangerously-skip-permissions\", \"plan\": \"--permission-mode plan\"}\nThis is a config-only lookup table consumed by external clients (e.g., Mission Control)\nto populate permission mode dropdowns. Launch-time flag substitution is planned\nfor a follow-up PR — currently no runtime code reads this field."
+        },
+        "options_schema": {
+          "items": {
+            "$ref": "#/$defs/ProviderOption"
+          },
+          "type": "array",
+          "description": "OptionsSchema declares the configurable options this provider supports.\nEach option maps to CLI args via its Choices[].FlagArgs field.\nSerialized via a dedicated DTO (not directly to JSON) so FlagArgs stays server-side."
         }
       },
       "additionalProperties": false,

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
@@ -21,7 +22,18 @@ import (
 var errSessionTemplateNotFound = errors.New("session template not found")
 
 type sessionCreateRequest struct {
-	Template string `json:"template"`
+	// Kind discriminates the session target: "agent" or "provider".
+	// When empty and Template is set, backward-compat mode: try agent, then provider.
+	Kind    string            `json:"kind,omitempty"`
+	Name    string            `json:"name,omitempty"`
+	Message string            `json:"message,omitempty"`
+	Options map[string]string `json:"options,omitempty"`
+	// ProjectID is an opaque identifier for the MC project context.
+	// Stored in bead metadata for session-to-project association.
+	ProjectID string `json:"project_id,omitempty"`
+
+	// Legacy field — used when Kind is empty for backward compatibility.
+	Template string `json:"template,omitempty"`
 	Title    string `json:"title,omitempty"`
 }
 
@@ -153,8 +165,21 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid", err.Error())
 		return
 	}
-	if body.Template == "" {
-		writeError(w, http.StatusBadRequest, "invalid", "template is required")
+
+	// Normalize: support both new (kind+name) and legacy (template) fields.
+	kind := body.Kind
+	name := body.Name
+	if kind == "" && body.Template != "" {
+		// Legacy mode: try agent first, fall back to provider.
+		kind = "agent"
+		name = body.Template
+	}
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "invalid", "name (or template) is required")
+		return
+	}
+	if kind != "agent" && kind != "provider" {
+		writeError(w, http.StatusBadRequest, "invalid_kind", "kind must be 'agent' or 'provider'")
 		return
 	}
 
@@ -167,14 +192,37 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resolved, workDir, transport, template, err := s.resolveSessionTemplate(body.Template)
-	if err != nil {
-		s.idem.unreserve(idemKey)
-		if errors.Is(err, errSessionTemplateNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "template "+body.Template+" not found")
+	var resolved *config.ResolvedProvider
+	var workDir, transport, template string
+	var extraArgs []string
+	var optMeta map[string]string
+
+	switch kind {
+	case "agent":
+		var err error
+		resolved, workDir, transport, template, err = s.resolveSessionTemplate(name)
+		if err != nil {
+			s.idem.unreserve(idemKey)
+			if errors.Is(err, errSessionTemplateNotFound) {
+				// Legacy fallback: if kind was inferred from template field, try as provider.
+				if body.Kind == "" && body.Template != "" {
+					s.createProviderSession(w, r, store, body, name, idemKey, bodyHash)
+					return
+				}
+				writeError(w, http.StatusNotFound, "agent_not_found", "agent '"+name+"' not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		// Agent track: resolve schema defaults for CLI args (options from request are ignored).
+		if len(resolved.OptionsSchema) > 0 {
+			defaultArgs, _, _ := config.ResolveOptions(resolved.OptionsSchema, nil)
+			extraArgs = defaultArgs
+		}
+
+	case "provider":
+		s.createProviderSession(w, r, store, body, name, idemKey, bodyHash)
 		return
 	}
 
@@ -189,14 +237,19 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		SessionIDFlag: resolved.SessionIDFlag,
 	}
 
-	mgr := s.sessionManager(store)
+	// Merge extra args from options into the command string.
+	command := resolved.CommandString()
+	if len(extraArgs) > 0 {
+		command = command + " " + strings.Join(extraArgs, " ")
+	}
 
+	mgr := s.sessionManager(store)
 	hints := sessionCreateHints(resolved)
 	info, err := mgr.CreateWithTransport(
 		r.Context(),
 		template,
 		title,
-		resolved.CommandString(),
+		command,
 		workDir,
 		resolved.Name,
 		transport,
@@ -210,10 +263,128 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist option metadata and project_id on the bead.
+	s.persistSessionMeta(store, info.ID, body.ProjectID, optMeta)
+
+	// Deliver initial message if provided.
+	if msg := strings.TrimSpace(body.Message); msg != "" {
+		resumeCommand, nudgeHints := s.buildSessionResume(info)
+		_ = mgr.Send(r.Context(), info.ID, msg, resumeCommand, nudgeHints)
+	}
+
 	resp := sessionToResponse(info, s.state.Config())
 	s.enrichSessionResponse(&resp, info, s.state.Config(), s.state.SessionProvider(), false)
 	s.idem.storeResponse(idemKey, bodyHash, http.StatusCreated, resp)
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// createProviderSession handles the "provider" kind session creation.
+// Resolves a bare provider (not an agent template) and creates a session.
+func (s *Server) createProviderSession(w http.ResponseWriter, r *http.Request, store beads.Store, body sessionCreateRequest, providerName, idemKey, bodyHash string) {
+	cfg := s.state.Config()
+	resolved, err := config.ResolveProvider(
+		&config.Agent{Provider: providerName},
+		&cfg.Workspace,
+		cfg.Providers,
+		exec.LookPath,
+	)
+	if err != nil {
+		s.idem.unreserve(idemKey)
+		if strings.Contains(err.Error(), "not found in PATH") {
+			writeError(w, http.StatusServiceUnavailable, "provider_unavailable", err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "unknown provider") {
+			writeError(w, http.StatusNotFound, "provider_not_found", "provider '"+providerName+"' not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+
+	// Resolve options against the provider's schema.
+	var extraArgs []string
+	var optMeta map[string]string
+	if len(resolved.OptionsSchema) > 0 {
+		var optErr error
+		extraArgs, optMeta, optErr = config.ResolveOptions(resolved.OptionsSchema, body.Options)
+		if optErr != nil {
+			s.idem.unreserve(idemKey)
+			if strings.Contains(optErr.Error(), "unknown option") {
+				writeError(w, http.StatusBadRequest, "unknown_option", optErr.Error())
+				return
+			}
+			writeError(w, http.StatusBadRequest, "invalid_option_value", optErr.Error())
+			return
+		}
+	}
+
+	template := providerName
+	title := body.Title
+	if title == "" {
+		title = resolved.Name
+	}
+
+	workDir := s.state.CityPath()
+
+	resume := session.ProviderResume{
+		ResumeFlag:    resolved.ResumeFlag,
+		ResumeStyle:   resolved.ResumeStyle,
+		SessionIDFlag: resolved.SessionIDFlag,
+	}
+
+	command := resolved.CommandString()
+	if len(extraArgs) > 0 {
+		command = command + " " + strings.Join(extraArgs, " ")
+	}
+
+	mgr := s.sessionManager(store)
+	hints := sessionCreateHints(resolved)
+	info, err := mgr.CreateWithTransport(
+		r.Context(),
+		template,
+		title,
+		command,
+		workDir,
+		resolved.Name,
+		"", // no transport override for bare provider
+		resolved.Env,
+		resume,
+		hints,
+	)
+	if err != nil {
+		s.idem.unreserve(idemKey)
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+
+	// Persist option metadata and project_id on the bead.
+	s.persistSessionMeta(store, info.ID, body.ProjectID, optMeta)
+
+	// Deliver initial message if provided.
+	if msg := strings.TrimSpace(body.Message); msg != "" {
+		resumeCommand, nudgeHints := s.buildSessionResume(info)
+		_ = mgr.Send(r.Context(), info.ID, msg, resumeCommand, nudgeHints)
+	}
+
+	resp := sessionToResponse(info, s.state.Config())
+	s.enrichSessionResponse(&resp, info, s.state.Config(), s.state.SessionProvider(), false)
+	s.idem.storeResponse(idemKey, bodyHash, http.StatusCreated, resp)
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+// persistSessionMeta writes option metadata and project_id to the session bead.
+func (s *Server) persistSessionMeta(store beads.Store, sessionID, projectID string, optMeta map[string]string) {
+	batch := make(map[string]string)
+	for k, v := range optMeta {
+		batch[k] = v
+	}
+	if projectID != "" {
+		batch["mc_project_id"] = projectID
+	}
+	if len(batch) > 0 {
+		_ = store.SetMetadataBatch(sessionID, batch)
+	}
 }
 
 func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request) {

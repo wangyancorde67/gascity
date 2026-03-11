@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,25 +14,25 @@ import (
 )
 
 type agentResponse struct {
-	Name       string       `json:"name"`
-	Running    bool         `json:"running"`
-	Suspended  bool         `json:"suspended"`
-	Rig        string       `json:"rig,omitempty"`
-	Pool       string       `json:"pool,omitempty"`
-	Session    *sessionInfo `json:"session,omitempty"`
-	ActiveBead string       `json:"active_bead,omitempty"`
+	Name        string       `json:"name"`
+	Description string       `json:"description,omitempty"`
+	Running     bool         `json:"running"`
+	Suspended   bool         `json:"suspended"`
+	Rig         string       `json:"rig,omitempty"`
+	Pool        string       `json:"pool,omitempty"`
+	Session     *sessionInfo `json:"session,omitempty"`
+	ActiveBead  string       `json:"active_bead,omitempty"`
 
-	// Gap 1: identity
 	Provider    string `json:"provider,omitempty"`
 	DisplayName string `json:"display_name,omitempty"`
 
-	// Gap 2: state
 	State string `json:"state"`
 
-	// Gap 5: peek preview
+	Available         bool   `json:"available"`
+	UnavailableReason string `json:"unavailable_reason,omitempty"`
+
 	LastOutput string `json:"last_output,omitempty"`
 
-	// Gap 9: model + context
 	Model         string `json:"model,omitempty"`
 	ContextPct    *int   `json:"context_pct,omitempty"`
 	ContextWindow *int   `json:"context_window,omitempty"`
@@ -91,14 +92,30 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 			// Resolve provider and display name.
 			provider, displayName := resolveProviderInfo(ea.provider, cfg)
 
+			// Determine availability by checking if provider binary is in PATH.
+			available := true
+			var unavailableReason string
+			if suspended {
+				available = false
+				unavailableReason = "agent is suspended"
+			} else if provider != "" {
+				if _, lookErr := exec.LookPath(providerPathCheck(provider, cfg)); lookErr != nil {
+					available = false
+					unavailableReason = "provider '" + provider + "' not found in PATH"
+				}
+			}
+
 			resp := agentResponse{
-				Name:        ea.qualifiedName,
-				Running:     running,
-				Suspended:   suspended,
-				Rig:         ea.rig,
-				Pool:        ea.pool,
-				Provider:    provider,
-				DisplayName: displayName,
+				Name:              ea.qualifiedName,
+				Description:       ea.description,
+				Running:           running,
+				Suspended:         suspended,
+				Rig:               ea.rig,
+				Pool:              ea.pool,
+				Provider:          provider,
+				DisplayName:       displayName,
+				Available:         available,
+				UnavailableReason: unavailableReason,
 			}
 
 			var lastActivity *time.Time
@@ -184,13 +201,29 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	// Resolve provider and display name.
 	provider, displayName := resolveProviderInfo(agentCfg.Provider, cfg)
 
+	// Determine availability.
+	available := true
+	var unavailableReason string
+	if suspended {
+		available = false
+		unavailableReason = "agent is suspended"
+	} else if provider != "" {
+		if _, lookErr := exec.LookPath(providerPathCheck(provider, cfg)); lookErr != nil {
+			available = false
+			unavailableReason = "provider '" + provider + "' not found in PATH"
+		}
+	}
+
 	resp := agentResponse{
-		Name:        name,
-		Running:     running,
-		Suspended:   suspended,
-		Rig:         agentCfg.Dir,
-		Provider:    provider,
-		DisplayName: displayName,
+		Name:              name,
+		Description:       agentCfg.Description,
+		Running:           running,
+		Suspended:         suspended,
+		Rig:               agentCfg.Dir,
+		Provider:          provider,
+		DisplayName:       displayName,
+		Available:         available,
+		UnavailableReason: unavailableReason,
 	}
 	if agentCfg.IsPool() {
 		resp.Pool = agentCfg.QualifiedName()
@@ -279,6 +312,7 @@ type expandedAgent struct {
 	pool          string
 	suspended     bool
 	provider      string
+	description   string
 }
 
 // expandAgent expands a config.Agent into its effective runtime agents.
@@ -292,6 +326,7 @@ func expandAgent(a config.Agent, cityName, sessTmpl string, sp sessionLister) []
 			rig:           a.Dir,
 			suspended:     a.Suspended,
 			provider:      a.Provider,
+			description:   a.Description,
 		}}
 	}
 
@@ -444,6 +479,26 @@ func (s *Server) findActiveBead(agentName, rig string) string {
 		}
 	}
 	return ""
+}
+
+// providerPathCheck returns the binary name to check for PATH availability.
+// Uses the provider's PathCheck field if set (e.g., "claude" for the sh -c wrapper),
+// otherwise falls back to the provider's Command.
+func providerPathCheck(providerName string, cfg *config.City) string {
+	if spec, ok := cfg.Providers[providerName]; ok {
+		if spec.PathCheck != "" {
+			return spec.PathCheck
+		}
+		return spec.Command
+	}
+	builtins := config.BuiltinProviders()
+	if spec, ok := builtins[providerName]; ok {
+		if spec.PathCheck != "" {
+			return spec.PathCheck
+		}
+		return spec.Command
+	}
+	return providerName
 }
 
 // resolveProviderInfo resolves the provider name and display name for an agent.

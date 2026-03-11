@@ -20,6 +20,28 @@ type providerResponse struct {
 	CityLevel    bool              `json:"city_level"`
 }
 
+// providerPublicResponse is the browser-safe DTO. No command, args, env, or flag details.
+type providerPublicResponse struct {
+	Name          string              `json:"name"`
+	DisplayName   string              `json:"display_name,omitempty"`
+	Builtin       bool                `json:"builtin"`
+	CityLevel     bool                `json:"city_level"`
+	OptionsSchema []providerOptionDTO `json:"options_schema,omitempty"`
+}
+
+type providerOptionDTO struct {
+	Key     string            `json:"key"`
+	Label   string            `json:"label"`
+	Type    string            `json:"type"`
+	Default string            `json:"default"`
+	Choices []optionChoiceDTO `json:"choices"`
+}
+
+type optionChoiceDTO struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
 func providerFromSpec(name string, spec config.ProviderSpec, builtin, cityLevel bool) providerResponse {
 	return providerResponse{
 		Name:         name,
@@ -35,15 +57,67 @@ func providerFromSpec(name string, spec config.ProviderSpec, builtin, cityLevel 
 	}
 }
 
-func (s *Server) handleProviderList(w http.ResponseWriter, _ *http.Request) {
+func providerPublicFromSpec(name string, spec config.ProviderSpec, builtin, cityLevel bool) providerPublicResponse {
+	resp := providerPublicResponse{
+		Name:        name,
+		DisplayName: spec.DisplayName,
+		Builtin:     builtin,
+		CityLevel:   cityLevel,
+	}
+	if len(spec.OptionsSchema) > 0 {
+		resp.OptionsSchema = make([]providerOptionDTO, len(spec.OptionsSchema))
+		for i, opt := range spec.OptionsSchema {
+			choices := make([]optionChoiceDTO, len(opt.Choices))
+			for j, c := range opt.Choices {
+				choices[j] = optionChoiceDTO{Value: c.Value, Label: c.Label}
+			}
+			resp.OptionsSchema[i] = providerOptionDTO{
+				Key:     opt.Key,
+				Label:   opt.Label,
+				Type:    opt.Type,
+				Default: opt.Default,
+				Choices: choices,
+			}
+		}
+	}
+	return resp
+}
+
+func (s *Server) handleProviderList(w http.ResponseWriter, r *http.Request) {
 	cfg := s.state.Config()
 	builtins := config.BuiltinProviders()
 	builtinOrder := config.BuiltinProviderOrder()
+	isPublic := r.URL.Query().Get("view") == "public"
 
 	// Collect all providers: city-level overrides + builtins.
 	seen := make(map[string]bool)
-	var providers []providerResponse
 
+	if isPublic {
+		var providers []providerPublicResponse
+		// City-level providers first (sorted alphabetically).
+		var cityNames []string
+		for name := range cfg.Providers {
+			cityNames = append(cityNames, name)
+		}
+		sort.Strings(cityNames)
+		for _, name := range cityNames {
+			spec := cfg.Providers[name]
+			_, isBuiltin := builtins[name]
+			providers = append(providers, providerPublicFromSpec(name, spec, isBuiltin, true))
+			seen[name] = true
+		}
+		// Builtins not overridden by city-level (in canonical order).
+		for _, name := range builtinOrder {
+			if seen[name] {
+				continue
+			}
+			providers = append(providers, providerPublicFromSpec(name, builtins[name], true, false))
+		}
+		writeListJSON(w, s.latestIndex(), providers, len(providers))
+		return
+	}
+
+	var providers []providerResponse
 	// City-level providers first (sorted alphabetically).
 	var cityNames []string
 	for name := range cfg.Providers {

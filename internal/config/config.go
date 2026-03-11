@@ -968,6 +968,8 @@ func (p PoolConfig) IsMultiInstance() bool { return p.Max > 1 || p.Max < 0 }
 type Agent struct {
 	// Name is the unique identifier for this agent.
 	Name string `toml:"name" jsonschema:"required"`
+	// Description is a human-readable description shown in MC's session creation UI.
+	Description string `toml:"description,omitempty"`
 	// Dir is the working directory for the agent session.
 	Dir string `toml:"dir,omitempty"`
 	// Scope defines where this agent is instantiated: "city" (one per city)

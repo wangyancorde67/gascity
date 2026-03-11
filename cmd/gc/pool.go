@@ -128,6 +128,7 @@ func resolveSetupScript(script, cityPath string) string {
 func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
 	dst := config.Agent{
 		Name:                name,
+		Description:         src.Description,
 		Dir:                 dir,
 		Scope:               src.Scope,
 		Session:             src.Session,

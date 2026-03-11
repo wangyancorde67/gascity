@@ -131,6 +131,7 @@ func specToResolved(name string, spec *ProviderSpec) *ResolvedProvider {
 		ResumeFlag:             spec.ResumeFlag,
 		ResumeStyle:            spec.ResumeStyle,
 		SessionIDFlag:          spec.SessionIDFlag,
+		OptionsSchema:          spec.OptionsSchema,
 	}
 	// Default InstructionsFile to "AGENTS.md" if unset.
 	if rp.InstructionsFile == "" {

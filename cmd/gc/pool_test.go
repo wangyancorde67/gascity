@@ -352,6 +352,7 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 	intVal := 42
 	src := config.Agent{
 		Name:                   "original",
+		Description:            "test agent description",
 		Dir:                    "original-dir",
 		Scope:                  "city",
 		Suspended:              true,

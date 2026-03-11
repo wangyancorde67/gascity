@@ -2,6 +2,23 @@ package config
 
 import "strings"
 
+// ProviderOption declares a single configurable option for a provider.
+// Options are rendered as UI controls in Mission Control's session creation form.
+type ProviderOption struct {
+	Key     string         `toml:"key"     json:"key"`
+	Label   string         `toml:"label"   json:"label"`
+	Type    string         `toml:"type"    json:"type"` // "select" only (v1)
+	Default string         `toml:"default" json:"default"`
+	Choices []OptionChoice `toml:"choices" json:"choices"`
+}
+
+// OptionChoice is one allowed value for a "select" option.
+type OptionChoice struct {
+	Value    string   `toml:"value"     json:"value"`
+	Label    string   `toml:"label"     json:"label"`
+	FlagArgs []string `toml:"flag_args" json:"-"` // CLI args injected when chosen (server-only)
+}
+
 // ProviderSpec defines a named provider's startup parameters.
 // Built-in presets are returned by BuiltinProviders(). Users can override
 // or define new providers via [providers.xxx] in city.toml.
@@ -60,6 +77,10 @@ type ProviderSpec struct {
 	// to populate permission mode dropdowns. Launch-time flag substitution is planned
 	// for a follow-up PR — currently no runtime code reads this field.
 	PermissionModes map[string]string `toml:"permission_modes,omitempty"`
+	// OptionsSchema declares the configurable options this provider supports.
+	// Each option maps to CLI args via its Choices[].FlagArgs field.
+	// Serialized via a dedicated DTO (not directly to JSON) so FlagArgs stays server-side.
+	OptionsSchema []ProviderOption `toml:"options_schema,omitempty" json:"-"`
 }
 
 // ResolvedProvider is the fully-merged, ready-to-use provider config.
@@ -82,6 +103,7 @@ type ResolvedProvider struct {
 	ResumeStyle            string
 	SessionIDFlag          string
 	PermissionModes        map[string]string
+	OptionsSchema          []ProviderOption
 }
 
 // CommandString returns the full command line: command followed by args.
@@ -144,6 +166,38 @@ func BuiltinProviders() map[string]ProviderSpec {
 				"auto-edit":    "--permission-mode auto-edit",
 				"full-auto":    "--permission-mode full-auto",
 			},
+			OptionsSchema: []ProviderOption{
+				{
+					Key: "permission_mode", Label: "Permission Mode", Type: "select",
+					Default: "auto-edit",
+					Choices: []OptionChoice{
+						{Value: "auto-edit", Label: "Edit automatically", FlagArgs: []string{"--permission-mode", "auto-edit"}},
+						{Value: "full-auto", Label: "Full auto", FlagArgs: []string{"--permission-mode", "full-auto"}},
+						{Value: "plan", Label: "Plan mode", FlagArgs: []string{"--permission-mode", "plan"}},
+						{Value: "unrestricted", Label: "Bypass permissions", FlagArgs: []string{"--dangerously-skip-permissions"}},
+					},
+				},
+				{
+					Key: "thinking", Label: "Thinking", Type: "select",
+					Default: "",
+					Choices: []OptionChoice{
+						{Value: "", Label: "Default", FlagArgs: nil},
+						{Value: "off", Label: "Off", FlagArgs: []string{"--thinking", "off"}},
+						{Value: "high", Label: "High", FlagArgs: []string{"--thinking", "high"}},
+						{Value: "max", Label: "Max", FlagArgs: []string{"--thinking", "max"}},
+					},
+				},
+				{
+					Key: "model", Label: "Model", Type: "select",
+					Default: "",
+					Choices: []OptionChoice{
+						{Value: "", Label: "Default", FlagArgs: nil},
+						{Value: "opus", Label: "Opus", FlagArgs: []string{"--model", "claude-opus-4-6"}},
+						{Value: "sonnet", Label: "Sonnet", FlagArgs: []string{"--model", "claude-sonnet-4-6"}},
+						{Value: "haiku", Label: "Haiku", FlagArgs: []string{"--model", "claude-haiku-4-5-20251001"}},
+					},
+				},
+			},
 		},
 		"codex": {
 			DisplayName:      "Codex CLI",
@@ -155,6 +209,17 @@ func BuiltinProviders() map[string]ProviderSpec {
 			InstructionsFile: "AGENTS.md",
 			PermissionModes: map[string]string{
 				"unrestricted": "--dangerously-bypass-approvals-and-sandbox",
+			},
+			OptionsSchema: []ProviderOption{
+				{
+					Key: "model", Label: "Model", Type: "select",
+					Default: "",
+					Choices: []OptionChoice{
+						{Value: "", Label: "Default", FlagArgs: nil},
+						{Value: "o3", Label: "o3", FlagArgs: []string{"--model", "o3"}},
+						{Value: "o4-mini", Label: "o4-mini", FlagArgs: []string{"--model", "o4-mini"}},
+					},
+				},
 			},
 		},
 		"gemini": {
@@ -168,6 +233,17 @@ func BuiltinProviders() map[string]ProviderSpec {
 			InstructionsFile: "AGENTS.md",
 			PermissionModes: map[string]string{
 				"unrestricted": "--approval-mode yolo",
+			},
+			OptionsSchema: []ProviderOption{
+				{
+					Key: "model", Label: "Model", Type: "select",
+					Default: "",
+					Choices: []OptionChoice{
+						{Value: "", Label: "Default", FlagArgs: nil},
+						{Value: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", FlagArgs: []string{"--model", "gemini-2.5-pro"}},
+						{Value: "gemini-2.5-flash", Label: "Gemini 2.5 Flash", FlagArgs: []string{"--model", "gemini-2.5-flash"}},
+					},
+				},
 			},
 		},
 		"cursor": {

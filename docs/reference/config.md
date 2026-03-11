@@ -56,6 +56,7 @@ Agent defines a configured agent in the city.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | **yes** |  | Name is the unique identifier for this agent. |
+| `description` | string |  |  | Description is a human-readable description shown in MC's session creation UI. |
 | `dir` | string |  |  | Dir is the working directory for the agent session. |
 | `scope` | string |  |  | Scope defines where this agent is instantiated: "city" (one per city) or "rig" (one per rig, the default). Only meaningful for pack-defined agents; inline agents in city.toml use Dir directly. When set, replaces the older city_agents list mechanism. Enum: `city`, `rig` |
 | `suspended` | boolean |  |  | Suspended prevents the reconciler from spawning this agent. Toggle with gc agent suspend/resume. |
@@ -291,6 +292,16 @@ MailConfig holds mail provider settings.
 |-------|------|----------|---------|-------------|
 | `provider` | string |  |  | Provider selects the mail backend: "fake", "fail", "exec:<script>", or "" (default: beadmail). |
 
+## OptionChoice
+
+OptionChoice is one allowed value for a "select" option.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `value` | string | **yes** |  |  |
+| `label` | string | **yes** |  |  |
+| `flag_args` | []string | **yes** |  | CLI args injected when chosen (server-only) |
+
 ## PackSource
 
 PackSource defines a remote pack repository.
@@ -337,6 +348,18 @@ PoolOverride modifies pool configuration fields.
 | `on_death` | string |  |  | OnDeath overrides the on_death command. |
 | `on_boot` | string |  |  | OnBoot overrides the on_boot command. |
 
+## ProviderOption
+
+ProviderOption declares a single configurable option for a provider.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `key` | string | **yes** |  |  |
+| `label` | string | **yes** |  |  |
+| `type` | string | **yes** |  | "select" only (v1) |
+| `default` | string | **yes** |  |  |
+| `choices` | []OptionChoice | **yes** |  |  |
+
 ## ProviderPatch
 
 ProviderPatch modifies an existing provider identified by Name.
@@ -377,6 +400,7 @@ ProviderSpec defines a named provider's startup parameters.
 | `resume_style` | string |  |  | ResumeStyle controls how ResumeFlag is applied:   "flag"       → command --resume <key>              (default)   "subcommand" → command resume <key> |
 | `session_id_flag` | string |  |  | SessionIDFlag is the CLI flag for creating a session with a specific ID. Enables the Generate & Pass strategy for session key management. Example: "--session-id" (claude) |
 | `permission_modes` | map[string]string |  |  | PermissionModes maps permission mode names to CLI flags. Example: {"unrestricted": "--dangerously-skip-permissions", "plan": "--permission-mode plan"} This is a config-only lookup table consumed by external clients (e.g., Mission Control) to populate permission mode dropdowns. Launch-time flag substitution is planned for a follow-up PR — currently no runtime code reads this field. |
+| `options_schema` | []ProviderOption |  |  | OptionsSchema declares the configurable options this provider supports. Each option maps to CLI args via its Choices[].FlagArgs field. Serialized via a dedicated DTO (not directly to JSON) so FlagArgs stays server-side. |
 
 ## Rig
 
