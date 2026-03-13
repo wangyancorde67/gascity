@@ -66,6 +66,9 @@ func TestInstallClaude(t *testing.T) {
 	if !strings.Contains(s, "gc prime") {
 		t.Error("claude settings should contain gc prime")
 	}
+	if !strings.Contains(s, "gc nudge drain --inject") {
+		t.Error("claude settings should contain gc nudge drain --inject")
+	}
 	if !strings.Contains(s, `"skipDangerousModePermissionPrompt": true`) {
 		t.Error("claude settings should contain skipDangerousModePermissionPrompt")
 	}
@@ -152,6 +155,9 @@ func TestInstallCopilot(t *testing.T) {
 	if !strings.Contains(s, "gc mail check --inject") {
 		t.Error("copilot hooks should contain gc mail check --inject")
 	}
+	if !strings.Contains(s, "gc nudge drain --inject") {
+		t.Error("copilot hooks should contain gc nudge drain --inject")
+	}
 	if !strings.Contains(s, "gc hook --inject") {
 		t.Error("copilot hooks should contain gc hook --inject")
 	}
@@ -226,6 +232,9 @@ func TestInstallCursor(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "gc mail check --inject") {
 		t.Error("cursor hooks should contain gc mail check --inject")
+	}
+	if !strings.Contains(string(data), "gc nudge drain --inject") {
+		t.Error("cursor hooks should contain gc nudge drain --inject")
 	}
 }
 

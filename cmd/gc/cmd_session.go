@@ -18,7 +18,6 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
-	"github.com/gastownhall/gascity/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -855,7 +854,8 @@ func cmdSessionKill(args []string, stdout, stderr io.Writer) int {
 
 // newSessionNudgeCmd creates the "gc session nudge <id-or-name> <message>" command.
 func newSessionNudgeCmd(stdout, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
+	var delivery string
+	cmd := &cobra.Command{
 		Use:   "nudge <agent-name> <message...>",
 		Short: "Send a text message to a running agent session",
 		Long: `Send text input to a running agent session via the runtime provider.
@@ -867,16 +867,23 @@ Resolves the agent name from city.toml configuration to find the
 corresponding tmux session. Multi-word messages are joined automatically.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdSessionNudge(args, stdout, stderr) != 0 {
+			mode, err := parseNudgeDeliveryMode(delivery)
+			if err != nil {
+				fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
+				return errExit
+			}
+			if cmdSessionNudge(args, mode, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&delivery, "delivery", string(nudgeDeliveryImmediate), "delivery mode: immediate, wait-idle, or queue")
+	return cmd
 }
 
 // cmdSessionNudge is the CLI entry point for "gc session nudge".
-func cmdSessionNudge(args []string, stdout, stderr io.Writer) int {
+func cmdSessionNudge(args []string, delivery nudgeDeliveryMode, stdout, stderr io.Writer) int {
 	cityPath, err := resolveCity()
 	if err != nil {
 		fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -904,23 +911,20 @@ func cmdSessionNudge(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	sp := newSessionProvider()
-	sn := sessionName(nil, cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
-
-	if !sp.IsRunning(sn) {
-		fmt.Fprintf(stderr, "gc session nudge: session %q is not running\n", found.QualifiedName()) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	if err := sp.Nudge(sn, runtime.TextContent(message)); err != nil {
-		telemetry.RecordNudge(context.Background(), found.QualifiedName(), err)
+	resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	if err != nil {
 		fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-
-	telemetry.RecordNudge(context.Background(), found.QualifiedName(), nil)
-	fmt.Fprintf(stdout, "Nudged %s\n", found.QualifiedName()) //nolint:errcheck // best-effort stdout
-	return 0
+	targetInfo := nudgeTarget{
+		cityPath:    cityPath,
+		cityName:    cityName,
+		cfg:         cfg,
+		agent:       found,
+		resolved:    resolved,
+		sessionName: cliSessionName(cityPath, cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate),
+	}
+	return deliverSessionNudge(targetInfo, message, delivery, stdout, stderr)
 }
 
 // resolveWorkDir determines the working directory for a session based on

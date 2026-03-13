@@ -172,6 +172,18 @@ type InteractionProvider interface {
 	Respond(name string, response InteractionResponse) error
 }
 
+// IdleWaitProvider is an optional extension for runtimes that can wait for a
+// safe interactive boundary before input is injected.
+type IdleWaitProvider interface {
+	WaitForIdle(name string, timeout time.Duration) error
+}
+
+// ImmediateNudgeProvider is an optional extension for runtimes that can inject
+// input immediately without performing their own wait-idle heuristic first.
+type ImmediateNudgeProvider interface {
+	NudgeNow(name string, content []ContentBlock) error
+}
+
 // CopyEntry describes a file or directory to stage in the session's
 // working directory before the agent command starts.
 type CopyEntry struct {

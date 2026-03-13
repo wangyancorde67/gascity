@@ -5,7 +5,7 @@
 //   session.created    → gc prime (load context)
 //   session.compacted  → gc prime (reload after compaction)
 //   session.deleted    → gc hook --inject (pick up work on exit)
-//   chat.system.transform → gc mail check --inject (inject mail per-turn)
+//   chat.system.transform → gc nudge drain --inject + gc mail check --inject
 
 const { execSync } = require("child_process");
 
@@ -28,9 +28,11 @@ module.exports = {
 
   hooks: {
     "experimental.chat.system.transform": (system) => {
+      const nudges = run("gc nudge drain --inject");
       const mail = run("gc mail check --inject");
-      if (mail) {
-        return system + "\n\n" + mail;
+      const extras = [nudges, mail].filter(Boolean);
+      if (extras.length > 0) {
+        return system + "\n\n" + extras.join("\n\n");
       }
       return system;
     },

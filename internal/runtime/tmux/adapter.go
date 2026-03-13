@@ -145,6 +145,11 @@ func (p *Provider) Capabilities() runtime.ProviderCapabilities {
 	}
 }
 
+// WaitForIdle waits for the named session to reach an idle prompt.
+func (p *Provider) WaitForIdle(name string, timeout time.Duration) error {
+	return p.tm.WaitForIdle(name, timeout)
+}
+
 // Nudge sends a message to the named session to wake or redirect the agent.
 // By default, waits for the agent to be idle before sending (wait-idle mode)
 // to avoid interrupting active tool calls. If the agent doesn't become idle
@@ -163,7 +168,11 @@ func (p *Provider) Nudge(name string, content []runtime.ContentBlock) error {
 		// but Claude's cooperative queue will handle it at the next turn.
 		_ = p.tm.WaitForIdle(name, idleTimeout)
 	}
+	return p.NudgeNow(name, content)
+}
 
+// NudgeNow sends a message immediately without performing a wait-idle check.
+func (p *Provider) NudgeNow(name string, content []runtime.ContentBlock) error {
 	var parts []string
 	for _, b := range content {
 		switch b.Type {

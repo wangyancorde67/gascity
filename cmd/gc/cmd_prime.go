@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -126,6 +127,22 @@ func doPrimeWithMode(args []string, stdout, _ io.Writer, hookMode bool) int { //
 		}
 		if ok && isAgentEffectivelySuspended(cfg, &a) {
 			return 0 // suspended agent gets no prompt
+		}
+		if ok {
+			if resolved, rErr := config.ResolveProvider(&a, &cfg.Workspace, cfg.Providers, exec.LookPath); rErr == nil && hookMode {
+				sessionName := os.Getenv("GC_SESSION_NAME")
+				if sessionName == "" {
+					sessionName = cliSessionName(cityPath, cityName, a.QualifiedName(), cfg.Workspace.SessionTemplate)
+				}
+				maybeStartCodexNudgePoller(nudgeTarget{
+					cityPath:    cityPath,
+					cityName:    cityName,
+					cfg:         cfg,
+					agent:       a,
+					resolved:    resolved,
+					sessionName: sessionName,
+				})
+			}
 		}
 		if ok && a.PromptTemplate != "" {
 			ctx := buildPrimeContext(cityPath, &a, cfg.Rigs)

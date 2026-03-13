@@ -75,6 +75,24 @@ func (p *Provider) Nudge(name string, content []runtime.ContentBlock) error {
 	return p.route(name).Nudge(name, content)
 }
 
+// WaitForIdle delegates to the routed backend when it supports explicit
+// idle-boundary waiting.
+func (p *Provider) WaitForIdle(name string, timeout time.Duration) error {
+	if wp, ok := p.route(name).(runtime.IdleWaitProvider); ok {
+		return wp.WaitForIdle(name, timeout)
+	}
+	return runtime.ErrInteractionUnsupported
+}
+
+// NudgeNow delegates to the routed backend when it supports immediate
+// injection without an internal wait-idle step.
+func (p *Provider) NudgeNow(name string, content []runtime.ContentBlock) error {
+	if np, ok := p.route(name).(runtime.ImmediateNudgeProvider); ok {
+		return np.NudgeNow(name, content)
+	}
+	return p.route(name).Nudge(name, content)
+}
+
 // Pending delegates to the routed backend when it supports structured
 // interactions.
 func (p *Provider) Pending(name string) (*runtime.PendingInteraction, error) {
