@@ -43,7 +43,7 @@ jobs:
     env:
       # Pinned dependency versions — keep in sync with deps.env.
       DOLT_VERSION: "1.83.5"
-      BD_VERSION: "0.60.0"
+      BD_VERSION: "0.61.0"
     steps:
       - uses: actions/checkout@v6
 
@@ -60,11 +60,13 @@ jobs:
           dolt version
 
       - name: Install beads (bd) v${{ env.BD_VERSION }}
-        env:
-          GOTOOLCHAIN: auto  # beads may require a newer Go than go.mod
         run: |
-          git clone --depth=1 https://github.com/gastownhall/beads /tmp/beads
-          cd /tmp/beads && go install ./cmd/bd
+          curl -fsSLo /tmp/beads_${{ env.BD_VERSION }}_linux_amd64.tar.gz "https://github.com/steveyegge/beads/releases/download/v${{ env.BD_VERSION }}/beads_${{ env.BD_VERSION }}_linux_amd64.tar.gz"
+          curl -fsSLo /tmp/checksums.txt "https://github.com/steveyegge/beads/releases/download/v${{ env.BD_VERSION }}/checksums.txt"
+          cd /tmp
+          grep " beads_${{ env.BD_VERSION }}_linux_amd64.tar.gz\$" checksums.txt | sha256sum -c -
+          tar -xzf beads_${{ env.BD_VERSION }}_linux_amd64.tar.gz bd
+          sudo install -m 0755 /tmp/bd /usr/local/bin/bd
           bd version
 
       - name: Install tools
