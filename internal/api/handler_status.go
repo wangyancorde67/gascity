@@ -61,7 +61,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	var ac agentCounts
 	var rawRunning int
 	for _, a := range cfg.Agents {
-		for _, ea := range expandAgent(a, cityName, sessTmpl, sp) {
+		for _, ea := range expandAgent(a, s.state.CityPath(), cityName, sessTmpl, cfg.Rigs, sp) {
 			ac.Total++
 			sessName := agentSessionName(cityName, ea.qualifiedName, sessTmpl)
 			running := sp.IsRunning(sessName)

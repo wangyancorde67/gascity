@@ -157,6 +157,10 @@ func TestAgentListFilterByRig(t *testing.T) {
 		{Name: "worker", Dir: "rig1"},
 		{Name: "worker", Dir: "rig2"},
 	}
+	state.cfg.Rigs = []config.Rig{
+		{Name: "rig1", Path: filepath.Join(state.cityPath, "repos", "rig1")},
+		{Name: "rig2", Path: filepath.Join(state.cityPath, "repos", "rig2")},
+	}
 	srv := New(state)
 
 	req := httptest.NewRequest("GET", "/v0/agents?rig=rig1", nil)
@@ -173,6 +177,32 @@ func TestAgentListFilterByRig(t *testing.T) {
 	}
 	if resp.Items[0].Name != "rig1/worker" {
 		t.Errorf("Name = %q, want %q", resp.Items[0].Name, "rig1/worker")
+	}
+}
+
+func TestAgentListFilterByRigUsesConfiguredRigNameForPathBackedDir(t *testing.T) {
+	state := newFakeState(t)
+	rigRoot := filepath.Join(state.cityPath, "repos", "rig1")
+	state.cfg.Rigs = []config.Rig{{Name: "rig1", Path: rigRoot}}
+	state.cfg.Agents = []config.Agent{
+		{Name: "worker", Dir: rigRoot},
+	}
+	srv := New(state)
+
+	req := httptest.NewRequest("GET", "/v0/agents?rig=rig1", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var resp struct {
+		Items []agentResponse `json:"items"`
+		Total int             `json:"total"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp) //nolint:errcheck
+	if resp.Total != 1 {
+		t.Fatalf("Total = %d, want 1", resp.Total)
+	}
+	if resp.Items[0].Rig != "rig1" {
+		t.Errorf("Rig = %q, want %q", resp.Items[0].Rig, "rig1")
 	}
 }
 

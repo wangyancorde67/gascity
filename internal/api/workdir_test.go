@@ -61,6 +61,27 @@ func TestCanAttributeSessionRejectsSharedPoolTemplateEvenWhenItMentionsAgentIden
 	}
 }
 
+func TestCanAttributeSessionRejectsSharedSingleSlotPoolTemplate(t *testing.T) {
+	cityPath := t.TempDir()
+	cfg := &config.City{
+		Workspace: config.Workspace{Provider: "claude"},
+		Rigs:      []config.Rig{{Name: "demo", Path: filepath.Join(cityPath, "repos", "demo")}},
+		Agents: []config.Agent{
+			{Name: "observer", Dir: "demo", WorkDir: ".gc/shared/polecat"},
+			{
+				Name:    "polecat",
+				Dir:     "demo",
+				WorkDir: ".gc/shared/{{.AgentBase}}",
+				Pool:    &config.PoolConfig{Min: 0, Max: 1},
+			},
+		},
+	}
+
+	if canAttributeSession(cfg.Agents[0], "demo/observer", cfg, cityPath) {
+		t.Fatal("canAttributeSession() = true, want false when a single-slot pool shares the observed workdir")
+	}
+}
+
 func TestResolveSessionTemplateUsesConfiguredWorkDir(t *testing.T) {
 	state := newFakeState(t)
 	state.cfg.Agents[0].WorkDir = ".gc/worktrees/{{.Rig}}/{{.AgentBase}}"

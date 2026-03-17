@@ -314,6 +314,32 @@ func TestWorktreeSetupSupportsLegacySignature(t *testing.T) {
 	}
 }
 
+func TestWorktreeSetupReusesExistingAgentBranch(t *testing.T) {
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "repo")
+	city := filepath.Join(tmp, "city")
+	script := filepath.Join(exampleDir(), "packs", "gastown", "scripts", "worktree-setup.sh")
+
+	runCmd(t, tmp, "git", "init", repo)
+	runCmd(t, repo, "git", "config", "user.email", "test@example.com")
+	runCmd(t, repo, "git", "config", "user.name", "Gastown Test")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("writing repo README: %v", err)
+	}
+	runCmd(t, repo, "git", "add", ".")
+	runCmd(t, repo, "git", "commit", "-m", "init")
+
+	worktree := filepath.Join(city, ".gc", "worktrees", filepath.Base(repo), "refinery")
+
+	runCmd(t, tmp, "sh", script, repo, worktree, "refinery")
+	runCmd(t, tmp, "git", "-C", repo, "worktree", "remove", worktree, "--force")
+	runCmd(t, tmp, "sh", script, repo, worktree, "refinery")
+
+	if got := runCmd(t, tmp, "git", "-C", worktree, "rev-parse", "--abbrev-ref", "HEAD"); got != "gc-refinery" {
+		t.Fatalf("worktree reboot attached %q, want %q", got, "gc-refinery")
+	}
+}
+
 func TestPromptGuidanceUsesConfiguredRigRootsAndNamespacedWorktrees(t *testing.T) {
 	dir := exampleDir()
 

@@ -86,10 +86,19 @@ if [ -d "$WT" ] && [ "$(find "$WT" -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
 fi
 
 rmdir "$WT" 2>/dev/null || true
-if ! GIT_LFS_SKIP_SMUDGE=1 git -C "$RIG_ROOT" worktree add "$WT" -b "gc-$AGENT"; then
-    echo "worktree-setup: failed to create worktree at $WT from $RIG_ROOT (branch gc-$AGENT)" >&2
-    restore_stage
-    exit 1
+BRANCH="gc-$AGENT"
+if git -C "$RIG_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    if ! GIT_LFS_SKIP_SMUDGE=1 git -C "$RIG_ROOT" worktree add "$WT" "$BRANCH"; then
+        echo "worktree-setup: failed to create worktree at $WT from $RIG_ROOT (branch gc-$AGENT)" >&2
+        restore_stage
+        exit 1
+    fi
+else
+    if ! GIT_LFS_SKIP_SMUDGE=1 git -C "$RIG_ROOT" worktree add "$WT" -b "$BRANCH"; then
+        echo "worktree-setup: failed to create worktree at $WT from $RIG_ROOT (branch gc-$AGENT)" >&2
+        restore_stage
+        exit 1
+    fi
 fi
 
 if [ -n "$STAGE" ]; then

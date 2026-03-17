@@ -137,7 +137,7 @@ func (s *Server) handleRigRestart(w http.ResponseWriter, name string) {
 		if workdirutil.ConfiguredRigName(s.state.CityPath(), a, cfg.Rigs) != name {
 			continue
 		}
-		expanded := expandAgent(a, cityName, cfg.Workspace.SessionTemplate, sp)
+		expanded := expandAgent(a, s.state.CityPath(), cityName, cfg.Workspace.SessionTemplate, cfg.Rigs, sp)
 		for _, ea := range expanded {
 			sessionName := agentSessionName(cityName, ea.qualifiedName, cfg.Workspace.SessionTemplate)
 			if err := sp.Stop(sessionName); err != nil {
@@ -180,7 +180,7 @@ func buildRigResponse(cfg *config.City, rig config.Rig, sp runtime.Provider, cit
 		if workdirutil.ConfiguredRigName(cityPath, a, cfg.Rigs) != rig.Name {
 			continue
 		}
-		expanded := expandAgent(a, cityName, tmpl, sp)
+		expanded := expandAgent(a, cityPath, cityName, tmpl, cfg.Rigs, sp)
 		for _, ea := range expanded {
 			agentCount++
 			sessionName := agent.SessionNameFor(cityName, ea.qualifiedName, tmpl)
@@ -220,7 +220,7 @@ func rigSuspended(cfg *config.City, rig config.Rig, sp runtime.Provider, cityNam
 		if workdirutil.ConfiguredRigName(cityPath, a, cfg.Rigs) != rig.Name {
 			continue
 		}
-		expanded := expandAgent(a, cityName, tmpl, sp)
+		expanded := expandAgent(a, cityPath, cityName, tmpl, cfg.Rigs, sp)
 		for _, ea := range expanded {
 			agentCount++
 			sessionName := agent.SessionNameFor(cityName, ea.qualifiedName, tmpl)
