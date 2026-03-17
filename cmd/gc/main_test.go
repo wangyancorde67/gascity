@@ -317,6 +317,40 @@ func TestResolveCityFlag(t *testing.T) {
 			t.Errorf("resolveCity() = %q, want %q", got, dir)
 		}
 	})
+
+	t.Run("gc_city_env_prefers_real_city_from_worktree", func(t *testing.T) {
+		cityDir := t.TempDir()
+		workDir := filepath.Join(cityDir, ".gc", "worktrees", "demo", "polecat-1")
+		if err := os.MkdirAll(filepath.Join(cityDir, ".gc"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cityDir, "city.toml"),
+			[]byte("[workspace]\nname = \"test\"\n\n[[agent]]\nname = \"mayor\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(workDir, ".gc"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		old := cityFlag
+		cityFlag = ""
+		t.Cleanup(func() { cityFlag = old })
+		t.Setenv("GC_CITY", cityDir)
+
+		orig, _ := os.Getwd()
+		t.Cleanup(func() { _ = os.Chdir(orig) })
+		if err := os.Chdir(workDir); err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := resolveCity()
+		if err != nil {
+			t.Fatalf("resolveCity() error: %v", err)
+		}
+		if got != cityDir {
+			t.Errorf("resolveCity() = %q, want %q", got, cityDir)
+		}
+	})
 }
 
 // --- doRigAdd (with fsys.Fake) ---

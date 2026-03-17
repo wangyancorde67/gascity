@@ -94,18 +94,25 @@ func cmdHook(args []string, inject bool, stdout, stderr io.Writer) int {
 	}
 
 	workQuery := a.EffectiveWorkQuery()
-	return doHook(workQuery, inject, shellWorkQuery, stdout, stderr)
+	workDir := agentCommandDir(cityPath, &a, cfg.Rigs)
+	return doHook(workQuery, workDir, inject, shellWorkQuery, stdout, stderr)
 }
 
 // WorkQueryRunner runs a work query command and returns its stdout.
-type WorkQueryRunner func(command string) (string, error)
+// dir sets the command's working directory.
+type WorkQueryRunner func(command, dir string) (string, error)
 
 // shellWorkQuery runs a work query command via sh -c and returns stdout.
-// Times out after 30 seconds.
-func shellWorkQuery(command string) (string, error) {
+// dir sets the command's working directory. Times out after 30 seconds.
+func shellWorkQuery(command, dir string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "sh", "-c", command).Output()
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.WaitDelay = 2 * time.Second
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("running work query %q: %w", command, err)
 	}
@@ -115,8 +122,8 @@ func shellWorkQuery(command string) (string, error) {
 // doHook is the pure logic for gc hook. Runs the work query and outputs
 // results based on mode. Without inject: prints raw output, returns 0 if
 // work, 1 if empty. With inject: wraps in <system-reminder>, always returns 0.
-func doHook(workQuery string, inject bool, runner WorkQueryRunner, stdout, stderr io.Writer) int {
-	output, err := runner(workQuery)
+func doHook(workQuery, dir string, inject bool, runner WorkQueryRunner, stdout, stderr io.Writer) int {
+	output, err := runner(workQuery, dir)
 	if err != nil {
 		if inject {
 			return 0 // --inject always exits 0

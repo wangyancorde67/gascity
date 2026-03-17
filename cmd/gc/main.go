@@ -223,6 +223,12 @@ func resolveCity() (string, error) {
 		}
 		return "", fmt.Errorf("not a city directory: %s (no city.toml or .gc/ found)", p)
 	}
+	if gcCity := os.Getenv("GC_CITY"); gcCity != "" {
+		p, err := filepath.Abs(gcCity)
+		if err == nil && (citylayout.HasCityConfig(p) || citylayout.HasRuntimeRoot(p)) {
+			return p, nil
+		}
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
