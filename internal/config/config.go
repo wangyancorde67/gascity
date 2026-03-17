@@ -1359,8 +1359,10 @@ func InjectImplicitAgents(cfg *City) {
 
 // configuredProviders returns the merged set of providers that are explicitly
 // configured: the union of cfg.Providers keys and cfg.Workspace.Provider.
-// This lets workspace.provider = "claude" work without a redundant
-// [providers.claude] section.
+// workspace.provider is only included if it names a built-in provider or one
+// already defined in cfg.Providers — a non-builtin workspace.provider without
+// a matching [providers.X] section is ignored (it would create an implicit
+// agent that fails at resolution time).
 func configuredProviders(cfg *City) map[string]ProviderSpec {
 	merged := make(map[string]ProviderSpec, len(cfg.Providers)+1)
 	for k, v := range cfg.Providers {
@@ -1368,7 +1370,10 @@ func configuredProviders(cfg *City) map[string]ProviderSpec {
 	}
 	if wp := cfg.Workspace.Provider; wp != "" {
 		if _, ok := merged[wp]; !ok {
-			merged[wp] = ProviderSpec{}
+			// Only promote workspace.provider if it's a known builtin.
+			if _, builtin := BuiltinProviders()[wp]; builtin {
+				merged[wp] = ProviderSpec{}
+			}
 		}
 	}
 	return merged

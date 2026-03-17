@@ -3359,6 +3359,73 @@ func TestInjectImplicitAgents_WorkspaceProviderNoDuplicate(t *testing.T) {
 	}
 }
 
+func TestInjectImplicitAgents_WorkspaceProviderNonBuiltin(t *testing.T) {
+	// A non-builtin workspace.provider without a matching [providers.X]
+	// section must NOT create an implicit agent (it would fail at resolution).
+	cfg := &City{
+		Workspace: Workspace{Provider: "my-custom-llm"},
+	}
+	InjectImplicitAgents(cfg)
+
+	if len(cfg.Agents) != 0 {
+		t.Fatalf("got %d agents, want 0 (non-builtin workspace.provider without [providers] entry)", len(cfg.Agents))
+	}
+}
+
+func TestInjectImplicitAgents_WorkspaceProviderNonBuiltinWithEntry(t *testing.T) {
+	// A non-builtin workspace.provider WITH a matching [providers.X]
+	// section should still work.
+	cfg := &City{
+		Workspace: Workspace{Provider: "my-custom-llm"},
+		Providers: map[string]ProviderSpec{
+			"my-custom-llm": {Command: "ollama"},
+		},
+	}
+	InjectImplicitAgents(cfg)
+
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(cfg.Agents))
+	}
+	if cfg.Agents[0].Name != "my-custom-llm" {
+		t.Errorf("Name = %q, want %q", cfg.Agents[0].Name, "my-custom-llm")
+	}
+}
+
+func TestInjectImplicitAgents_ExplicitAgentUnconfiguredProvider(t *testing.T) {
+	// An explicit agent referencing a provider NOT in cfg.Providers or
+	// workspace.provider is preserved, but no implicit agent is created
+	// for that provider.
+	cfg := &City{
+		Providers: map[string]ProviderSpec{
+			"claude": {},
+		},
+		Agents: []Agent{
+			{Name: "my-gemini-worker", Provider: "gemini"},
+		},
+	}
+	InjectImplicitAgents(cfg)
+
+	// 1 explicit (gemini) + 1 implicit (claude) = 2
+	if len(cfg.Agents) != 2 {
+		t.Fatalf("got %d agents, want 2", len(cfg.Agents))
+	}
+
+	// Explicit agent preserved.
+	if cfg.Agents[0].Name != "my-gemini-worker" {
+		t.Errorf("agent[0].Name = %q, want %q", cfg.Agents[0].Name, "my-gemini-worker")
+	}
+	if cfg.Agents[0].Implicit {
+		t.Error("explicit agent should not be marked implicit")
+	}
+
+	// No implicit gemini agent.
+	for _, a := range cfg.Agents {
+		if a.Name == "gemini" && a.Implicit {
+			t.Error("should not create implicit agent for unconfigured provider 'gemini'")
+		}
+	}
+}
+
 func TestInjectImplicitAgents_ConfiguredOnly(t *testing.T) {
 	// Only providers in cfg.Providers get implicit agents.
 	cfg := &City{
