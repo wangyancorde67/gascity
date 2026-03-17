@@ -37,7 +37,7 @@ func Revision(fs fsys.FS, prov *Provenance, cfg *City, cityRoot string) string {
 	// Hash rig pack directory contents (all pack sources).
 	rigs := cfg.Rigs
 	for _, r := range rigs {
-		for _, ref := range EffectiveRigPacks(r) {
+		for _, ref := range r.Includes {
 			topoDir, _ := resolvePackRef(ref, cityRoot, cityRoot)
 			topoHash := PackContentHashRecursive(fs, topoDir)
 			h.Write([]byte("pack:" + r.Name + ":" + ref)) //nolint:errcheck // hash.Write never errors
@@ -48,7 +48,7 @@ func Revision(fs fsys.FS, prov *Provenance, cfg *City, cityRoot string) string {
 	}
 
 	// Hash city-level pack directory contents.
-	for _, ref := range EffectiveCityPacks(cfg.Workspace) {
+	for _, ref := range cfg.Workspace.Includes {
 		topoDir, _ := resolvePackRef(ref, cityRoot, cityRoot)
 		topoHash := PackContentHashRecursive(fs, topoDir)
 		h.Write([]byte("city-pack:" + ref)) //nolint:errcheck // hash.Write never errors
@@ -84,14 +84,14 @@ func WatchDirs(prov *Provenance, cfg *City, cityRoot string) []string {
 
 	// Rig pack directories (all pack sources).
 	for _, r := range cfg.Rigs {
-		for _, ref := range EffectiveRigPacks(r) {
+		for _, ref := range r.Includes {
 			topoDir, _ := resolvePackRef(ref, cityRoot, cityRoot)
 			addDir(topoDir)
 		}
 	}
 
 	// City-level pack directories.
-	for _, ref := range EffectiveCityPacks(cfg.Workspace) {
+	for _, ref := range cfg.Workspace.Includes {
 		topoDir, _ := resolvePackRef(ref, cityRoot, cityRoot)
 		addDir(topoDir)
 	}

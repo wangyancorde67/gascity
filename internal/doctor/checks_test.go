@@ -903,8 +903,9 @@ func TestSystemFormulasCheckMissing(t *testing.T) {
 	}
 }
 
-func TestSystemFormulasCheckLegacyPathWarns(t *testing.T) {
+func TestSystemFormulasCheckMissingCanonicalPath(t *testing.T) {
 	dir := setupCity(t, "[workspace]\nname = \"test\"\n")
+	// Only legacy path exists — canonical .gc/system/formulas/ does not.
 	legacyDir := filepath.Join(dir, ".gc", "system-formulas")
 	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -918,8 +919,8 @@ func TestSystemFormulasCheckLegacyPathWarns(t *testing.T) {
 		Expected: []string{"hello.formula.toml"},
 	}
 	r := c.Run(&CheckContext{CityPath: dir})
-	if r.Status != StatusWarning {
-		t.Errorf("status = %d, want Warning; msg = %s", r.Status, r.Message)
+	if r.Status != StatusError {
+		t.Errorf("status = %d, want Error; msg = %s", r.Status, r.Message)
 	}
 }
 

@@ -18,7 +18,6 @@ func TestCanAccept(t *testing.T) {
 	}{
 		{SchemaVersion, true},
 		{SchemaVersion + 1, false},
-		{SchemaVersion - 2, false},
 		{0, false}, // version 0 is always invalid
 	}
 	for _, tc := range cases {

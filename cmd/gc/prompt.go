@@ -45,11 +45,10 @@ func renderPrompt(fs fsys.FS, cityPath, cityName, templatePath string, ctx Promp
 	if templatePath == "" {
 		return ""
 	}
-	resolved := citylayout.ResolveCityOwnedPath(fs, cityPath, templatePath)
-	sourcePath := citylayout.ResolveReadPath(fs, cityPath, templatePath)
+	sourcePath := filepath.Join(cityPath, templatePath)
 	data, err := fs.ReadFile(sourcePath)
-	if err != nil && resolved.Asset == citylayout.AssetPrompt {
-		rel := strings.TrimPrefix(resolved.Canonical, citylayout.PromptsRoot+"/")
+	if err != nil && strings.HasPrefix(templatePath, citylayout.PromptsRoot+"/") {
+		rel := strings.TrimPrefix(templatePath, citylayout.PromptsRoot+"/")
 		fallback := filepath.Join(cityPath, citylayout.SystemPromptsRoot, rel)
 		data, err = fs.ReadFile(fallback)
 		sourcePath = fallback

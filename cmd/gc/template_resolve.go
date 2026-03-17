@@ -105,10 +105,10 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 	command := resolved.CommandString()
 	if sa := settingsArgs(p.cityPath, resolved.Name); sa != "" {
 		command = command + " " + sa
-		settingsFile := citylayout.ResolveReadPath(p.fs, p.cityPath, citylayout.ClaudeHookFile)
+		settingsFile := citylayout.ClaudeHookFilePath(p.cityPath)
 		copyFiles = append(copyFiles, runtime.CopyEntry{Src: settingsFile, RelDst: filepath.Join(".gc", "settings.json")})
 	}
-	scriptsDir := citylayout.ResolveScriptsDir(p.fs, p.cityPath)
+	scriptsDir := citylayout.ScriptsPath(p.cityPath)
 	if info, sErr := os.Stat(scriptsDir); sErr == nil && info.IsDir() {
 		copyFiles = append(copyFiles, runtime.CopyEntry{Src: scriptsDir, RelDst: filepath.Join(".gc", "scripts")})
 	}

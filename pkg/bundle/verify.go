@@ -13,10 +13,9 @@ import (
 )
 
 // CanAccept reports whether a runtime can load a bundle with the given
-// schema version. Accepts current (N) and previous (N-1) versions,
-// but always requires version >= 1.
+// schema version. Only accepts an exact match with the current version.
 func CanAccept(schemaVersion int) bool {
-	return schemaVersion >= 1 && (schemaVersion == SchemaVersion || schemaVersion == SchemaVersion-1)
+	return schemaVersion == SchemaVersion
 }
 
 // VerifyChecksum verifies that the contents of bundleDir match the expected

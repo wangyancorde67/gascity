@@ -9,7 +9,6 @@
 [pack]
 name = "swarm-lifecycle"
 schema = 1
-city_agents = []
 
 # ── CODER — file-only worker. Pool of 5. Rig-scoped. ────────────────
 [[agent]]

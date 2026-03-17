@@ -281,20 +281,11 @@ func TestCombinedPackParses(t *testing.T) {
 		t.Errorf("pack has %d agents, want 7", len(tc.Agents))
 	}
 
-	// Verify city_agents list (dog from gastown overrides maintenance fallback).
-	cityAgents := map[string]bool{
-		"mayor": false, "deacon": false, "boot": false, "dog": false,
-	}
-	for _, ca := range tc.Pack.CityAgents {
-		if _, ok := cityAgents[ca]; ok {
-			cityAgents[ca] = true
-		} else {
-			t.Errorf("unexpected city_agent %q", ca)
-		}
-	}
-	for name, found := range cityAgents {
-		if !found {
-			t.Errorf("missing city_agent %q", name)
+	// Verify city-scoped agents have scope = "city".
+	wantCity := map[string]bool{"mayor": true, "deacon": true, "boot": true, "dog": true}
+	for _, a := range tc.Agents {
+		if wantCity[a.Name] && a.Scope != "city" {
+			t.Errorf("agent %q: scope = %q, want %q", a.Name, a.Scope, "city")
 		}
 	}
 }
@@ -381,9 +372,9 @@ func TestMaintenancePackParses(t *testing.T) {
 		t.Errorf("agent name = %q, want %q", tc.Agents[0].Name, "dog")
 	}
 
-	// city_agents should be ["dog"].
-	if len(tc.Pack.CityAgents) != 1 || tc.Pack.CityAgents[0] != "dog" {
-		t.Errorf("city_agents = %v, want [dog]", tc.Pack.CityAgents)
+	// Verify dog agent has scope = "city".
+	if len(tc.Agents) > 0 && tc.Agents[0].Scope != "city" {
+		t.Errorf("dog scope = %q, want %q", tc.Agents[0].Scope, "city")
 	}
 
 	// Verify prompt file exists.

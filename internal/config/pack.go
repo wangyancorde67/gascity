@@ -48,7 +48,7 @@ func ExpandPacks(cfg *City, fs fsys.FS, cityRoot string, rigFormulaDirs map[stri
 	var expanded []Agent
 	for i := range cfg.Rigs {
 		rig := &cfg.Rigs[i]
-		topoRefs := EffectiveRigPacks(*rig)
+		topoRefs := rig.Includes
 		if len(topoRefs) == 0 {
 			continue
 		}
@@ -170,29 +170,12 @@ func ExpandPacks(cfg *City, fs fsys.FS, cityRoot string, rigFormulaDirs map[stri
 	return nil
 }
 
-// ExpandCityPack loads a single city-level pack from workspace.includes.
-// City pack agents are stamped with dir="" (city-scoped) and prepended
-// to the agent list. Returns the resolved formula dir from the pack
-// (empty if none). cityRoot is the city directory.
-//
-// Deprecated: Use ExpandCityPacks for composable multi-pack support.
-func ExpandCityPack(cfg *City, fs fsys.FS, cityRoot string) (string, error) {
-	dirs, _, err := ExpandCityPacks(cfg, fs, cityRoot)
-	if err != nil {
-		return "", err
-	}
-	if len(dirs) == 0 {
-		return "", nil
-	}
-	return dirs[0], nil
-}
-
 // ExpandCityPacks loads all city-level packs from workspace.includes.
 // City pack agents are stamped with dir="" (city-scoped) and prepended
 // to the agent list. Returns the resolved formula dirs (one per pack
 // that has formulas). cityRoot is the city directory.
 func ExpandCityPacks(cfg *City, fs fsys.FS, cityRoot string) ([]string, []PackRequirement, error) {
-	topos := EffectiveCityPacks(cfg.Workspace)
+	topos := cfg.Workspace.Includes
 	if len(topos) == 0 {
 		return nil, nil, nil
 	}
@@ -419,8 +402,8 @@ func checkPackAgentCollisions(agents []Agent, rigName string) error {
 }
 
 // loadPack loads a pack.toml, validates metadata, and returns the
-// agent list with dir stamped and paths adjusted, the ordered pack
-// directories, and the city_agents list (nil if not configured).
+// agent list with dir stamped and paths adjusted, and the ordered pack
+// directories.
 //
 // The topoDirs return is the ordered list: included pack dirs first
 // (depth-first), then this pack's dir. Consumers derive resource paths
@@ -498,51 +481,6 @@ func loadPack(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, seen map[
 
 	// Collect this pack's own requirements.
 	allRequires = append(allRequires, tc.Pack.Requires...)
-
-	// Auto-stamp scope from city_agents (backward compat).
-	// If city_agents is set, listed agents get scope="city", unlisted get
-	// scope="rig" (unless they already have an explicit scope). Validate
-	// conflicts between explicit scope and city_agents listing.
-	if len(tc.Pack.CityAgents) > 0 {
-		cityAgentSet := setFromSlice(tc.Pack.CityAgents)
-		// Validate all city_agents reference existing agents.
-		allAgentNames := make(map[string]bool, len(includedAgents)+len(tc.Agents))
-		for _, a := range includedAgents {
-			allAgentNames[a.Name] = true
-		}
-		for _, a := range tc.Agents {
-			allAgentNames[a.Name] = true
-		}
-		for _, ca := range tc.Pack.CityAgents {
-			if !allAgentNames[ca] {
-				return nil, nil, nil, nil, nil, nil, fmt.Errorf("city_agents: agent %q not found in pack", ca)
-			}
-		}
-		// Stamp scope on parent agents.
-		for i := range tc.Agents {
-			if tc.Agents[i].Scope == "rig" && cityAgentSet[tc.Agents[i].Name] {
-				return nil, nil, nil, nil, nil, nil, fmt.Errorf(
-					"agent %q: scope=\"rig\" conflicts with city_agents listing", tc.Agents[i].Name)
-			}
-			if tc.Agents[i].Scope == "" {
-				if cityAgentSet[tc.Agents[i].Name] {
-					tc.Agents[i].Scope = "city"
-				} else {
-					tc.Agents[i].Scope = "rig"
-				}
-			}
-		}
-		// Stamp scope on included agents that match city_agents.
-		for i := range includedAgents {
-			if includedAgents[i].Scope == "" {
-				if cityAgentSet[includedAgents[i].Name] {
-					includedAgents[i].Scope = "city"
-				} else {
-					includedAgents[i].Scope = "rig"
-				}
-			}
-		}
-	}
 
 	// Stamp parent agents: set dir = rigName (unless already set), adjust paths.
 	agents := make([]Agent, len(tc.Agents))
@@ -1033,18 +971,6 @@ func PackDefinesAgent(fs fsys.FS, packRef, cityRoot, agentName string) bool {
 	return false
 }
 
-// EffectiveCityPacks returns the resolved list of city-level pack
-// paths from workspace.includes. Returns nil if none are set.
-func EffectiveCityPacks(ws Workspace) []string {
-	return ws.Includes
-}
-
-// EffectiveRigPacks returns the resolved list of pack paths for
-// a rig from rig.includes. Returns nil if none are set.
-func EffectiveRigPacks(rig Rig) []string {
-	return rig.Includes
-}
-
 // HasPackRigs reports whether any rig in the config uses a pack.
 func HasPackRigs(rigs []Rig) bool {
 	for _, r := range rigs {
@@ -1060,7 +986,7 @@ func HasPackRigs(rigs []Rig) bool {
 func PackSummary(cfg *City, fs fsys.FS, cityRoot string) map[string]string {
 	result := make(map[string]string)
 	for _, r := range cfg.Rigs {
-		topoRefs := EffectiveRigPacks(r)
+		topoRefs := r.Includes
 		if len(topoRefs) == 0 {
 			continue
 		}

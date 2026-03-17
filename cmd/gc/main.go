@@ -125,7 +125,6 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 		newCitiesCmd(stdout, stderr),
 		newSupervisorCmd(stdout, stderr),
 		newSessionCmd(stdout, stderr),
-		newMigrationCmd(stdout, stderr),
 		newConvergeCmd(stdout, stderr),
 		newRuntimeCmd(stdout, stderr),
 	)
@@ -195,7 +194,7 @@ func findCity(dir string) (string, error) {
 		if citylayout.HasCityConfig(dir) {
 			return dir, nil
 		}
-		if legacy == "" && citylayout.HasLegacyRuntimeRoot(dir) {
+		if legacy == "" && citylayout.HasRuntimeRoot(dir) {
 			legacy = dir
 		}
 		parent := filepath.Dir(dir)
@@ -219,7 +218,7 @@ func resolveCity() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if citylayout.HasCityConfig(p) || citylayout.HasLegacyRuntimeRoot(p) {
+		if citylayout.HasCityConfig(p) || citylayout.HasRuntimeRoot(p) {
 			return p, nil
 		}
 		return "", fmt.Errorf("not a city directory: %s (no city.toml or .gc/ found)", p)

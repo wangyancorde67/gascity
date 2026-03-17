@@ -61,33 +61,30 @@ func sessionNameFromBeadID(beadID string) string {
 func findSessionNameByTemplate(store beads.Store, template string) string {
 	var fallback string // template-only match (weaker signal)
 
-	// Search both labels (unified + legacy) for migration compatibility.
-	for _, label := range []string{sessionBeadLabel, legacySessionBeadLabel} {
-		all, err := store.ListByLabel(label, 0)
-		if err != nil {
+	all, err := store.ListByLabel(sessionBeadLabel, 0)
+	if err != nil {
+		return fallback
+	}
+	for _, b := range all {
+		if b.Status == "closed" {
 			continue
 		}
-		for _, b := range all {
-			if b.Status == "closed" {
-				continue
+		// Skip pool instance beads — they should only be matched
+		// by their specific instance name, not the base template.
+		if b.Metadata["pool_slot"] != "" {
+			continue
+		}
+		// Prefer agent_name match (managed agent bead from syncSessionBeads).
+		if b.Metadata["agent_name"] == template {
+			if sn := b.Metadata["session_name"]; sn != "" {
+				return sn
 			}
-			// Skip pool instance beads — they should only be matched
-			// by their specific instance name, not the base template.
-			if b.Metadata["pool_slot"] != "" {
-				continue
-			}
-			// Prefer agent_name match (managed agent bead from syncSessionBeads).
-			if b.Metadata["agent_name"] == template {
+		}
+		// Record first template/common_name match as fallback.
+		if fallback == "" {
+			if b.Metadata["template"] == template || b.Metadata["common_name"] == template {
 				if sn := b.Metadata["session_name"]; sn != "" {
-					return sn
-				}
-			}
-			// Record first template/common_name match as fallback.
-			if fallback == "" {
-				if b.Metadata["template"] == template || b.Metadata["common_name"] == template {
-					if sn := b.Metadata["session_name"]; sn != "" {
-						fallback = sn
-					}
+					fallback = sn
 				}
 			}
 		}

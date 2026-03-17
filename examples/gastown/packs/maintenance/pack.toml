@@ -4,13 +4,12 @@
 # orders for mechanical housekeeping (gates, orphans, branches, wisps).
 # Include this alongside any domain-specific pack.
 #
-# city_agents: dog pool is city-scoped (no rig directory).
+# Dog pool is city-scoped (no rig directory).
 # No rig-scoped agents — maintenance is global infrastructure.
 
 [pack]
 name = "maintenance"
 schema = 1
-city_agents = ["dog"]
 
 [[doctor]]
 name = "check-binaries"

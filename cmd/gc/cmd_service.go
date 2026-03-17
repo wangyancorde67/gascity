@@ -109,10 +109,10 @@ func doServiceList(cfg *config.City, reader serviceStatusReader, stdout, stderr 
 	fmt.Fprintf(stdout, "%-18s %-13s %-10s %-10s %-12s %s\n", "NAME", "KIND", "SERVICE", "LOCAL", "PUBLISH", "URL") //nolint:errcheck
 	for _, status := range statuses {
 		url := "-"
-		if status.PublicURL != "" {
-			url = status.PublicURL
+		if status.URL != "" {
+			url = status.URL
 		}
-		serviceState := status.ServiceState
+		serviceState := status.State
 		localState := status.LocalState
 		if !live {
 			serviceState = "config"
@@ -159,12 +159,12 @@ func doServiceDoctor(cfg *config.City, reader serviceStatusReader, name string, 
 	fmt.Fprintf(stdout, "Mount Path:        %s\n", status.MountPath)              //nolint:errcheck
 	fmt.Fprintf(stdout, "Visibility:        %s\n", serviceVisibility(status))     //nolint:errcheck
 	fmt.Fprintf(stdout, "Publish Mode:      %s\n", status.PublishMode)            //nolint:errcheck
-	fmt.Fprintf(stdout, "Service State:     %s\n", status.ServiceState)           //nolint:errcheck
+	fmt.Fprintf(stdout, "Service State:     %s\n", status.State)                   //nolint:errcheck
 	fmt.Fprintf(stdout, "Local State:       %s\n", status.LocalState)             //nolint:errcheck
 	fmt.Fprintf(stdout, "Publication State: %s\n", publicationState(status))      //nolint:errcheck
-	fmt.Fprintf(stdout, "Public URL:        %s\n", emptyDash(status.PublicURL))   //nolint:errcheck
+	fmt.Fprintf(stdout, "Public URL:        %s\n", emptyDash(status.URL))         //nolint:errcheck
 	fmt.Fprintf(stdout, "State Root:        %s\n", status.StateRoot)              //nolint:errcheck
-	fmt.Fprintf(stdout, "Reason:            %s\n", emptyDash(status.StateReason)) //nolint:errcheck
+	fmt.Fprintf(stdout, "Reason:            %s\n", emptyDash(status.Reason))      //nolint:errcheck
 	if !live {
 		fmt.Fprintln(stdout, "Observed State:    controller API unavailable; showing config-derived view") //nolint:errcheck
 	}
@@ -197,7 +197,6 @@ func configServiceStatus(svc config.Service) workspacesvc.Status {
 		Visibility:       svc.PublicationVisibilityOrDefault(),
 		Hostname:         svc.PublicationHostnameOrDefault(),
 		StateRoot:        svc.StateRootOrDefault(),
-		ServiceState:     "config",
 		State:            "config",
 		LocalState:       "config",
 		PublicationState: "config",

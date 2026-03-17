@@ -55,7 +55,7 @@ func TestManagerReloadProxyProcessStartsAndProxies(t *testing.T) {
 	}
 	if status.LocalState != "ready" {
 		logData, _ := os.ReadFile(filepath.Join(rt.cityPath, ".gc", "services", "bridge", "logs", "service.log"))
-		t.Fatalf("LocalState = %q, want ready (reason=%q, log=%q)", status.LocalState, status.StateReason, string(logData))
+		t.Fatalf("LocalState = %q, want ready (reason=%q, log=%q)", status.LocalState, status.Reason, string(logData))
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/svc/bridge/hooks/example", strings.NewReader(`{}`))

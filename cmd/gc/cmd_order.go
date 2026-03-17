@@ -227,12 +227,12 @@ func cityFormulaLayers(cityPath string, cfg *config.City) []string {
 	if len(cfg.FormulaLayers.City) > 0 {
 		return cfg.FormulaLayers.City
 	}
-	return []string{citylayout.ResolveCityFormulasDir(fsys.OSFS{}, cityPath, cfg.FormulasDir())}
+	return []string{citylayout.ResolveFormulasDir(cityPath, cfg.FormulasDir())}
 }
 
 func cityOrderRoots(cityPath string, cfg *config.City) []orders.ScanRoot {
 	formulaLayers := cityFormulaLayers(cityPath, cfg)
-	localFormulas := citylayout.ResolveCityFormulasDir(fsys.OSFS{}, cityPath, cfg.FormulasDir())
+	localFormulas := citylayout.ResolveFormulasDir(cityPath, cfg.FormulasDir())
 	roots := make([]orders.ScanRoot, 0, len(formulaLayers)+2)
 	seen := make(map[string]bool, len(formulaLayers)+2)
 	appendRoot := func(root orders.ScanRoot) {
@@ -250,7 +250,7 @@ func cityOrderRoots(cityPath string, cfg *config.City) []orders.ScanRoot {
 				Dir:          formulaRoot,
 				FormulaLayer: localFormulas,
 			})
-			for _, root := range citylayout.ResolveCityOrderRoots(fsys.OSFS{}, cityPath) {
+			for _, root := range []string{citylayout.OrdersPath(cityPath)} {
 				appendRoot(orders.ScanRoot{
 					Dir:          root,
 					FormulaLayer: localFormulas,

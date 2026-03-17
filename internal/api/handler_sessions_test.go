@@ -755,7 +755,7 @@ func TestHandleSessionCreate(t *testing.T) {
 	fs := newSessionFakeState(t)
 	srv := New(fs)
 
-	body := `{"template":"myrig/worker"}`
+	body := `{"kind":"agent","name":"myrig/worker"}`
 	req := newPostRequest("/v0/sessions", strings.NewReader(body))
 	req.Header.Set("Idempotency-Key", "sess-create-1")
 	w := httptest.NewRecorder()
@@ -787,7 +787,7 @@ func TestHandleSessionCreateCanonicalizesBareTemplate(t *testing.T) {
 	fs := newSessionFakeState(t)
 	srv := New(fs)
 
-	req := newPostRequest("/v0/sessions", strings.NewReader(`{"template":"worker"}`))
+	req := newPostRequest("/v0/sessions", strings.NewReader(`{"kind":"agent","name":"worker"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 

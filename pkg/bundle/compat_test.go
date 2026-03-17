@@ -4,22 +4,12 @@ import (
 	"testing"
 )
 
-// TestSchemaVersionCompat is the Phase 0 exit gate: verifies that the runtime
-// accepts bundles at schema version N-1 and N, and rejects N+1.
+// TestSchemaVersionCompat verifies that the runtime accepts bundles at the
+// exact current schema version and rejects all others.
 func TestSchemaVersionCompat(t *testing.T) {
 	t.Run("AcceptsCurrent", func(t *testing.T) {
 		if !CanAccept(SchemaVersion) {
 			t.Errorf("CanAccept(N=%d) = false, must accept current version", SchemaVersion)
-		}
-	})
-
-	t.Run("AcceptsPrevious", func(t *testing.T) {
-		prev := SchemaVersion - 1
-		if prev < 1 {
-			t.Skipf("N-1=%d is below minimum version 1, skipping", prev)
-		}
-		if !CanAccept(prev) {
-			t.Errorf("CanAccept(N-1=%d) = false, must accept previous version", prev)
 		}
 	})
 

@@ -30,15 +30,13 @@ import (
 // directly.
 //
 // Exec provider protocol operations:
-//   ensure-ready  — legacy start (still called for backward compat)
-//   start         — enhanced start with backoff/health tracking
+//   start         — start the backing service
 //   init          — initialize beads in a directory
 //   health        — check provider health
-//   stop          — enhanced stop with graceful shutdown
-//   shutdown      — legacy stop (still called for backward compat)
+//   stop          — stop the backing service
 
 // startBeadsLifecycle runs the full bead store startup sequence:
-// ensure-ready → init+hooks(city) → init+hooks(each rig) → regenerate routes.
+// start → init+hooks(city) → init+hooks(each rig) → regenerate routes.
 // Called by gc start and controller config reload. Rigs must have absolute
 // paths before calling (resolve relative paths first).
 func startBeadsLifecycle(cityPath, cityName string, cfg *config.City, stderr io.Writer) error {
@@ -140,32 +138,24 @@ func resolveRigPaths(cityPath string, rigs []config.Rig) {
 // individual operations.
 
 // ensureBeadsProvider starts the bead store's backing service if needed.
-// For exec providers, fires "start" (enhanced) then "ensure-ready" (legacy).
-// Providers that don't implement "start" return exit 2 (no-op), and we
-// fall through to "ensure-ready" for backward compatibility.
+// For exec providers, fires "start". For file providers, always available.
 func ensureBeadsProvider(cityPath string) error {
 	provider := beadsProvider(cityPath)
 	if strings.HasPrefix(provider, "exec:") {
 		script := strings.TrimPrefix(provider, "exec:")
-		// Fire start first (enhanced lifecycle hook).
-		_ = runProviderOp(script, cityPath, "start")
-		// Always fire ensure-ready for backward compat.
-		return runProviderOp(script, cityPath, "ensure-ready")
+		return runProviderOp(script, cityPath, "start")
 	}
-	return nil // file: always available
+	return nil
 }
 
 // shutdownBeadsProvider stops the bead store's backing service.
 // Called by gc stop after agents have been terminated.
-// For exec providers, fires "stop" (enhanced) then "shutdown" (legacy).
+// For exec providers, fires "stop". For file providers, always available.
 func shutdownBeadsProvider(cityPath string) error {
 	provider := beadsProvider(cityPath)
 	if strings.HasPrefix(provider, "exec:") {
 		script := strings.TrimPrefix(provider, "exec:")
-		// Fire stop first (enhanced lifecycle hook).
-		_ = runProviderOp(script, cityPath, "stop")
-		// Always fire shutdown for backward compat.
-		return runProviderOp(script, cityPath, "shutdown")
+		return runProviderOp(script, cityPath, "stop")
 	}
 	return nil
 }
@@ -199,52 +189,22 @@ func healthBeadsProvider(cityPath string) error {
 	return nil // file: always healthy
 }
 
-// readDoltPort reads the dolt server port from the port file or state file
-// and sets GC_DOLT_PORT in the process environment. This ensures
-// passthroughEnv() propagates the ephemeral port to all agent sessions.
+// readDoltPort reads the dolt server port from the port file and sets
+// GC_DOLT_PORT in the process environment. This ensures passthroughEnv()
+// propagates the ephemeral port to all agent sessions.
 // No-op if GC_DOLT_PORT is already set.
 func readDoltPort(cityPath string) {
 	if os.Getenv("GC_DOLT_PORT") != "" {
 		return
 	}
 
-	// Primary: .beads/dolt-server.port (plain text, single integer).
+	// .beads/dolt-server.port (plain text, single integer).
 	portFile := filepath.Join(cityPath, ".beads", "dolt-server.port")
 	if data, err := os.ReadFile(portFile); err == nil {
 		port := strings.TrimSpace(string(data))
 		if port != "" {
 			_ = os.Setenv("GC_DOLT_PORT", port)
 			return
-		}
-	}
-
-	// Fallback: dolt-state.json "port" field.
-	// Try pack state dir first, then legacy .gc/ dir.
-	for _, stateFile := range []string{
-		filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt", "dolt-state.json"),
-		filepath.Join(cityPath, ".gc", "dolt-state.json"),
-	} {
-		if data, err := os.ReadFile(stateFile); err == nil {
-			// Quick parse: extract "port":NNN without json dependency.
-			s := string(data)
-			if idx := strings.Index(s, `"port"`); idx >= 0 {
-				rest := s[idx+len(`"port"`):]
-				// Skip colon and whitespace.
-				rest = strings.TrimLeft(rest, ": \t")
-				// Read digits.
-				var port strings.Builder
-				for _, c := range rest {
-					if c >= '0' && c <= '9' {
-						port.WriteRune(c)
-					} else {
-						break
-					}
-				}
-				if port.Len() > 0 {
-					_ = os.Setenv("GC_DOLT_PORT", port.String())
-					return
-				}
-			}
 		}
 	}
 }
@@ -266,12 +226,12 @@ func runProviderProbe(script, cityPath string) bool {
 }
 
 // providerOpTimeout returns the context timeout for a given lifecycle
-// operation. The "start" and "ensure-ready" operations get a longer
-// timeout because dolt server startup can take 30+ seconds for large
-// data dirs. All other operations use 30s.
+// operation. The "start" and "recover" operations get a longer timeout
+// because dolt server startup can take 30+ seconds for large data dirs.
+// All other operations use 30s.
 func providerOpTimeout(op string) time.Duration {
 	switch op {
-	case "start", "ensure-ready", "recover":
+	case "start", "recover":
 		return 120 * time.Second
 	default:
 		return 30 * time.Second
@@ -280,7 +240,7 @@ func providerOpTimeout(op string) time.Duration {
 
 // runProviderOp runs a lifecycle operation against an exec beads script.
 // Exit 2 = not needed (treated as success, no-op). Used for start,
-// ensure-ready, init, health, recover, stop, and shutdown operations.
+// init, health, recover, and stop operations.
 // cityPath is set as GC_CITY_PATH in the subprocess environment so scripts
 // can locate the city root.
 func runProviderOp(script, cityPath string, args ...string) error {

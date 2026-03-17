@@ -36,7 +36,6 @@ gc [flags]
 | [gc hook](#gc-hook) | Check for available work (use --inject for Stop hook output) |
 | [gc init](#gc-init) | Initialize a new city |
 | [gc mail](#gc-mail) | Send and receive messages between agents and humans |
-| [gc migration](#gc-migration) | Migration tools for the unified session model |
 | [gc nudge](#gc-nudge) | Inspect and deliver deferred nudges |
 | [gc order](#gc-order) | Manage orders (periodic formula dispatch) |
 | [gc pack](#gc-pack) | Manage remote pack sources |
@@ -1074,29 +1073,6 @@ Show all messages sharing a thread ID, ordered by time.
 
 ```
 gc mail thread <thread-id>
-```
-
-## gc migration
-
-Migration tools for the unified session model
-
-```
-gc migration
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| [gc migration plan](#gc-migration-plan) | Show what the adoption barrier would do without making changes |
-
-## gc migration plan
-
-Dry-run the adoption barrier: list running sessions, check which ones
-already have session beads, and report what beads would be created.
-
-No changes are made. Run "gc start" to execute the actual adoption.
-
-```
-gc migration plan
 ```
 
 ## gc nudge

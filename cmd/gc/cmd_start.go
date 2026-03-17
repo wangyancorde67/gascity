@@ -275,7 +275,7 @@ func requireBootstrappedCity(dir string) (string, error) {
 		}
 		return "", fmt.Errorf("%w; run \"gc init\" first", err)
 	}
-	if !citylayout.HasLegacyRuntimeRoot(cityPath) {
+	if !citylayout.HasRuntimeRoot(cityPath) {
 		return "", fmt.Errorf("city runtime not bootstrapped at %s; run \"gc init %s\" first", cityPath, cityPath)
 	}
 	return cityPath, nil
@@ -380,7 +380,7 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 	}
 
 	// Resolve rig paths and run the full bead store lifecycle:
-	// ensure-ready → init+hooks(city) → init+hooks(rigs) → routes.
+	// probe → init+hooks(city) → init+hooks(rigs) → routes.
 	resolveRigPaths(cityPath, cfg.Rigs)
 	if err := startBeadsLifecycle(cityPath, cityName, cfg, stderr); err != nil {
 		fmt.Fprintf(stderr, "gc start: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -601,7 +601,7 @@ func settingsArgs(cityPath, providerName string) string {
 	if providerName != "claude" {
 		return ""
 	}
-	settingsPath := citylayout.ResolveReadPath(fsys.OSFS{}, cityPath, citylayout.ClaudeHookFile)
+	settingsPath := citylayout.ClaudeHookFilePath(cityPath)
 	if _, err := os.Stat(settingsPath); err != nil {
 		return ""
 	}
@@ -638,7 +638,7 @@ func stageHookFiles(copyFiles []runtime.CopyEntry, cityPath, workDir string) []r
 	// cityDir-based hooks: claude (.gc/settings.json).
 	// Skip if settingsArgs already added it.
 	settingsRel := filepath.Join(".gc", "settings.json")
-	settingsAbs := citylayout.ResolveReadPath(fsys.OSFS{}, cityPath, citylayout.ClaudeHookFile)
+	settingsAbs := citylayout.ClaudeHookFilePath(cityPath)
 	if _, err := os.Stat(settingsAbs); err == nil {
 		alreadyStaged := false
 		for _, cf := range copyFiles {

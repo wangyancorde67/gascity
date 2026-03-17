@@ -411,10 +411,10 @@ func TestStopManagedCityForcesCleanupAfterTimeout(t *testing.T) {
 	}
 
 	ops := readOpLog(t, logFile)
-	if len(ops) != 2 {
-		t.Fatalf("expected bead provider stop+shutdown, got %v", ops)
+	if len(ops) != 1 {
+		t.Fatalf("expected bead provider stop, got %v", ops)
 	}
-	if !strings.HasPrefix(ops[0], "stop") || !strings.HasPrefix(ops[1], "shutdown") {
-		t.Fatalf("unexpected bead provider ops: %v", ops)
+	if !strings.HasPrefix(ops[0], "stop") {
+		t.Fatalf("unexpected bead provider op: %v", ops)
 	}
 }

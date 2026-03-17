@@ -38,7 +38,7 @@ func (h *healthzWorkflow) Status() Status {
 		LocalState:       "ready",
 		UpdatedAt:        time.Now().UTC(),
 	}
-	status.SetState("ready")
+	status.State = "ready"
 	return status
 }
 

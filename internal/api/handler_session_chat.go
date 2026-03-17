@@ -24,7 +24,6 @@ var errSessionTemplateNotFound = errors.New("session template not found")
 
 type sessionCreateRequest struct {
 	// Kind discriminates the session target: "agent" or "provider".
-	// When empty and Template is set, backward-compat mode: try agent, then provider.
 	Kind    string            `json:"kind,omitempty"`
 	Name    string            `json:"name,omitempty"`
 	Message string            `json:"message,omitempty"`
@@ -32,10 +31,7 @@ type sessionCreateRequest struct {
 	// ProjectID is an opaque identifier for the MC project context.
 	// Stored in bead metadata for session-to-project association.
 	ProjectID string `json:"project_id,omitempty"`
-
-	// Legacy field — used when Kind is empty for backward compatibility.
-	Template string `json:"template,omitempty"`
-	Title    string `json:"title,omitempty"`
+	Title     string `json:"title,omitempty"`
 }
 
 type sessionMessageRequest struct {
@@ -183,8 +179,6 @@ func writeSessionManagerError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotImplemented, "unsupported", err.Error())
 	case errors.Is(err, session.ErrPendingInteraction):
 		writeError(w, http.StatusConflict, "pending_interaction", err.Error())
-	case errors.Is(err, session.ErrTransportUnknown):
-		writeError(w, http.StatusConflict, "unknown_transport", err.Error())
 	case errors.Is(err, session.ErrNoPendingInteraction):
 		writeError(w, http.StatusConflict, "no_pending", err.Error())
 	case errors.Is(err, session.ErrInteractionMismatch):
@@ -211,16 +205,10 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize: support both new (kind+name) and legacy (template) fields.
 	kind := body.Kind
 	name := body.Name
-	if kind == "" && body.Template != "" {
-		// Legacy mode: try agent first, fall back to provider.
-		kind = "agent"
-		name = body.Template
-	}
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "invalid", "name (or template) is required")
+		writeError(w, http.StatusBadRequest, "invalid", "name is required")
 		return
 	}
 	if kind != "agent" && kind != "provider" {
@@ -253,11 +241,6 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		resolved, workDir, transport, template, err = s.resolveSessionTemplate(name)
 		if err != nil {
 			if errors.Is(err, errSessionTemplateNotFound) {
-				// Legacy fallback: keep idempotency reservation alive through the fallback.
-				if body.Kind == "" && body.Template != "" {
-					s.createProviderSession(w, r, store, body, name, idemKey, bodyHash)
-					return
-				}
 				s.idem.unreserve(idemKey)
 				writeError(w, http.StatusNotFound, "agent_not_found", "agent '"+name+"' not found")
 				return

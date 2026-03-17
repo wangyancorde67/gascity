@@ -47,10 +47,10 @@ func TestDoServiceListUsesLiveStatuses(t *testing.T) {
 			Kind:             "workflow",
 			MountPath:        "/svc/healthz",
 			PublishMode:      "direct",
-			ServiceState:     "ready",
+			State:            "ready",
 			LocalState:       "ready",
 			PublicationState: "direct",
-			PublicURL:        "http://127.0.0.1:9443/svc/healthz",
+			URL:              "http://127.0.0.1:9443/svc/healthz",
 		}},
 	}
 

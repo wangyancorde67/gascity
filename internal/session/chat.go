@@ -35,9 +35,6 @@ var (
 	// ErrPendingInteraction reports that the session is blocked on a pending
 	// approval or question and cannot accept a new user turn.
 	ErrPendingInteraction = errors.New("session has a pending interaction")
-	// ErrTransportUnknown reports that a legacy session is missing persisted
-	// transport metadata and cannot be safely resumed on the current config.
-	ErrTransportUnknown = errors.New("session transport is ambiguous; migrate or recreate the session")
 )
 
 type sessionMutationLockEntry struct {
@@ -114,11 +111,6 @@ func (m *Manager) sessionBead(id string) (beads.Bead, string, error) {
 
 func (m *Manager) ensureRunning(ctx context.Context, id string, b beads.Bead, sessName, resumeCommand string, hints runtime.Config) error {
 	transport, transportVerified := m.transportForBead(b, sessName)
-	if transport == "" && b.Metadata["transport"] == "" && m.transportResolver != nil {
-		if normalizeTransport(b.Metadata["provider"], m.transportResolver(b.Metadata["template"])) == "acp" {
-			return fmt.Errorf("%w: %s", ErrTransportUnknown, id)
-		}
-	}
 	unroute := m.routeACPIfNeeded(b.Metadata["provider"], transport, sessName)
 	if State(b.Metadata["state"]) != StateSuspended && m.sp.IsRunning(sessName) {
 		if b.Metadata["transport"] == "" && transportVerified {

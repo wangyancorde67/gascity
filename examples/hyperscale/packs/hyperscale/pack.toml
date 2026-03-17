@@ -6,7 +6,6 @@
 [pack]
 name = "hyperscale"
 schema = 1
-city_agents = []
 
 [[agent]]
 name = "worker"

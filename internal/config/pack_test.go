@@ -782,77 +782,9 @@ func TestHasPackRigs(t *testing.T) {
 	}
 }
 
-// --- EffectiveCityPacks tests ---
-
-func TestEffectiveCityPacks_SingularOnly(t *testing.T) {
-	ws := Workspace{Includes: []string{"packs/gastown"}}
-	got := EffectiveCityPacks(ws)
-	if len(got) != 1 || got[0] != "packs/gastown" {
-		t.Errorf("got %v, want [packs/gastown]", got)
-	}
-}
-
-func TestEffectiveCityPacks_PluralOnly(t *testing.T) {
-	ws := Workspace{Includes: []string{"packs/a", "packs/b"}}
-	got := EffectiveCityPacks(ws)
-	if len(got) != 2 || got[0] != "packs/a" || got[1] != "packs/b" {
-		t.Errorf("got %v, want [packs/a packs/b]", got)
-	}
-}
-
-func TestEffectiveCityPacks_Multiple(t *testing.T) {
-	ws := Workspace{
-		Includes: []string{"packs/a", "packs/b", "packs/c"},
-	}
-	got := EffectiveCityPacks(ws)
-	if len(got) != 3 || got[0] != "packs/a" || got[1] != "packs/b" || got[2] != "packs/c" {
-		t.Errorf("got %v, want [packs/a packs/b packs/c]", got)
-	}
-}
-
-func TestEffectiveCityPacks_Neither(t *testing.T) {
-	ws := Workspace{}
-	got := EffectiveCityPacks(ws)
-	if len(got) != 0 {
-		t.Errorf("got %v, want empty", got)
-	}
-}
-
-// --- EffectiveRigPacks tests ---
-
-func TestEffectiveRigPacks_SingularOnly(t *testing.T) {
-	rig := Rig{Includes: []string{"packs/gastown"}}
-	got := EffectiveRigPacks(rig)
-	if len(got) != 1 || got[0] != "packs/gastown" {
-		t.Errorf("got %v, want [packs/gastown]", got)
-	}
-}
-
-func TestEffectiveRigPacks_PluralOnly(t *testing.T) {
-	rig := Rig{Includes: []string{"packs/a", "packs/b"}}
-	got := EffectiveRigPacks(rig)
-	if len(got) != 2 || got[0] != "packs/a" || got[1] != "packs/b" {
-		t.Errorf("got %v, want [packs/a packs/b]", got)
-	}
-}
-
-func TestEffectiveRigPacks_Multiple(t *testing.T) {
-	rig := Rig{
-		Includes: []string{"packs/a", "packs/b", "packs/c"},
-	}
-	got := EffectiveRigPacks(rig)
-	if len(got) != 3 || got[0] != "packs/a" || got[1] != "packs/b" || got[2] != "packs/c" {
-		t.Errorf("got %v, want [packs/a packs/b packs/c]", got)
-	}
-}
-
-func TestEffectiveRigPacks_Neither(t *testing.T) {
-	rig := Rig{}
-	got := EffectiveRigPacks(rig)
-	if len(got) != 0 {
-		t.Errorf("got %v, want empty", got)
-	}
-}
+// The EffectiveCityPacks/EffectiveRigPacks helper functions have been
+// removed — callers now access Workspace.Includes and Rig.Includes
+// directly. The former tests were trivial pass-through validations.
 
 // --- ExpandCityPacks (plural) tests ---
 
@@ -1276,9 +1208,9 @@ name = "deacon"
 		Agents:    []Agent{{Name: "existing"}},
 	}
 
-	formulaDir, err := ExpandCityPack(cfg, fsys.OSFS{}, dir)
+	formulaDirs, _, err := ExpandCityPacks(cfg, fsys.OSFS{}, dir)
 	if err != nil {
-		t.Fatalf("ExpandCityPack: %v", err)
+		t.Fatalf("ExpandCityPacks: %v", err)
 	}
 
 	// Should have 3 agents: mayor, deacon (from pack), then existing.
@@ -1302,9 +1234,9 @@ name = "deacon"
 		}
 	}
 
-	// No formulas configured → empty string.
-	if formulaDir != "" {
-		t.Errorf("formulaDir = %q, want empty", formulaDir)
+	// No formulas configured → empty slice.
+	if len(formulaDirs) != 0 {
+		t.Errorf("formulaDirs = %v, want empty", formulaDirs)
 	}
 }
 
@@ -1328,14 +1260,14 @@ name = "mayor"
 		Workspace: Workspace{Includes: []string{"packs/gastown"}},
 	}
 
-	formulaDir, err := ExpandCityPack(cfg, fsys.OSFS{}, dir)
+	formulaDirs, _, err := ExpandCityPacks(cfg, fsys.OSFS{}, dir)
 	if err != nil {
-		t.Fatalf("ExpandCityPack: %v", err)
+		t.Fatalf("ExpandCityPacks: %v", err)
 	}
 
 	want := filepath.Join(dir, "packs/gastown/formulas")
-	if formulaDir != want {
-		t.Errorf("formulaDir = %q, want %q", formulaDir, want)
+	if len(formulaDirs) != 1 || formulaDirs[0] != want {
+		t.Errorf("formulaDirs = %v, want [%q]", formulaDirs, want)
 	}
 }
 
@@ -1344,12 +1276,12 @@ func TestExpandCityPack_NoPack(t *testing.T) {
 		Agents: []Agent{{Name: "mayor"}},
 	}
 
-	formulaDir, err := ExpandCityPack(cfg, fsys.OSFS{}, "/tmp")
+	formulaDirs, _, err := ExpandCityPacks(cfg, fsys.OSFS{}, "/tmp")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if formulaDir != "" {
-		t.Errorf("formulaDir = %q, want empty", formulaDir)
+	if len(formulaDirs) != 0 {
+		t.Errorf("formulaDirs = %v, want empty", formulaDirs)
 	}
 	if len(cfg.Agents) != 1 {
 		t.Errorf("got %d agents, want 1 (unchanged)", len(cfg.Agents))
@@ -1378,9 +1310,9 @@ name = "mayor"
 		},
 	}
 
-	_, err := ExpandCityPack(cfg, fsys.OSFS{}, dir)
+	_, _, err := ExpandCityPacks(cfg, fsys.OSFS{}, dir)
 	if err != nil {
-		t.Fatalf("ExpandCityPack: %v", err)
+		t.Fatalf("ExpandCityPacks: %v", err)
 	}
 
 	if _, ok := cfg.Providers["codex"]; !ok {
@@ -1590,9 +1522,9 @@ name = "mayor"
 		Workspace: Workspace{Includes: []string{"packs/gastown"}},
 	}
 
-	_, err := ExpandCityPack(cfg, fsys.OSFS{}, dir)
+	_, _, err := ExpandCityPacks(cfg, fsys.OSFS{}, dir)
 	if err != nil {
-		t.Fatalf("ExpandCityPack: %v", err)
+		t.Fatalf("ExpandCityPacks: %v", err)
 	}
 
 	wantDir := filepath.Join(dir, "packs/gastown")
@@ -1631,107 +1563,39 @@ overlay_dir = "overlays/worker"
 	}
 }
 
-// --- CityAgents tests ---
-
-func TestLoadPackCityAgents(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "packs/combined/pack.toml", `
-[pack]
-name = "combined"
-schema = 1
-city_agents = ["mayor", "deacon"]
-
-[[agent]]
-name = "mayor"
-
-[[agent]]
-name = "deacon"
-
-[[agent]]
-name = "witness"
-`)
-
-	agents, _, _, _, _, _, err := loadPack(
-		fsys.OSFS{},
-		filepath.Join(dir, "packs/combined/pack.toml"),
-		filepath.Join(dir, "packs/combined"),
-		dir, "", nil)
-	if err != nil {
-		t.Fatalf("loadPack: %v", err)
-	}
-	if len(agents) != 3 {
-		t.Fatalf("got %d agents, want 3", len(agents))
-	}
-	// city_agents stamps scope on agents.
-	cityCount := 0
-	for _, a := range agents {
-		if a.Scope == "city" {
-			cityCount++
-		}
-	}
-	if cityCount != 2 {
-		t.Fatalf("got %d city-scoped agents, want 2", cityCount)
-	}
-}
-
-func TestLoadPackCityAgentsInvalid(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "packs/bad/pack.toml", `
-[pack]
-name = "bad"
-schema = 1
-city_agents = ["mayor", "nonexistent"]
-
-[[agent]]
-name = "mayor"
-
-[[agent]]
-name = "witness"
-`)
-
-	_, _, _, _, _, _, err := loadPack(
-		fsys.OSFS{},
-		filepath.Join(dir, "packs/bad/pack.toml"),
-		filepath.Join(dir, "packs/bad"),
-		dir, "", nil)
-	if err == nil {
-		t.Fatal("expected error for city_agents with unknown agent name")
-	}
-	if !strings.Contains(err.Error(), "nonexistent") {
-		t.Errorf("error = %v, want to contain 'nonexistent'", err)
-	}
-}
-
 func TestExpandCityPackFilters(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "packs/combined/pack.toml", `
 [pack]
 name = "combined"
 schema = 1
-city_agents = ["mayor", "deacon"]
 
 [[agent]]
 name = "mayor"
+scope = "city"
 prompt_template = "prompts/mayor.md"
 
 [[agent]]
 name = "deacon"
+scope = "city"
 
 [[agent]]
 name = "witness"
+scope = "rig"
 prompt_template = "prompts/witness.md"
 
 [[agent]]
 name = "polecat"
+scope = "rig"
 `)
 
 	cfg := &City{
 		Workspace: Workspace{Includes: []string{"packs/combined"}},
 	}
 
-	_, err := ExpandCityPack(cfg, fsys.OSFS{}, dir)
+	_, _, err := ExpandCityPacks(cfg, fsys.OSFS{}, dir)
 	if err != nil {
-		t.Fatalf("ExpandCityPack: %v", err)
+		t.Fatalf("ExpandCityPacks: %v", err)
 	}
 
 	// Should only have city agents (mayor, deacon).
@@ -1759,20 +1623,23 @@ func TestExpandPacksFilters(t *testing.T) {
 [pack]
 name = "combined"
 schema = 1
-city_agents = ["mayor", "deacon"]
 
 [[agent]]
 name = "mayor"
+scope = "city"
 
 [[agent]]
 name = "deacon"
+scope = "city"
 
 [[agent]]
 name = "witness"
+scope = "rig"
 prompt_template = "prompts/witness.md"
 
 [[agent]]
 name = "polecat"
+scope = "rig"
 `)
 
 	cfg := &City{
@@ -1804,8 +1671,8 @@ name = "polecat"
 	}
 }
 
-func TestExpandCityPackNoCityAgents(t *testing.T) {
-	// When city_agents is empty, all agents are city-scoped (backward compat).
+func TestExpandCityPackNoScope(t *testing.T) {
+	// When scope is not set, all agents are unscoped (included in both city and rig).
 	dir := t.TempDir()
 	writeFile(t, dir, "packs/simple/pack.toml", `
 [pack]
@@ -1823,13 +1690,13 @@ name = "beta"
 		Workspace: Workspace{Includes: []string{"packs/simple"}},
 	}
 
-	_, err := ExpandCityPack(cfg, fsys.OSFS{}, dir)
+	_, _, err := ExpandCityPacks(cfg, fsys.OSFS{}, dir)
 	if err != nil {
-		t.Fatalf("ExpandCityPack: %v", err)
+		t.Fatalf("ExpandCityPacks: %v", err)
 	}
 
 	if len(cfg.Agents) != 2 {
-		t.Fatalf("got %d agents, want 2 (all agents without city_agents filter)", len(cfg.Agents))
+		t.Fatalf("got %d agents, want 2 (all unscoped agents included)", len(cfg.Agents))
 	}
 }
 
@@ -2041,30 +1908,30 @@ name = "mayor"
 	}
 }
 
-func TestPackIncludesCityAgents(t *testing.T) {
+func TestPackIncludesScope(t *testing.T) {
 	dir := t.TempDir()
 
-	// maintenance pack: defines "dog" with city_agents.
+	// maintenance pack: defines "dog" with scope="city".
 	writeFile(t, dir, "packs/maintenance/pack.toml", `
 [pack]
 name = "maintenance"
 schema = 1
-city_agents = ["dog"]
 
 [[agent]]
 name = "dog"
+scope = "city"
 `)
 
-	// gastown pack: includes maintenance, own city_agents.
+	// gastown pack: includes maintenance, mayor is scope="city".
 	writeFile(t, dir, "packs/gastown/pack.toml", `
 [pack]
 name = "gastown"
 schema = 1
 includes = ["../maintenance"]
-city_agents = ["mayor"]
 
 [[agent]]
 name = "mayor"
+scope = "city"
 `)
 
 	agents, _, _, _, _, _, err := loadPack(
@@ -2076,7 +1943,7 @@ name = "mayor"
 		t.Fatalf("loadPack: %v", err)
 	}
 
-	// city_agents stamps scope: dog and mayor should be city-scoped.
+	// scope="city" on each agent: dog and mayor should be city-scoped.
 	cityScoped := make(map[string]bool)
 	for _, a := range agents {
 		if a.Scope == "city" {
@@ -2259,13 +2126,13 @@ func TestExpandCityPacksWithIncludes(t *testing.T) {
 [pack]
 name = "maintenance"
 schema = 1
-city_agents = ["dog"]
 
 [formulas]
 dir = "formulas"
 
 [[agent]]
 name = "dog"
+scope = "city"
 `)
 	writeFile(t, dir, "packs/maintenance/formulas/.keep", "")
 
@@ -2275,16 +2142,17 @@ name = "dog"
 name = "gastown"
 schema = 1
 includes = ["../maintenance"]
-city_agents = ["mayor"]
 
 [formulas]
 dir = "formulas"
 
 [[agent]]
 name = "mayor"
+scope = "city"
 
 [[agent]]
 name = "witness"
+scope = "rig"
 `)
 	writeFile(t, dir, "packs/gastown/formulas/.keep", "")
 
@@ -2296,7 +2164,7 @@ name = "witness"
 		t.Fatalf("ExpandCityPacks: %v", err)
 	}
 
-	// city_agents union = [dog, mayor], so witness is filtered out.
+	// scope="city" agents included, scope="rig" witness filtered out.
 	agentNames := make(map[string]bool)
 	for _, a := range cfg.Agents {
 		agentNames[a.Name] = true
@@ -2308,7 +2176,7 @@ name = "witness"
 		t.Error("expected mayor agent (from gastown)")
 	}
 	if agentNames["witness"] {
-		t.Error("witness should be filtered out (not in city_agents)")
+		t.Error("witness should be filtered out (rig-scoped)")
 	}
 
 	// Formula dirs: maintenance then gastown.
@@ -2409,73 +2277,6 @@ scope = "rig"
 	}
 }
 
-func TestLoadPack_ScopeAndCityAgentsCoexist(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "packs/test/pack.toml", `
-[pack]
-name = "test"
-schema = 1
-city_agents = ["deacon"]
-
-[[agent]]
-name = "mayor"
-scope = "city"
-
-[[agent]]
-name = "deacon"
-
-[[agent]]
-name = "polecat"
-scope = "rig"
-`)
-
-	agents, _, _, _, _, _, err := loadPack(
-		fsys.OSFS{}, filepath.Join(dir, "packs/test/pack.toml"),
-		filepath.Join(dir, "packs/test"), dir, "myrig", nil)
-	if err != nil {
-		t.Fatalf("loadPack: %v", err)
-	}
-
-	// scope="city" (explicit) and city_agents (auto-stamped) should both work.
-	scopes := make(map[string]string)
-	for _, a := range agents {
-		scopes[a.Name] = a.Scope
-	}
-	if scopes["mayor"] != "city" {
-		t.Errorf("mayor scope = %q, want city (explicit)", scopes["mayor"])
-	}
-	if scopes["deacon"] != "city" {
-		t.Errorf("deacon scope = %q, want city (from city_agents)", scopes["deacon"])
-	}
-	if scopes["polecat"] != "rig" {
-		t.Errorf("polecat scope = %q, want rig (explicit)", scopes["polecat"])
-	}
-}
-
-func TestLoadPack_ScopeConflictWithCityAgents(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "packs/test/pack.toml", `
-[pack]
-name = "test"
-schema = 1
-city_agents = ["polecat"]
-
-[[agent]]
-name = "polecat"
-scope = "rig"
-`)
-
-	_, _, _, _, _, _, err := loadPack(
-		fsys.OSFS{}, filepath.Join(dir, "packs/test/pack.toml"),
-		filepath.Join(dir, "packs/test"), dir, "myrig", nil)
-	if err == nil {
-		t.Fatal("expected error for scope=rig + city_agents conflict")
-	}
-	if !strings.Contains(err.Error(), "conflicts") {
-		t.Errorf("error = %q, want conflict message", err.Error())
-	}
-}
-
 func TestExpandCityPacks_ScopeFiltering(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "packs/test/pack.toml", `
@@ -2550,42 +2351,6 @@ scope = "rig"
 // ---------------------------------------------------------------------------
 // Workspace/Rig Includes tests
 // ---------------------------------------------------------------------------
-
-func TestEffectiveCityPacks_Includes(t *testing.T) {
-	ws := Workspace{
-		Includes: []string{"packs/alpha", "packs/beta"},
-	}
-	got := EffectiveCityPacks(ws)
-	if len(got) != 2 || got[0] != "packs/alpha" || got[1] != "packs/beta" {
-		t.Errorf("EffectiveCityPacks = %v, want [packs/alpha packs/beta]", got)
-	}
-}
-
-func TestEffectiveCityPacks_IncludesOnly(t *testing.T) {
-	ws := Workspace{
-		Includes: []string{"packs/main", "packs/extra", "packs/new"},
-	}
-	got := EffectiveCityPacks(ws)
-	want := []string{"packs/main", "packs/extra", "packs/new"}
-	if len(got) != len(want) {
-		t.Fatalf("len = %d, want %d", len(got), len(want))
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
-func TestEffectiveRigPacks_Includes(t *testing.T) {
-	rig := Rig{
-		Includes: []string{"packs/alpha"},
-	}
-	got := EffectiveRigPacks(rig)
-	if len(got) != 1 || got[0] != "packs/alpha" {
-		t.Errorf("EffectiveRigPacks = %v, want [packs/alpha]", got)
-	}
-}
 
 func TestHasPackRigs_Includes(t *testing.T) {
 	rigs := []Rig{
@@ -3972,20 +3737,21 @@ func TestPackDefinesAgent_CityScoped(t *testing.T) {
 [pack]
 name = "gastown"
 schema = 1
-city_agents = ["mayor"]
 
 [[agent]]
 name = "mayor"
+scope = "city"
 
 [[agent]]
 name = "polecat"
+scope = "rig"
 `)
 	fs := fsys.OSFS{}
-	// mayor is city-scoped via city_agents, should NOT be found as rig agent.
+	// mayor is city-scoped via scope="city", should NOT be found as rig agent.
 	if PackDefinesAgent(fs, "packs/gastown", dir, "mayor") {
 		t.Error("PackDefinesAgent should not find city-scoped mayor as rig agent")
 	}
-	// polecat is rig-scoped (default), should be found.
+	// polecat is rig-scoped, should be found.
 	if !PackDefinesAgent(fs, "packs/gastown", dir, "polecat") {
 		t.Error("PackDefinesAgent should find rig-scoped polecat")
 	}

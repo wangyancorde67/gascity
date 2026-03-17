@@ -1,6 +1,6 @@
 # Pack includes — verifies that a pack can include other packs.
 #
-# Tests: pack includes, agent merging, city_agents union.
+# Tests: pack includes, agent merging, scope filtering.
 
 env GC_BEADS=file
 env GC_DOLT=skip
@@ -24,7 +24,7 @@ stdout 'dog'
 exec gc config show
 stdout 'max = 3'
 
-# --- 4. Without rigs, no rig-scoped agents (witness filtered by city_agents) ---
+# --- 4. Without rigs, no rig-scoped agents (witness filtered by scope) ---
 
 exec gc config show
 ! stdout 'witness'
@@ -58,23 +58,24 @@ patrol_interval = "30s"
 name = "main"
 schema = 1
 includes = ["../helper"]
-city_agents = ["mayor", "dog"]
 
 [[agent]]
 name = "mayor"
+scope = "city"
 start_command = "echo hello"
 
 [[agent]]
 name = "witness"
+scope = "rig"
 
 -- testcity/packs/helper/pack.toml --
 [pack]
 name = "helper"
 schema = 1
-city_agents = ["dog"]
 
 [[agent]]
 name = "dog"
+scope = "city"
 start_command = "echo hello"
 [agent.pool]
 min = 0

@@ -218,20 +218,12 @@ func isMessage(b beads.Bead) bool {
 
 // beadToMessage converts a bead to a mail.Message.
 func beadToMessage(b beads.Bead) mail.Message {
-	subject := b.Title
-	body := b.Description
-	// Backward compat: old messages have body in Title, no Description,
-	// and no gc:message label.
-	if body == "" && !hasLabel(b.Labels, "gc:message") {
-		body = subject
-		subject = ""
-	}
 	return mail.Message{
 		ID:        b.ID,
 		From:      b.From,
 		To:        b.Assignee,
-		Subject:   subject,
-		Body:      body,
+		Subject:   b.Title,
+		Body:      b.Description,
 		CreatedAt: b.CreatedAt,
 		Read:      hasLabel(b.Labels, "read"),
 		ThreadID:  extractLabel(b.Labels, "thread:"),

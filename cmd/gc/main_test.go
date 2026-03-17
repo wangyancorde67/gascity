@@ -1634,10 +1634,10 @@ func TestDoInitFromDirSuccess(t *testing.T) {
 		[]byte("[workspace]\nname = \"template\"\nprovider = \"claude\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(srcDir, ".gc", "prompts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(srcDir, "prompts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir, ".gc", "prompts", "mayor.md"), []byte("prompt"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "prompts", "mayor.md"), []byte("prompt"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1890,11 +1890,11 @@ func TestInitFromSkip(t *testing.T) {
 		isDir   bool
 		want    bool
 	}{
-		{".gc", true, false},
+		{".gc", true, true},
 		{".gc/state.json", false, true},
 		{filepath.Join(".gc", "agents", "mayor.json"), false, true},
-		{filepath.Join(".gc", "prompts"), true, false},
-		{filepath.Join(".gc", "prompts", "mayor.md"), false, false},
+		{filepath.Join(".gc", "prompts"), true, true},
+		{filepath.Join(".gc", "prompts", "mayor.md"), false, true},
 		{"gastown_test.go", false, true},
 		{filepath.Join("sub", "foo_test.go"), false, true},
 		{"city.toml", false, false},
@@ -2224,7 +2224,7 @@ func TestDoPrimeWithKnownAgent(t *testing.T) {
 	if err := os.MkdirAll(gcDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	promptsDir := filepath.Join(dir, ".gc", "prompts")
+	promptsDir := filepath.Join(dir, "prompts")
 	if err := os.MkdirAll(promptsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -2266,7 +2266,7 @@ func TestDoPrimeUsesGCAgentEnv(t *testing.T) {
 	if err := os.MkdirAll(gcDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	promptsDir := filepath.Join(dir, ".gc", "prompts")
+	promptsDir := filepath.Join(dir, "prompts")
 	if err := os.MkdirAll(promptsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -2362,7 +2362,7 @@ func TestDoPrimeBareName(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	promptsDir := filepath.Join(dir, ".gc", "prompts")
+	promptsDir := filepath.Join(dir, "prompts")
 	if err := os.MkdirAll(promptsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -2454,7 +2454,7 @@ func TestDoPrimeHookPersistsSessionID(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	promptsDir := filepath.Join(dir, ".gc", "prompts")
+	promptsDir := filepath.Join(dir, "prompts")
 	if err := os.MkdirAll(promptsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

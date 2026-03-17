@@ -227,10 +227,10 @@ func TestRegistryReRegisterNameConflict(t *testing.T) {
 }
 
 func TestCityEntryEffectiveName(t *testing.T) {
-	// Without explicit name, falls back to basename.
+	// Without explicit name, returns empty string.
 	e := CityEntry{Path: "/home/user/bright-lights"}
-	if e.EffectiveName() != "bright-lights" {
-		t.Errorf("expected bright-lights, got %s", e.EffectiveName())
+	if e.EffectiveName() != "" {
+		t.Errorf("expected empty, got %s", e.EffectiveName())
 	}
 
 	// With explicit name, uses it.

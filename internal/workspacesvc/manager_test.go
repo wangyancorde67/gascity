@@ -76,14 +76,14 @@ func registerWorkflowContractForTest(t *testing.T, contract string, factory Work
 	})
 }
 
-func TestManagerReloadWorkflowServiceCreatesStateRootAndDirectURL(t *testing.T) {
+func TestManagerReloadWorkflowServiceCreatesStateRoot(t *testing.T) {
 	contract := uniqueContract(t)
 	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
 		return &testInstance{
 			status: Status{
 				ServiceName:      svc.Name,
 				WorkflowContract: contract,
-				ServiceState:     "ready",
+				State:            "ready",
 				LocalState:       "ready",
 			},
 		}, nil
@@ -93,11 +93,9 @@ func TestManagerReloadWorkflowServiceCreatesStateRootAndDirectURL(t *testing.T) 
 		cityPath: t.TempDir(),
 		cityName: "test-city",
 		cfg: &config.City{
-			API: config.APIConfig{Bind: "127.0.0.1", Port: 9443},
 			Services: []config.Service{{
-				Name:        "review-intake",
-				PublishMode: "direct",
-				Workflow:    config.ServiceWorkflowConfig{Contract: contract},
+				Name:     "review-intake",
+				Workflow: config.ServiceWorkflowConfig{Contract: contract},
 			}},
 		},
 		sp:    runtime.NewFake(),
@@ -113,11 +111,8 @@ func TestManagerReloadWorkflowServiceCreatesStateRootAndDirectURL(t *testing.T) 
 	if !ok {
 		t.Fatal("service status missing")
 	}
-	if status.PublicURL != "http://127.0.0.1:9443/svc/review-intake" {
-		t.Errorf("PublicURL = %q, want %q", status.PublicURL, "http://127.0.0.1:9443/svc/review-intake")
-	}
-	if status.PublicationState != "direct" {
-		t.Errorf("PublicationState = %q, want direct", status.PublicationState)
+	if status.PublicationState != "private" {
+		t.Errorf("PublicationState = %q, want private", status.PublicationState)
 	}
 
 	stateRoot := filepath.Join(rt.cityPath, status.StateRoot)
@@ -141,7 +136,7 @@ func TestManagerReloadWorkflowServicePublishesWithSupervisorConfig(t *testing.T)
 			status: Status{
 				ServiceName:      svc.Name,
 				WorkflowContract: contract,
-				ServiceState:     "ready",
+				State:            "ready",
 				LocalState:       "ready",
 			},
 		}, nil
@@ -178,8 +173,8 @@ func TestManagerReloadWorkflowServicePublishesWithSupervisorConfig(t *testing.T)
 	if !ok {
 		t.Fatal("service status missing")
 	}
-	if !strings.HasPrefix(status.PublicURL, "https://review-intake--demo-app--acme--") {
-		t.Fatalf("PublicURL = %q, want review-intake--demo-app--acme prefix", status.PublicURL)
+	if !strings.HasPrefix(status.URL, "https://review-intake--demo-app--acme--") {
+		t.Fatalf("URL = %q, want review-intake--demo-app--acme prefix", status.URL)
 	}
 	if status.PublicationState != "published" {
 		t.Errorf("PublicationState = %q, want published", status.PublicationState)
@@ -215,7 +210,7 @@ func TestManagerReloadWorkflowServiceBlocksPublicationWithoutSupervisor(t *testi
 			status: Status{
 				ServiceName:      svc.Name,
 				WorkflowContract: contract,
-				ServiceState:     "ready",
+				State:            "ready",
 				LocalState:       "ready",
 			},
 		}, nil
@@ -247,8 +242,8 @@ func TestManagerReloadWorkflowServiceBlocksPublicationWithoutSupervisor(t *testi
 	if !ok {
 		t.Fatal("service status missing")
 	}
-	if status.PublicURL != "" {
-		t.Fatalf("PublicURL = %q, want empty", status.PublicURL)
+	if status.URL != "" {
+		t.Fatalf("URL = %q, want empty", status.URL)
 	}
 	if status.PublicationState != "blocked" {
 		t.Errorf("PublicationState = %q, want blocked", status.PublicationState)
@@ -281,20 +276,14 @@ func TestManagerReloadUnsupportedContractDegradesService(t *testing.T) {
 	if !ok {
 		t.Fatal("service status missing")
 	}
-	if status.ServiceState != "degraded" {
-		t.Errorf("ServiceState = %q, want degraded", status.ServiceState)
-	}
 	if status.State != "degraded" {
 		t.Errorf("State = %q, want degraded", status.State)
 	}
 	if status.LocalState != "config_error" {
 		t.Errorf("LocalState = %q, want config_error", status.LocalState)
 	}
-	if !strings.Contains(status.StateReason, "unsupported workflow contract") {
-		t.Errorf("StateReason = %q, want unsupported workflow contract", status.StateReason)
-	}
-	if status.Reason != status.StateReason {
-		t.Errorf("Reason = %q, want %q", status.Reason, status.StateReason)
+	if !strings.Contains(status.Reason, "unsupported workflow contract") {
+		t.Errorf("Reason = %q, want unsupported workflow contract", status.Reason)
 	}
 }
 
@@ -305,7 +294,7 @@ func TestManagerReloadPublishedMetadataBumpsURLVersionOnRouteChange(t *testing.T
 			status: Status{
 				ServiceName:      svc.Name,
 				WorkflowContract: contract,
-				ServiceState:     "ready",
+				State:            "ready",
 				LocalState:       "ready",
 			},
 		}, nil
@@ -368,7 +357,7 @@ func TestManagerReloadReusesUnchangedInstances(t *testing.T) {
 		first.status = Status{
 			ServiceName:      svc.Name,
 			WorkflowContract: contract,
-			ServiceState:     "ready",
+			State:            "ready",
 			LocalState:       "ready",
 		}
 		return first, nil
@@ -409,9 +398,9 @@ func TestManagerReloadSyncsCanonicalStateFromLegacyInstanceStatus(t *testing.T) 
 			status: Status{
 				ServiceName:      svc.Name,
 				WorkflowContract: contract,
-				ServiceState:     "starting",
+				State:            "starting",
 				LocalState:       "starting",
-				StateReason:      "warming_up",
+				Reason:           "warming_up",
 			},
 		}, nil
 	})
@@ -438,14 +427,8 @@ func TestManagerReloadSyncsCanonicalStateFromLegacyInstanceStatus(t *testing.T) 
 	if !ok {
 		t.Fatal("service status missing")
 	}
-	if status.ServiceState != "starting" {
-		t.Fatalf("ServiceState = %q, want starting", status.ServiceState)
-	}
 	if status.State != "starting" {
 		t.Fatalf("State = %q, want starting", status.State)
-	}
-	if status.StateReason != "warming_up" {
-		t.Fatalf("StateReason = %q, want warming_up", status.StateReason)
 	}
 	if status.Reason != "warming_up" {
 		t.Fatalf("Reason = %q, want warming_up", status.Reason)
@@ -461,7 +444,7 @@ func TestManagerReloadClosesChangedInstances(t *testing.T) {
 		first.status = Status{
 			ServiceName:      svc.Name,
 			WorkflowContract: firstContract,
-			ServiceState:     "ready",
+			State:            "ready",
 			LocalState:       "ready",
 		}
 		return first, nil
@@ -470,7 +453,7 @@ func TestManagerReloadClosesChangedInstances(t *testing.T) {
 		second.status = Status{
 			ServiceName:      svc.Name,
 			WorkflowContract: secondContract,
-			ServiceState:     "ready",
+			State:            "ready",
 			LocalState:       "ready",
 		}
 		return second, nil
@@ -512,7 +495,7 @@ func TestManagerServeHTTPRoutesToWorkflowInstance(t *testing.T) {
 			status: Status{
 				ServiceName:      svc.Name,
 				WorkflowContract: contract,
-				ServiceState:     "ready",
+				State:            "ready",
 				LocalState:       "ready",
 			},
 			handleHTTP: func(w http.ResponseWriter, r *http.Request, subpath string) bool {
@@ -600,8 +583,8 @@ func TestManagerCloseStopsRoutingAndProjectsStoppedStatus(t *testing.T) {
 	contract := uniqueContract(t)
 	inst := &testInstance{
 		status: Status{
-			ServiceState: "ready",
-			LocalState:   "ready",
+			State:      "ready",
+			LocalState: "ready",
 		},
 		handleHTTP: func(http.ResponseWriter, *http.Request, string) bool {
 			t.Fatal("closed service should not receive requests")
@@ -642,14 +625,14 @@ func TestManagerCloseStopsRoutingAndProjectsStoppedStatus(t *testing.T) {
 	if !ok {
 		t.Fatal("service status missing after close")
 	}
-	if status.ServiceState != "stopped" {
-		t.Fatalf("ServiceState = %q, want stopped", status.ServiceState)
+	if status.State != "stopped" {
+		t.Fatalf("State = %q, want stopped", status.State)
 	}
 	if status.LocalState != "stopped" {
 		t.Fatalf("LocalState = %q, want stopped", status.LocalState)
 	}
-	if status.StateReason != "service_closed" {
-		t.Fatalf("StateReason = %q, want service_closed", status.StateReason)
+	if status.Reason != "service_closed" {
+		t.Fatalf("Reason = %q, want service_closed", status.Reason)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/svc/review-intake/healthz", nil)
@@ -663,8 +646,8 @@ func TestManagerCloseProjectsCloseErrorWithoutRouting(t *testing.T) {
 	contract := uniqueContract(t)
 	inst := &testInstance{
 		status: Status{
-			ServiceState: "ready",
-			LocalState:   "ready",
+			State:      "ready",
+			LocalState: "ready",
 		},
 		closeErr: errors.New("close failed"),
 	}
@@ -702,14 +685,14 @@ func TestManagerCloseProjectsCloseErrorWithoutRouting(t *testing.T) {
 	if !ok {
 		t.Fatal("service status missing after failed close")
 	}
-	if status.ServiceState != "degraded" {
-		t.Fatalf("ServiceState = %q, want degraded", status.ServiceState)
+	if status.State != "degraded" {
+		t.Fatalf("State = %q, want degraded", status.State)
 	}
 	if status.LocalState != "close_error" {
 		t.Fatalf("LocalState = %q, want close_error", status.LocalState)
 	}
-	if status.StateReason != "close failed" {
-		t.Fatalf("StateReason = %q, want close failed", status.StateReason)
+	if status.Reason != "close failed" {
+		t.Fatalf("Reason = %q, want close failed", status.Reason)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/svc/review-intake/healthz", nil)
@@ -723,8 +706,8 @@ func TestManagerCloseRetriesFailedInstance(t *testing.T) {
 	contract := uniqueContract(t)
 	inst := &testInstance{
 		status: Status{
-			ServiceState: "ready",
-			LocalState:   "ready",
+			State:      "ready",
+			LocalState: "ready",
 		},
 		closeErr: errors.New("close failed"),
 	}
@@ -764,14 +747,14 @@ func TestManagerCloseRetriesFailedInstance(t *testing.T) {
 	if !ok {
 		t.Fatal("service status missing after retry")
 	}
-	if status.ServiceState != "stopped" {
-		t.Fatalf("ServiceState = %q, want stopped", status.ServiceState)
+	if status.State != "stopped" {
+		t.Fatalf("State = %q, want stopped", status.State)
 	}
 	if status.LocalState != "stopped" {
 		t.Fatalf("LocalState = %q, want stopped", status.LocalState)
 	}
-	if status.StateReason != "service_closed" {
-		t.Fatalf("StateReason = %q, want service_closed", status.StateReason)
+	if status.Reason != "service_closed" {
+		t.Fatalf("Reason = %q, want service_closed", status.Reason)
 	}
 }
 

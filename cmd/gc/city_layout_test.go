@@ -8,134 +8,23 @@ import (
 	"github.com/gastownhall/gascity/internal/citylayout"
 )
 
-func TestMigrateLegacyContentPrunesEmptyLegacyDir(t *testing.T) {
+func TestEnsureCityScaffoldCreatesDirectories(t *testing.T) {
 	cityDir := t.TempDir()
-	legacyDir := filepath.Join(cityDir, ".gc", "prompts")
-	canonicalDir := filepath.Join(cityDir, "prompts")
-	legacyFile := filepath.Join(legacyDir, "mayor.md")
-	canonicalFile := filepath.Join(canonicalDir, "mayor.md")
-
-	for _, path := range []string{legacyDir, canonicalDir} {
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q): %v", path, err)
-		}
-	}
-	for _, path := range []string{legacyFile, canonicalFile} {
-		if err := os.WriteFile(path, []byte("same"), 0o644); err != nil {
-			t.Fatalf("WriteFile(%q): %v", path, err)
-		}
-	}
-
-	if err := migrateLegacyContent(legacyDir, canonicalDir); err != nil {
-		t.Fatalf("migrateLegacyContent(%q, %q): %v", legacyDir, canonicalDir, err)
-	}
-
-	if _, err := os.Stat(legacyDir); !os.IsNotExist(err) {
-		t.Fatalf("legacy directory still exists: %q", legacyDir)
-	}
-}
-
-func TestEnsureCityScaffoldMigratesLegacySystemArtifacts(t *testing.T) {
-	cityDir := t.TempDir()
-	legacySystemDir := filepath.Join(cityDir, citylayout.LegacySystemFormulasRoot)
-	legacyBin := filepath.Join(cityDir, citylayout.LegacyBeadsBdScript)
-	if err := os.MkdirAll(legacySystemDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(legacyBin), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(legacySystemDir, "base.formula.toml"), []byte("name = \"base\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(legacyBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	if err := ensureCityScaffold(cityDir); err != nil {
 		t.Fatalf("ensureCityScaffold(%q): %v", cityDir, err)
 	}
 
 	for _, rel := range []string{
-		filepath.Join(citylayout.SystemFormulasRoot, "base.formula.toml"),
-		filepath.Join(citylayout.SystemBinRoot, "gc-beads-bd"),
+		citylayout.RuntimeRoot,
+		citylayout.CacheRoot,
+		citylayout.SystemRoot,
+		filepath.Join(citylayout.RuntimeRoot, "runtime"),
 	} {
-		if _, err := os.Stat(filepath.Join(cityDir, rel)); err != nil {
-			t.Fatalf("missing migrated artifact %q: %v", rel, err)
+		if fi, err := os.Stat(filepath.Join(cityDir, rel)); err != nil {
+			t.Fatalf("missing directory %q: %v", rel, err)
+		} else if !fi.IsDir() {
+			t.Fatalf("%q is not a directory", rel)
 		}
-	}
-}
-
-func TestEnsureCityScaffoldMigratesLegacyPackStorage(t *testing.T) {
-	cityDir := t.TempDir()
-	legacyEntries := map[string]string{
-		filepath.Join(citylayout.LegacyPacksRoot, "bd", "pack.toml"):             "[pack]\nname = \"bd\"\n",
-		filepath.Join(citylayout.LegacyPacksRoot, "dolt", "pack.toml"):           "[pack]\nname = \"dolt\"\n",
-		filepath.Join(citylayout.LegacyPacksRoot, "remote", ".git", "HEAD"):      "ref: refs/heads/main\n",
-		filepath.Join(citylayout.LegacyPacksRoot, "_inc", "foo", ".git", "HEAD"): "ref: refs/heads/main\n",
-	}
-	for rel, content := range legacyEntries {
-		path := filepath.Join(cityDir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if err := ensureCityScaffold(cityDir); err != nil {
-		t.Fatalf("ensureCityScaffold(%q): %v", cityDir, err)
-	}
-
-	for _, rel := range []string{
-		filepath.Join(citylayout.SystemPacksRoot, "bd", "pack.toml"),
-		filepath.Join(citylayout.SystemPacksRoot, "dolt", "pack.toml"),
-		filepath.Join(citylayout.CachePacksRoot, "remote", ".git", "HEAD"),
-		filepath.Join(citylayout.CacheIncludesRoot, "foo", ".git", "HEAD"),
-	} {
-		if _, err := os.Stat(filepath.Join(cityDir, rel)); err != nil {
-			t.Fatalf("missing migrated pack artifact %q: %v", rel, err)
-		}
-	}
-}
-
-func TestNormalizeInitFromLegacyContentMovesOrdersBeforeFormulas(t *testing.T) {
-	cityDir := t.TempDir()
-	legacyOrder := filepath.Join(cityDir, citylayout.LegacyOrdersRoot, "digest", "order.toml")
-	legacyFormula := filepath.Join(cityDir, citylayout.LegacyFormulasRoot, "digest.formula.toml")
-
-	for path, content := range map[string]string{
-		legacyOrder:   "[order]\nformula = \"digest\"\ngate = \"manual\"\n",
-		legacyFormula: "name = \"digest\"\n",
-	} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if err := normalizeInitFromLegacyContent(cityDir); err != nil {
-		t.Fatalf("normalizeInitFromLegacyContent(%q): %v", cityDir, err)
-	}
-
-	assertPathExists(t, filepath.Join(cityDir, citylayout.OrdersRoot, "digest", "order.toml"))
-	assertPathExists(t, filepath.Join(cityDir, citylayout.FormulasRoot, "digest.formula.toml"))
-	assertPathMissing(t, filepath.Join(cityDir, citylayout.FormulasRoot, "orders", "digest", "order.toml"))
-}
-
-func assertPathExists(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected path to exist %q: %v", path, err)
-	}
-}
-
-func assertPathMissing(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("expected path to be absent %q", path)
 	}
 }

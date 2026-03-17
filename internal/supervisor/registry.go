@@ -26,15 +26,9 @@ type CityEntry struct {
 	Name string `toml:"name,omitempty"` // effective city name (workspace.name or basename)
 }
 
-// EffectiveName returns the city's effective name. If Name is set (from
-// workspace.name or explicit registration), it's used. Otherwise falls
-// back to the directory basename for backward compatibility with
-// registries created before the name field was added.
+// EffectiveName returns the city's effective name.
 func (e CityEntry) EffectiveName() string {
-	if e.Name != "" {
-		return e.Name
-	}
-	return filepath.Base(e.Path)
+	return e.Name
 }
 
 // registryFile is the TOML structure of ~/.gc/cities.toml.

@@ -101,7 +101,7 @@ name = "test-city"
 	assertFileExists(t, outputDir, "workspace/city.toml")
 }
 
-func TestAssembleContextExcludesGeneratedGCRootsButKeepsLegacyContent(t *testing.T) {
+func TestAssembleContextExcludesAllGCSubdirs(t *testing.T) {
 	cityDir := t.TempDir()
 	outputDir := t.TempDir()
 
@@ -111,10 +111,10 @@ name = "test-city"
 	writeFile(t, cityDir, filepath.Join(citylayout.SystemPacksRoot, "bd", "pack.toml"), "[pack]\nname = \"bd\"\n")
 	writeFile(t, cityDir, filepath.Join(citylayout.CachePacksRoot, "remote", ".git", "HEAD"), "ref: refs/heads/main\n")
 	writeFile(t, cityDir, filepath.Join(citylayout.RuntimeRoot, "runtime", "artifact.txt"), "runtime")
-	writeFile(t, cityDir, filepath.Join(citylayout.LegacyPromptsRoot, "mayor.md"), "legacy prompt")
-	writeFile(t, cityDir, filepath.Join(citylayout.LegacyFormulasRoot, "legacy.formula.toml"), "name = \"legacy\"\n")
-	writeFile(t, cityDir, citylayout.LegacyClaudeHookFile, "{}")
-	writeFile(t, cityDir, filepath.Join(citylayout.LegacyScriptsRoot, "setup.sh"), "#!/bin/sh\n")
+	writeFile(t, cityDir, filepath.Join(".gc", "prompts", "mayor.md"), "old prompt")
+	writeFile(t, cityDir, filepath.Join(".gc", "formulas", "legacy.formula.toml"), "name = \"legacy\"\n")
+	writeFile(t, cityDir, filepath.Join(".gc", "settings.json"), "{}")
+	writeFile(t, cityDir, filepath.Join(".gc", "scripts", "setup.sh"), "#!/bin/sh\n")
 
 	err := AssembleContext(Options{
 		CityPath:  cityDir,
@@ -124,13 +124,14 @@ name = "test-city"
 		t.Fatalf("AssembleContext: %v", err)
 	}
 
+	// All .gc/ subdirs are now excluded.
 	assertFileNotExists(t, outputDir, filepath.Join("workspace", citylayout.SystemPacksRoot, "bd", "pack.toml"))
 	assertFileNotExists(t, outputDir, filepath.Join("workspace", citylayout.CachePacksRoot, "remote", ".git", "HEAD"))
 	assertFileNotExists(t, outputDir, filepath.Join("workspace", citylayout.RuntimeRoot, "runtime", "artifact.txt"))
-	assertFileExists(t, outputDir, filepath.Join("workspace", citylayout.LegacyPromptsRoot, "mayor.md"))
-	assertFileExists(t, outputDir, filepath.Join("workspace", citylayout.LegacyFormulasRoot, "legacy.formula.toml"))
-	assertFileExists(t, outputDir, filepath.Join("workspace", citylayout.LegacyScriptsRoot, "setup.sh"))
-	assertFileExists(t, outputDir, filepath.Join("workspace", citylayout.LegacyClaudeHookFile))
+	assertFileNotExists(t, outputDir, filepath.Join("workspace", ".gc", "prompts", "mayor.md"))
+	assertFileNotExists(t, outputDir, filepath.Join("workspace", ".gc", "formulas", "legacy.formula.toml"))
+	assertFileNotExists(t, outputDir, filepath.Join("workspace", ".gc", "scripts", "setup.sh"))
+	assertFileNotExists(t, outputDir, filepath.Join("workspace", ".gc", "settings.json"))
 }
 
 func TestAssembleContextWithRigPaths(t *testing.T) {
@@ -216,10 +217,10 @@ func TestExcludedPath(t *testing.T) {
 		{".gc/system/packs/bd/pack.toml", true},
 		{".gc/cache/packs/remote/.git/HEAD", true},
 		{".gc/runtime/worktrees/agent/file.txt", true},
-		{".gc/prompts/mayor.md", false},
-		{".gc/formulas/test.formula.toml", false},
-		{".gc/scripts/setup.sh", false},
-		{".gc/settings.json", false},
+		{".gc/prompts/mayor.md", true},
+		{".gc/formulas/test.formula.toml", true},
+		{".gc/scripts/setup.sh", true},
+		{".gc/settings.json", true},
 		{".env", true},
 		{"credentials.json", true},
 		{"path/to/secret.key", true},

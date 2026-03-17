@@ -15,104 +15,28 @@ import (
 	"github.com/gastownhall/gascity/internal/session"
 )
 
-// sessionBeadLabel is the unified label for all session beads. Phase 2
-// consolidates the old "gc:agent_session" and session manager's "gc:session"
-// into a single label. New beads are created with this label; legacy beads
-// are still readable via loadSessionBeads.
-//
-// Migration: this is a one-way upgrade. Stores written by Phase 2+ binaries
-// use "gc:session"; older binaries only query "gc:agent_session" and will
-// miss new beads. Mixed-version operation (old daemon + new CLI or vice
-// versa) is not supported — upgrade all binaries together.
+// sessionBeadLabel is the label for all session beads.
 const sessionBeadLabel = "gc:session"
-
-// legacySessionBeadLabel is the old label used by syncSessionBeads before
-// Phase 2 label unification. Retained for reading legacy beads only.
-// Read paths query both labels; write paths use sessionBeadLabel exclusively.
-const legacySessionBeadLabel = "gc:agent_session"
 
 // sessionBeadType is the bead type for session beads.
 const sessionBeadType = "session"
 
-// legacyStateMap maps legacy bead states to the session-first state model.
-// Legacy beads (type="agent_session") used different state names.
-var legacyStateMap = map[string]string{
-	"stopped":  "closed",
-	"orphaned": "suspended",
-	// "active" and "suspended" pass through unchanged.
-}
-
-// loadSessionBeads queries both gc:agent_session and gc:session labeled beads,
-// deduplicates by session_name, and returns the unified list. New-type beads
-// take precedence when both exist for the same session_name.
-//
-// Legacy beads are normalized: their state is mapped via legacyStateMap so
-// downstream reconciliation sees a uniform state vocabulary. Legacy beads
-// also count against pool occupancy (creating + active + suspended + quarantined).
+// loadSessionBeads returns all open session beads from the store.
 func loadSessionBeads(store beads.Store) ([]beads.Bead, error) {
 	if store == nil {
 		return nil, nil
 	}
-
-	// Query both labels (unified + legacy) for migration compatibility.
-	legacy, err := store.ListByLabel(legacySessionBeadLabel, 0)
-	if err != nil {
-		return nil, fmt.Errorf("listing legacy session beads: %w", err)
-	}
-	newer, err := store.ListByLabel(sessionBeadLabel, 0)
+	all, err := store.ListByLabel(sessionBeadLabel, 0)
 	if err != nil {
 		return nil, fmt.Errorf("listing session beads: %w", err)
 	}
-
-	// Index new-type beads by session_name for dedup.
-	newByName := make(map[string]beads.Bead, len(newer))
-	for _, b := range newer {
-		if b.Status == "closed" {
-			continue
-		}
-		if sn := b.Metadata["session_name"]; sn != "" {
-			newByName[sn] = b
-		}
-	}
-
-	// Build result: start with new-type beads.
-	result := make([]beads.Bead, 0, len(newer)+len(legacy))
-	for _, b := range newer {
+	var result []beads.Bead
+	for _, b := range all {
 		if b.Status == "closed" {
 			continue
 		}
 		result = append(result, b)
 	}
-
-	// Add legacy beads, skipping those with a new-type counterpart.
-	for _, b := range legacy {
-		if b.Status == "closed" {
-			continue
-		}
-		sn := b.Metadata["session_name"]
-		if sn == "" {
-			continue
-		}
-		if _, hasNew := newByName[sn]; hasNew {
-			continue // new-type bead takes precedence
-		}
-		// Normalize legacy state. Clone metadata map first to avoid
-		// mutating the store's cached copy (maps are reference types).
-		if mapped, ok := legacyStateMap[b.Metadata["state"]]; ok {
-			newMeta := make(map[string]string, len(b.Metadata))
-			for k, v := range b.Metadata {
-				newMeta[k] = v
-			}
-			newMeta["state"] = mapped
-			b.Metadata = newMeta
-			// Skip terminal beads after mapping (e.g., stopped → closed).
-			if mapped == "closed" {
-				continue
-			}
-		}
-		result = append(result, b)
-	}
-
 	return result, nil
 }
 
@@ -145,29 +69,10 @@ func syncSessionBeads(
 		return nil
 	}
 
-	// Load existing session beads from both unified and legacy labels.
-	// This ensures migration: legacy gc:agent_session beads are still found
-	// and updated (or superseded by unified gc:session beads).
-	unified, err := store.ListByLabel(sessionBeadLabel, 0)
+	existing, err := store.ListByLabel(sessionBeadLabel, 0)
 	if err != nil {
 		fmt.Fprintf(stderr, "session beads: listing existing: %v\n", err) //nolint:errcheck
 		return nil
-	}
-	legacy, _ := store.ListByLabel(legacySessionBeadLabel, 0)
-
-	// Merge: unified beads take precedence over legacy by session_name.
-	existing := make([]beads.Bead, 0, len(unified)+len(legacy))
-	existing = append(existing, unified...)
-	unifiedNames := make(map[string]bool, len(unified))
-	for _, b := range unified {
-		if sn := b.Metadata["session_name"]; sn != "" {
-			unifiedNames[sn] = true
-		}
-	}
-	for _, b := range legacy {
-		if sn := b.Metadata["session_name"]; sn != "" && !unifiedNames[sn] {
-			existing = append(existing, b)
-		}
 	}
 
 	// Index by session_name for O(1) lookup. Skip closed beads — a closed

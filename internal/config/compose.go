@@ -107,7 +107,7 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 		return nil, nil, ctErr
 	}
 	// Track city pack agents in provenance.
-	for _, ref := range EffectiveCityPacks(root.Workspace) {
+	for _, ref := range root.Workspace.Includes {
 		topoDir, _ := resolvePackRef(ref, cityRoot, cityRoot)
 		topoPath := filepath.Join(topoDir, packFile)
 		for _, a := range root.Agents {
@@ -135,7 +135,7 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 		}
 		// Track pack-expanded agents in provenance.
 		for _, r := range root.Rigs {
-			topoRefs := EffectiveRigPacks(r)
+			topoRefs := r.Includes
 			for _, ref := range topoRefs {
 				topoDir, _ := resolvePackRef(ref, cityRoot, cityRoot)
 				topoPath := filepath.Join(topoDir, packFile)
@@ -159,7 +159,7 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 	// Compute formula layers from all sources.
 	// Always use FormulasDir() which defaults to "formulas" when
 	// [formulas] is not explicitly configured in city.toml.
-	cityLocalFormulas := citylayout.ResolveCityFormulasDir(fs, cityRoot, root.FormulasDir())
+	cityLocalFormulas := citylayout.ResolveFormulasDir(cityRoot, root.FormulasDir())
 	root.FormulaLayers = ComputeFormulaLayers(
 		cityTopoFormulas, cityLocalFormulas, rigFormulaDirs, root.Rigs, cityRoot)
 

@@ -6,13 +6,12 @@
 # No worktree isolation, no formulas, no witness — peers coordinate directly.
 #
 # Referenced by both workspace.pack and rigs[].pack:
-#   workspace.pack → expands city_agents only (mayor, deacon, dog)
+#   workspace.pack → expands city-scoped agents only (mayor, deacon, dog)
 #   rigs[].pack    → expands rig agents only (coder, committer)
 
 [pack]
 name = "swarm"
 schema = 1
-city_agents = ["mayor", "deacon", "dog"]
 
 # ── MAYOR — Global coordinator. One per city. ──────────────────────────
 [[agent]]

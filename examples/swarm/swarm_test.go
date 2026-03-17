@@ -116,20 +116,11 @@ func TestCombinedPackParses(t *testing.T) {
 		t.Errorf("pack has %d agents, want 5", len(tc.Agents))
 	}
 
-	// Verify city_agents list.
-	cityAgents := map[string]bool{
-		"mayor": false, "deacon": false, "dog": false,
-	}
-	for _, ca := range tc.Pack.CityAgents {
-		if _, ok := cityAgents[ca]; ok {
-			cityAgents[ca] = true
-		} else {
-			t.Errorf("unexpected city_agent %q", ca)
-		}
-	}
-	for name, found := range cityAgents {
-		if !found {
-			t.Errorf("missing city_agent %q", name)
+	// Verify city-scoped agents have scope = "city".
+	wantCity := map[string]bool{"mayor": true, "deacon": true, "dog": true}
+	for _, a := range tc.Agents {
+		if wantCity[a.Name] && a.Scope != "city" {
+			t.Errorf("agent %q: scope = %q, want %q", a.Name, a.Scope, "city")
 		}
 	}
 }

@@ -92,9 +92,9 @@ func (m *Manager) Reload() error {
 		stateRoot, err := ensureStateRoot(m.rt.CityPath(), svc)
 		base.StateRoot = stateRoot
 		if err != nil {
-			base.SetState("degraded")
+			base.State = "degraded"
 			base.LocalState = "config_error"
-			base.SetReason(err.Error())
+			base.Reason = err.Error()
 		}
 		baseStatuses[svc.Name] = base
 		plans = append(plans, servicePlan{spec: svc, base: base})
@@ -125,17 +125,17 @@ func (m *Manager) Reload() error {
 		case "workflow":
 			factory := lookupWorkflowContract(svc.Workflow.Contract)
 			if factory == nil {
-				base.SetState("degraded")
+				base.State = "degraded"
 				base.LocalState = "config_error"
-				base.SetReason(fmt.Sprintf("unsupported workflow contract %q", svc.Workflow.Contract))
+				base.Reason = fmt.Sprintf("unsupported workflow contract %q", svc.Workflow.Contract)
 				next[svc.Name] = &entry{spec: svc, status: base}
 				continue
 			}
 			inst, err := factory(m.rt, svc)
 			if err != nil {
-				base.SetState("degraded")
+				base.State = "degraded"
 				base.LocalState = "config_error"
-				base.SetReason(err.Error())
+				base.Reason = err.Error()
 				next[svc.Name] = &entry{spec: svc, status: base}
 				continue
 			}
@@ -144,18 +144,18 @@ func (m *Manager) Reload() error {
 		case "proxy_process":
 			inst, err := newProxyProcessInstance(m.rt, svc)
 			if err != nil {
-				base.SetState("degraded")
+				base.State = "degraded"
 				base.LocalState = "config_error"
-				base.SetReason(err.Error())
+				base.Reason = err.Error()
 				next[svc.Name] = &entry{spec: svc, status: base}
 				continue
 			}
 			base = mergeStatus(base, inst.Status())
 			next[svc.Name] = &entry{spec: svc, status: base, inst: inst}
 		default:
-			base.SetState("degraded")
+			base.State = "degraded"
 			base.LocalState = "config_error"
-			base.SetReason(fmt.Sprintf("unsupported service kind %q", svc.Kind))
+			base.Reason = fmt.Sprintf("unsupported service kind %q", svc.Kind)
 			next[svc.Name] = &entry{spec: svc, status: base}
 		}
 	}
@@ -226,15 +226,15 @@ func (m *Manager) Close() error {
 	for name, e := range m.entries {
 		if e.inst != nil {
 			targets = append(targets, closeTarget{name: name, inst: e.inst})
-			e.status.SetState("stopping")
+			e.status.State = "stopping"
 			e.status.LocalState = "stopping"
-			e.status.SetReason("service_closing")
+			e.status.Reason = "service_closing"
 			e.status.UpdatedAt = now
 			continue
 		}
-		e.status.SetState("stopped")
+		e.status.State = "stopped"
 		e.status.LocalState = "stopped"
-		e.status.SetReason("service_closed")
+		e.status.Reason = "service_closed"
 		e.status.UpdatedAt = now
 	}
 	m.mu.Unlock()
@@ -264,16 +264,16 @@ func (m *Manager) Close() error {
 		if err := results[target.name]; err != nil {
 			// Retain the instance so a subsequent Close() call can retry.
 			e.inst = target.inst
-			e.status.SetState("degraded")
+			e.status.State = "degraded"
 			e.status.LocalState = "close_error"
-			e.status.SetReason(err.Error())
+			e.status.Reason = err.Error()
 			e.status.UpdatedAt = now
 			continue
 		}
 		e.inst = nil
-		e.status.SetState("stopped")
+		e.status.State = "stopped"
 		e.status.LocalState = "stopped"
-		e.status.SetReason("service_closed")
+		e.status.Reason = "service_closed"
 		e.status.UpdatedAt = now
 	}
 	return firstErr
@@ -286,9 +286,7 @@ func (m *Manager) List() []Status {
 
 	out := make([]Status, 0, len(m.entries))
 	for _, e := range m.entries {
-		status := e.status
-		status.SyncAliases()
-		out = append(out, status)
+		out = append(out, e.status)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ServiceName < out[j].ServiceName
@@ -305,9 +303,7 @@ func (m *Manager) Get(name string) (Status, bool) {
 	if !ok {
 		return Status{}, false
 	}
-	status := e.status
-	status.SyncAliases()
-	return status, true
+	return e.status, true
 }
 
 // AuthorizeAndServeHTTP routes /svc/{name}/... requests to the matching
@@ -324,9 +320,7 @@ func (m *Manager) AuthorizeAndServeHTTP(name string, w http.ResponseWriter, r *h
 	if !ok {
 		return false
 	}
-	status := e.status
-	status.SyncAliases()
-	if authorize != nil && !authorize(status) {
+	if authorize != nil && !authorize(e.status) {
 		return true
 	}
 	if m.closed || e.inst == nil {
@@ -373,14 +367,12 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, svc confi
 		Visibility:       visibility,
 		Hostname:         svc.PublicationHostnameOrDefault(),
 		StateRoot:        svc.StateRootOrDefault(),
-		ServiceState:     "ready",
 		State:            "ready",
 		LocalState:       "ready",
 		PublicationState: "private",
 		UpdatedAt:        now,
 		AllowWebSockets:  svc.Publication.AllowWebSockets,
 	}
-	status.SyncAliases()
 
 	switch visibility {
 	case "private":
@@ -388,38 +380,34 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, svc confi
 	default:
 		publishedURL, publicationReason := derivePublishedURL(pubCfg, workspaceName(cfg), svc)
 		if publishedURL != "" {
-			status.SetPublishedURL(publishedURL)
+			status.URL = publishedURL
 			status.PublicationState = "published"
-			status.SetReason(publicationReason)
+			status.Reason = publicationReason
 			break
 		}
 		if status.PublishMode == "direct" {
 			if baseURL := directBaseURL(cfg); baseURL != "" {
-				status.SetPublishedURL(strings.TrimRight(baseURL, "/") + status.MountPath)
+				status.URL = strings.TrimRight(baseURL, "/") + status.MountPath
 				status.PublicationState = "direct"
-				status.SetReason("route_active")
+				status.Reason = "route_active"
 				break
 			}
 			status.PublicationState = "blocked"
-			status.SetReason("direct_base_url_unavailable")
+			status.Reason = "direct_base_url_unavailable"
 			break
 		}
 		status.PublicationState = "blocked"
 		if publicationReason != "" {
-			status.SetReason(publicationReason)
+			status.Reason = publicationReason
 		} else {
-			status.SetReason("publication_unavailable")
+			status.Reason = "publication_unavailable"
 		}
 	}
-	status.SyncAliases()
 
 	return status
 }
 
 func mergeStatus(base, override Status) Status {
-	// URL/State/Reason are the canonical fields. PublicURL/ServiceState/
-	// StateReason are retained as compatibility aliases for older API clients,
-	// so merges backfill whichever side is missing to keep the pair in sync.
 	if override.ServiceName != "" {
 		base.ServiceName = override.ServiceName
 	}
@@ -444,19 +432,11 @@ func mergeStatus(base, override Status) Status {
 	if override.StateRoot != "" {
 		base.StateRoot = override.StateRoot
 	}
-	if override.PublicURL != "" || override.URL != "" {
-		url := override.URL
-		if url == "" {
-			url = override.PublicURL
-		}
-		base.SetPublishedURL(url)
+	if override.URL != "" {
+		base.URL = override.URL
 	}
-	if override.ServiceState != "" || override.State != "" {
-		state := override.State
-		if state == "" {
-			state = override.ServiceState
-		}
-		base.SetState(state)
+	if override.State != "" {
+		base.State = override.State
 	}
 	if override.LocalState != "" {
 		base.LocalState = override.LocalState
@@ -464,18 +444,13 @@ func mergeStatus(base, override Status) Status {
 	if override.PublicationState != "" {
 		base.PublicationState = override.PublicationState
 	}
-	if override.StateReason != "" || override.Reason != "" {
-		reason := override.Reason
-		if reason == "" {
-			reason = override.StateReason
-		}
-		base.SetReason(reason)
+	if override.Reason != "" {
+		base.Reason = override.Reason
 	}
 	base.AllowWebSockets = base.AllowWebSockets || override.AllowWebSockets
 	if !override.UpdatedAt.IsZero() {
 		base.UpdatedAt = override.UpdatedAt
 	}
-	base.SyncAliases()
 	return base
 }
 
@@ -536,9 +511,7 @@ func (m *Manager) syncPublishedServiceMetadata() error {
 func statusMapFromEntries(entries map[string]*entry) map[string]Status {
 	statuses := make(map[string]Status, len(entries))
 	for name, e := range entries {
-		status := e.status
-		status.SyncAliases()
-		statuses[name] = status
+		statuses[name] = e.status
 	}
 	return statuses
 }
@@ -557,8 +530,6 @@ func closeUnreusedInstances(entries map[string]*entry, reused map[string]bool) e
 }
 
 func proxyProcessPublicationContextChanged(current, next Status) bool {
-	current.SyncAliases()
-	next.SyncAliases()
 	return current.Kind == "proxy_process" &&
 		(current.URL != next.URL ||
 			current.Visibility != next.Visibility ||

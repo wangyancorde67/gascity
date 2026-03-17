@@ -62,10 +62,10 @@ type RigRow struct {
 
 // ServiceRow represents a workspace service on the dashboard.
 type ServiceRow struct {
-	Name         string
-	Kind         string
-	ServiceState string
-	LocalState   string
+	Name       string
+	Kind       string
+	State      string
+	LocalState string
 }
 
 // DogRow represents a utility pool worker.

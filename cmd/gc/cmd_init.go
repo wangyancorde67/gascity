@@ -591,21 +591,10 @@ func writeDefaultFormulas(fs fsys.FS, cityPath string, stderr io.Writer) int {
 }
 
 // initFromSkip returns true for files and directories that should be excluded
-// when copying a city template directory via --from. Skips .gc/ runtime state
-// but keeps legacy city-owned content so it can be remapped into visible roots.
+// when copying a city template directory via --from. Skips .gc/ runtime state.
 func initFromSkip(relPath string, isDir bool) bool {
-	top, rest, _ := strings.Cut(relPath, string(filepath.Separator))
+	top, _, _ := strings.Cut(relPath, string(filepath.Separator))
 	if top == ".gc" {
-		// Let the walker enter .gc/ so it can reach legacy city-owned content.
-		if rest == "" {
-			return false
-		}
-		// Allow the legacy user-owned content that gets remapped after copy.
-		sub, _, _ := strings.Cut(rest, string(filepath.Separator))
-		if sub == "prompts" || sub == "formulas" || sub == "scripts" || rest == "settings.json" {
-			return false
-		}
-		// Skip all other .gc/ contents (runtime state).
 		return true
 	}
 	if !isDir && strings.HasSuffix(filepath.Base(relPath), "_test.go") {
@@ -668,10 +657,6 @@ func doInitFromDir(srcDir, cityPath string, stdout, stderr io.Writer) int {
 
 	// Copy directory tree (skip .gc/ and *_test.go).
 	if err := overlay.CopyDirWithSkip(srcDir, cityPath, initFromSkip, stderr); err != nil {
-		fmt.Fprintf(stderr, "gc init --from: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	if err := normalizeInitFromLegacyContent(cityPath); err != nil {
 		fmt.Fprintf(stderr, "gc init --from: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}

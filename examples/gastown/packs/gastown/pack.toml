@@ -6,7 +6,7 @@
 # the fallback (unthemed) dog. Mechanical housekeeping lives in maintenance.
 #
 # Referenced by both workspace.pack and rigs[].pack:
-#   workspace.pack → expands city_agents only (mayor, deacon, boot)
+#   workspace.pack → expands city-scoped agents only (mayor, deacon, boot)
 #   rigs[].pack    → expands rig agents only (witness, refinery, polecat)
 #
 # Crew members are individually named and declared inline in city.toml.
@@ -15,7 +15,6 @@
 name = "gastown"
 schema = 1
 includes = ["../maintenance", "../../../bd"]
-city_agents = ["mayor", "deacon", "boot", "dog"]
 
 [[doctor]]
 name = "check-scripts"

@@ -9,7 +9,6 @@
 [pack]
 name = "lifecycle"
 schema = 1
-city_agents = []
 
 # ── POLECAT — branch-based workers. Pool of 5. Self-managed worktree. ─
 [[agent]]

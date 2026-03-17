@@ -293,7 +293,7 @@ func TestClientListServices(t *testing.T) {
 				Kind:             "workflow",
 				MountPath:        "/svc/healthz",
 				PublishMode:      "private",
-				ServiceState:     "ready",
+				State:            "ready",
 				LocalState:       "ready",
 				PublicationState: "private",
 			}},
@@ -323,7 +323,7 @@ func TestClientGetService(t *testing.T) {
 			Kind:             "workflow",
 			MountPath:        "/svc/healthz",
 			PublishMode:      "private",
-			ServiceState:     "ready",
+			State:            "ready",
 			LocalState:       "ready",
 			PublicationState: "private",
 		})

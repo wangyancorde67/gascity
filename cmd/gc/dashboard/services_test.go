@@ -16,7 +16,7 @@ func TestFetchServices(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"items":[{"service_name":"healthz","kind":"workflow","mount_path":"/svc/healthz","publish_mode":"direct","public_url":"http://127.0.0.1:9443/svc/healthz","service_state":"ready","local_state":"ready","publication_state":"direct"}],"total":1}`))
+		_, _ = w.Write([]byte(`{"items":[{"service_name":"healthz","kind":"workflow","mount_path":"/svc/healthz","publish_mode":"private","url":"http://127.0.0.1:9443/svc/healthz","state":"ready","local_state":"ready","publication_state":"private"}],"total":1}`))
 	}))
 	defer srv.Close()
 
@@ -31,8 +31,8 @@ func TestFetchServices(t *testing.T) {
 	if rows[0].Name != "healthz" {
 		t.Fatalf("Name = %q, want healthz", rows[0].Name)
 	}
-	if rows[0].ServiceState != "ready" {
-		t.Fatalf("ServiceState = %q, want ready", rows[0].ServiceState)
+	if rows[0].State != "ready" {
+		t.Fatalf("ServiceState = %q, want ready", rows[0].State)
 	}
 }
 
@@ -84,10 +84,10 @@ func TestTemplateRendersServicesPanel(t *testing.T) {
 	var buf bytes.Buffer
 	err = tmpl.ExecuteTemplate(&buf, "convoy.html", ConvoyData{
 		Services: []ServiceRow{{
-			Name:         "healthz",
-			Kind:         "workflow",
-			ServiceState: "ready",
-			LocalState:   "ready",
+			Name:       "healthz",
+			Kind:       "workflow",
+			State:      "ready",
+			LocalState: "ready",
 		}},
 		CSRFToken: "csrf-token",
 	})

@@ -43,8 +43,8 @@ func (m *Manifest) Validate() error {
 }
 
 // LoadManifest reads and parses a bundle manifest from r. It validates the
-// manifest and rejects schema versions outside the [N-1, N] compatibility
-// window where N is the current SchemaVersion.
+// manifest and rejects schema versions that do not exactly match the
+// current SchemaVersion.
 func LoadManifest(r io.Reader) (Manifest, error) {
 	var m Manifest
 	if err := json.NewDecoder(r).Decode(&m); err != nil {
@@ -54,7 +54,7 @@ func LoadManifest(r io.Reader) (Manifest, error) {
 		return Manifest{}, err
 	}
 	if !CanAccept(m.Version) {
-		return Manifest{}, fmt.Errorf("bundle manifest: unsupported schema version %d (supported: %d-%d)", m.Version, max(1, SchemaVersion-1), SchemaVersion)
+		return Manifest{}, fmt.Errorf("bundle manifest: unsupported schema version %d (supported: %d)", m.Version, SchemaVersion)
 	}
 	return m, nil
 }

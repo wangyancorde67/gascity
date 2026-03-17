@@ -516,39 +516,6 @@ func TestCheck(t *testing.T) {
 	}
 }
 
-// --- Backward compat ---
-
-func TestBackwardCompatOldMessages(t *testing.T) {
-	store := beads.NewMemStore()
-	p := New(store)
-
-	// Old-style message: body in Title, no Description, no gc:message label.
-	_, err := store.Create(beads.Bead{
-		Title:    "old body text",
-		Type:     "message",
-		Assignee: "mayor",
-		From:     "human",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	msgs, err := p.Inbox("mayor")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(msgs) != 1 {
-		t.Fatalf("Inbox = %d, want 1", len(msgs))
-	}
-	// Old message: body comes from Title, subject is empty.
-	if msgs[0].Body != "old body text" {
-		t.Errorf("Body = %q, want %q", msgs[0].Body, "old body text")
-	}
-	if msgs[0].Subject != "" {
-		t.Errorf("Subject = %q, want empty (old message)", msgs[0].Subject)
-	}
-}
-
 // --- Compile-time interface check ---
 
 var _ mail.Provider = (*Provider)(nil)

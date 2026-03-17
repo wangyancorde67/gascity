@@ -1274,47 +1274,6 @@ func TestGetDoesNotPersistGuessedTransportForLegacySession(t *testing.T) {
 	}
 }
 
-func TestSendRejectsLegacySuspendedACPSessionWithoutTransport(t *testing.T) {
-	store := beads.NewMemStore()
-	defaultSP := runtime.NewFake()
-	acpSP := runtime.NewFake()
-	autoSP := sessionauto.New(defaultSP, acpSP)
-
-	legacy, err := store.Create(beads.Bead{
-		Title: "legacy acp",
-		Type:  BeadType,
-		Labels: []string{
-			LabelSession,
-			"template:helper",
-		},
-		Metadata: map[string]string{
-			"template":     "helper",
-			"state":        string(StateSuspended),
-			"provider":     "claude",
-			"work_dir":     "/tmp",
-			"command":      "claude",
-			"session_name": "s-legacy",
-		},
-	})
-	if err != nil {
-		t.Fatalf("Create legacy bead: %v", err)
-	}
-
-	mgr := NewManagerWithTransportResolver(store, autoSP, func(template string) string {
-		if template == "helper" {
-			return "acp"
-		}
-		return ""
-	})
-	err = mgr.Send(context.Background(), legacy.ID, "hello", "claude --resume", runtime.Config{WorkDir: "/tmp"})
-	if !errors.Is(err, ErrTransportUnknown) {
-		t.Fatalf("Send error = %v, want %v", err, ErrTransportUnknown)
-	}
-	if defaultSP.IsRunning("s-legacy") || acpSP.IsRunning("s-legacy") {
-		t.Fatal("legacy suspended session should not be started when transport is ambiguous")
-	}
-}
-
 func TestSendConvergesWhenSessionAlreadyResumed(t *testing.T) {
 	store := beads.NewMemStore()
 	sp := runtime.NewFake()

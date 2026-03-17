@@ -40,21 +40,7 @@ func excludedPath(rel string) bool {
 		return false
 	}
 	if strings.HasPrefix(rel, citylayout.RuntimeRoot+"/") {
-		switch {
-		case rel == citylayout.LegacyClaudeHookFile:
-			return false
-		case rel == citylayout.LegacyPromptsRoot,
-			strings.HasPrefix(rel, citylayout.LegacyPromptsRoot+"/"):
-			return false
-		case rel == citylayout.LegacyFormulasRoot,
-			strings.HasPrefix(rel, citylayout.LegacyFormulasRoot+"/"):
-			return false
-		case rel == citylayout.LegacyScriptsRoot,
-			strings.HasPrefix(rel, citylayout.LegacyScriptsRoot+"/"):
-			return false
-		default:
-			return true
-		}
+		return true
 	}
 	// Runtime state files.
 	if rel == ".gc/controller.lock" || rel == ".gc/controller.sock" ||

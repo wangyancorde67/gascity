@@ -111,10 +111,10 @@ type apiRigResponse struct {
 }
 
 type apiServiceResponse struct {
-	ServiceName  string `json:"service_name"`
-	Kind         string `json:"kind,omitempty"`
-	ServiceState string `json:"service_state"`
-	LocalState   string `json:"local_state"`
+	ServiceName string `json:"service_name"`
+	Kind        string `json:"kind,omitempty"`
+	State       string `json:"state"`
+	LocalState  string `json:"local_state"`
 }
 
 type apiConvoyDetail struct {
@@ -253,10 +253,10 @@ func (f *APIFetcher) FetchServices() ([]ServiceRow, error) {
 	rows := make([]ServiceRow, 0, len(services))
 	for _, svc := range services {
 		rows = append(rows, ServiceRow{
-			Name:         svc.ServiceName,
-			Kind:         svc.Kind,
-			ServiceState: svc.ServiceState,
-			LocalState:   svc.LocalState,
+			Name:       svc.ServiceName,
+			Kind:       svc.Kind,
+			State:      svc.State,
+			LocalState: svc.LocalState,
 		})
 	}
 

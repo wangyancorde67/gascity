@@ -200,10 +200,10 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include string, startSuspended bool
 		w(fmt.Sprintf("  Include: %s", include))
 	}
 
-	// Initialize beads for the rig. Try ensure-ready first (probes the
-	// backing service). If the probe fails (e.g. Dolt not yet ready),
-	// fall back to direct init — the city is likely already running and
-	// the probe script may just be checking the wrong state.
+	// Initialize beads for the rig. Probes the backing service first;
+	// if the probe fails (e.g. Dolt not yet ready), falls back to
+	// direct init — the city is likely already running and the probe
+	// script may just be checking the wrong state.
 	deferred, err := initDirIfReady(cityPath, rigPath, prefix)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc rig add: %v\n", err) //nolint:errcheck // best-effort stderr

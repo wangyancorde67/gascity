@@ -248,10 +248,6 @@ type PackMeta struct {
 	Schema int `toml:"schema" jsonschema:"required"`
 	// RequiresGC is an optional minimum gc version requirement.
 	RequiresGC string `toml:"requires_gc,omitempty"`
-	// CityAgents is deprecated — use scope="city" on agents instead.
-	// Kept for backward compatibility during migration. New packs should
-	// use scope="city" on each agent definition.
-	CityAgents []string `toml:"city_agents,omitempty"`
 	// Includes lists other packs to compose into this one.
 	// Each entry is a local relative path (e.g. "../maintenance") or a
 	// remote git URL (SSH or HTTPS) with optional //subpath and #ref.
@@ -999,8 +995,7 @@ type Agent struct {
 	Dir string `toml:"dir,omitempty"`
 	// Scope defines where this agent is instantiated: "city" (one per city)
 	// or "rig" (one per rig, the default). Only meaningful for pack-defined
-	// agents; inline agents in city.toml use Dir directly. When set, replaces
-	// the older city_agents list mechanism.
+	// agents; inline agents in city.toml use Dir directly.
 	Scope string `toml:"scope,omitempty" jsonschema:"enum=city,enum=rig"`
 	// Suspended prevents the reconciler from spawning this agent. Toggle with gc agent suspend/resume.
 	Suspended bool `toml:"suspended,omitempty"`

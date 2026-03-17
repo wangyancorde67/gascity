@@ -104,9 +104,9 @@ func TestLifecycleCoordination_InitRigAddStart(t *testing.T) {
 	}
 
 	ops := readOpLog(t, logFile)
-	// probe + start + ensure-ready + init
-	if len(ops) != 4 {
-		t.Fatalf("expected 4 ops after city init, got %d: %v", len(ops), ops)
+	// probe + start + init
+	if len(ops) != 3 {
+		t.Fatalf("expected 3 ops after city init, got %d: %v", len(ops), ops)
 	}
 	if !strings.HasPrefix(ops[0], "probe") {
 		t.Fatalf("expected probe first, got: %s", ops[0])
@@ -114,11 +114,8 @@ func TestLifecycleCoordination_InitRigAddStart(t *testing.T) {
 	if !strings.HasPrefix(ops[1], "start") {
 		t.Fatalf("expected start second, got: %s", ops[1])
 	}
-	if !strings.HasPrefix(ops[2], "ensure-ready") {
-		t.Fatalf("expected ensure-ready third, got: %s", ops[2])
-	}
-	if !strings.HasPrefix(ops[3], "init "+cityPath) {
-		t.Fatalf("expected init op for city, got: %s", ops[3])
+	if !strings.HasPrefix(ops[2], "init "+cityPath) {
+		t.Fatalf("expected init op for city, got: %s", ops[2])
 	}
 	assertHooksExist(t, cityPath, "after city init")
 
@@ -133,12 +130,12 @@ func TestLifecycleCoordination_InitRigAddStart(t *testing.T) {
 	}
 
 	ops = readOpLog(t, logFile)
-	// +probe + start + ensure-ready + init (8 total)
-	if len(ops) != 8 {
-		t.Fatalf("expected 8 ops after rig add, got %d: %v", len(ops), ops)
+	// +probe + start + init (6 total)
+	if len(ops) != 6 {
+		t.Fatalf("expected 6 ops after rig add, got %d: %v", len(ops), ops)
 	}
-	if !strings.HasPrefix(ops[7], "init "+rigPath) {
-		t.Fatalf("expected init op for rig, got: %s", ops[7])
+	if !strings.HasPrefix(ops[5], "init "+rigPath) {
+		t.Fatalf("expected init op for rig, got: %s", ops[5])
 	}
 	assertHooksExist(t, rigPath, "after rig add")
 
@@ -159,9 +156,9 @@ func TestLifecycleCoordination_InitRigAddStart(t *testing.T) {
 	}
 
 	ops = readOpLog(t, logFile)
-	// +start + ensure-ready + init(city) + init(rig) = 12 total
-	if len(ops) != 12 {
-		t.Fatalf("expected 12 ops total, got %d: %v", len(ops), ops)
+	// +start + init(city) + init(rig) = 9 total
+	if len(ops) != 9 {
+		t.Fatalf("expected 9 ops total, got %d: %v", len(ops), ops)
 	}
 
 	// Verify hooks reinstalled at both paths after start.
@@ -169,9 +166,9 @@ func TestLifecycleCoordination_InitRigAddStart(t *testing.T) {
 	assertHooksExist(t, rigPath, "after start")
 }
 
-// TestLifecycleCoordination_StartOrder verifies that start+ensure-ready
-// precedes any init call when using startBeadsLifecycle. This catches bugs
-// where init runs before the backing service is ready.
+// TestLifecycleCoordination_StartOrder verifies that start precedes any
+// init call when using startBeadsLifecycle. This catches bugs where init
+// runs before the backing service is ready.
 func TestLifecycleCoordination_StartOrder(t *testing.T) {
 	cityPath := t.TempDir()
 	cityName := "ordertest"
@@ -196,27 +193,24 @@ func TestLifecycleCoordination_StartOrder(t *testing.T) {
 	}
 
 	ops := readOpLog(t, logFile)
-	if len(ops) < 3 {
-		t.Fatalf("expected at least 3 ops, got %d: %v", len(ops), ops)
+	if len(ops) < 2 {
+		t.Fatalf("expected at least 2 ops, got %d: %v", len(ops), ops)
 	}
 
-	// First two ops must be start then ensure-ready.
+	// First op must be start.
 	if !strings.HasPrefix(ops[0], "start") {
 		t.Fatalf("first op should be start, got: %s", ops[0])
 	}
-	if !strings.HasPrefix(ops[1], "ensure-ready") {
-		t.Fatalf("second op should be ensure-ready, got: %s", ops[1])
-	}
 
 	// All subsequent ops must be init.
-	for i := 2; i < len(ops); i++ {
+	for i := 1; i < len(ops); i++ {
 		if !strings.HasPrefix(ops[i], "init ") {
 			t.Fatalf("op[%d] should be init, got: %s", i, ops[i])
 		}
 	}
 }
 
-// TestLifecycleCoordination_StopOrder verifies that stop+shutdown is called
+// TestLifecycleCoordination_StopOrder verifies that stop is called
 // during gc stop via shutdownBeadsProvider.
 func TestLifecycleCoordination_StopOrder(t *testing.T) {
 	cityPath := t.TempDir()
@@ -234,14 +228,11 @@ func TestLifecycleCoordination_StopOrder(t *testing.T) {
 	}
 
 	ops := readOpLog(t, logFile)
-	if len(ops) != 2 {
-		t.Fatalf("expected 2 ops, got %d: %v", len(ops), ops)
+	if len(ops) != 1 {
+		t.Fatalf("expected 1 op, got %d: %v", len(ops), ops)
 	}
 	if !strings.HasPrefix(ops[0], "stop") {
-		t.Fatalf("expected stop op first, got: %s", ops[0])
-	}
-	if !strings.HasPrefix(ops[1], "shutdown") {
-		t.Fatalf("expected shutdown op second, got: %s", ops[1])
+		t.Fatalf("expected stop op, got: %s", ops[0])
 	}
 }
 

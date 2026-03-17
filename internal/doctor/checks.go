@@ -36,7 +36,7 @@ func (c *CityStructureCheck) Run(ctx *CheckContext) *CheckResult {
 	toml := filepath.Join(ctx.CityPath, "city.toml")
 
 	if _, err := os.Stat(toml); err != nil {
-		if citylayout.HasLegacyRuntimeRoot(ctx.CityPath) {
+		if citylayout.HasRuntimeRoot(ctx.CityPath) {
 			r.Status = StatusWarning
 			r.Message = "legacy .gc/ layout detected; city.toml missing"
 			return r
@@ -162,13 +162,13 @@ func (c *ConfigRefsCheck) Run(_ *CheckContext) *CheckResult {
 	for _, a := range c.cfg.Agents {
 		qn := a.QualifiedName()
 		if a.PromptTemplate != "" {
-			path := citylayout.ResolveReadPath(fsys.OSFS{}, c.cityPath, a.PromptTemplate)
+			path := filepath.Join(c.cityPath, a.PromptTemplate)
 			if _, err := os.Stat(path); err != nil {
 				issues = append(issues, fmt.Sprintf("agent %q: prompt_template %q not found", qn, a.PromptTemplate))
 			}
 		}
 		if a.SessionSetupScript != "" {
-			path := citylayout.ResolveReadPath(fsys.OSFS{}, c.cityPath, a.SessionSetupScript)
+			path := filepath.Join(c.cityPath, a.SessionSetupScript)
 			if _, err := os.Stat(path); err != nil {
 				issues = append(issues, fmt.Sprintf("agent %q: session_setup_script %q not found", qn, a.SessionSetupScript))
 			}
@@ -1054,13 +1054,6 @@ func (c *SystemFormulasCheck) Run(_ *CheckContext) *CheckResult {
 
 	sysDir := filepath.Join(c.CityPath, citylayout.SystemFormulasRoot)
 	if _, err := os.Stat(sysDir); err != nil {
-		legacyDir := filepath.Join(c.CityPath, citylayout.LegacySystemFormulasRoot)
-		if _, legacyErr := os.Stat(legacyDir); legacyErr == nil {
-			r.Status = StatusWarning
-			r.Message = "legacy .gc/system-formulas/ directory detected"
-			r.FixHint = "run gc doctor --fix or gc start to migrate to .gc/system/formulas/"
-			return r
-		}
 		r.Status = StatusError
 		r.Message = ".gc/system/formulas/ directory missing"
 		r.FixHint = "run gc doctor --fix to re-materialize"
