@@ -162,8 +162,19 @@ func registerCityWithSupervisor(cityPath string, stdout, stderr io.Writer, comma
 		return 1
 	}
 	if reloadSupervisorHook(stdout, stderr) != 0 {
-		rollbackRegisteredCity(reg, entry, stderr, commandName, "reconcile failed", true)
-		return 1
+		// The supervisor may be a zombie from a recent "gc supervisor stop" —
+		// alive enough to accept connections but unable to process reload
+		// because its main loop has exited. Wait for it to finish dying,
+		// start a fresh supervisor, and retry.
+		time.Sleep(3 * time.Second)
+		if ensureSupervisorRunningHook(stdout, stderr) != 0 {
+			rollbackRegisteredCity(reg, entry, stderr, commandName, "supervisor did not start after retry", false)
+			return 1
+		}
+		if reloadSupervisorHook(stdout, stderr) != 0 {
+			rollbackRegisteredCity(reg, entry, stderr, commandName, "reconcile failed", true)
+			return 1
+		}
 	}
 	if supervisorAliveHook() != 0 {
 		if err := waitForSupervisorCity(cityPath, true, supervisorCityStartTimeout(cityPath)); err != nil {
