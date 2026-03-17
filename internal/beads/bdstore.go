@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -393,6 +395,9 @@ func (s *BdStore) Create(b Bead) (Bead, error) {
 		typ = "task"
 	}
 	args := []string{"create", "--json", b.Title, "-t", typ}
+	if b.Description != "" {
+		args = append(args, "--description", b.Description)
+	}
 	for _, l := range b.Labels {
 		args = append(args, "--labels", l)
 	}
@@ -510,11 +515,12 @@ func (s *BdStore) Ping() error {
 func (s *BdStore) Close(id string) error {
 	_, err := s.runner(s.dir, "bd", "close", "--json", id)
 	if err != nil {
-		if isBdNotFound(err) {
-			// Check if it's already closed (idempotent close).
-			if b, getErr := s.Get(id); getErr == nil && b.Status == "closed" {
-				return nil
-			}
+		// Some bd error paths collapse to a bare exit status without a helpful
+		// not-found string. Re-read the bead to distinguish "already closed" from
+		// true not-found and map both cases deterministically.
+		if b, getErr := s.Get(id); getErr == nil && b.Status == "closed" {
+			return nil
+		} else if getErr != nil && (isBdNotFound(err) || errors.Is(getErr, ErrNotFound)) {
 			return fmt.Errorf("closing bead %q: %w", id, ErrNotFound)
 		}
 		return fmt.Errorf("closing bead %q: %w", id, err)
@@ -583,6 +589,12 @@ func (s *BdStore) Children(parentID string) ([]Bead, error) {
 			result = append(result, b)
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CreatedAt.Equal(result[j].CreatedAt) {
+			return result[i].ID < result[j].ID
+		}
+		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
 	return result, nil
 }
 
