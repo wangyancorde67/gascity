@@ -22,6 +22,11 @@ func ensureCityScaffoldFS(fs fsys.FS, cityPath string) error {
 			return err
 		}
 	}
+	// Touch events.jsonl so gc doctor doesn't warn and events are ready.
+	eventsPath := filepath.Join(cityPath, citylayout.RuntimeRoot, "events.jsonl")
+	if _, err := fs.Stat(eventsPath); err != nil {
+		_ = fs.WriteFile(eventsPath, nil, 0o644)
+	}
 	return nil
 }
 
