@@ -53,6 +53,6 @@ func newDashboardServeCmd(_, stderr io.Writer) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&port, "port", 8080, "HTTP port")
-	cmd.Flags().StringVar(&apiURL, "api", "", "GC API server URL (e.g. http://127.0.0.1:8080)")
+	cmd.Flags().StringVar(&apiURL, "api", "", "GC API server URL (e.g. standalone http://127.0.0.1:9443, supervisor http://127.0.0.1:8372)")
 	return cmd
 }

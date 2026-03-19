@@ -559,7 +559,7 @@ gc dashboard serve [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--api` | string |  | GC API server URL (e.g. http://127.0.0.1:8080) |
+| `--api` | string |  | GC API server URL (e.g. standalone http://127.0.0.1:9443, supervisor http://127.0.0.1:8372) |
 | `--port` | int | `8080` | HTTP port |
 
 ## gc doctor
