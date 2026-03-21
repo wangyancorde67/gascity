@@ -126,6 +126,22 @@ while true; do
             ;;
     esac
 
+    status_before=$(show_status "$bead_id" 2>/dev/null || true)
+    outcome_before=$(show_outcome "$bead_id" 2>/dev/null || true)
+    if [ "$status_before" != "open" ] || [ "$outcome_before" = "skipped" ]; then
+        trace "skip-terminal bead=$bead_id ref=$ref status=$status_before outcome=$outcome_before"
+        sleep 0.2
+        continue
+    fi
+
+    status_before=$(show_status "$bead_id" 2>/dev/null || true)
+    outcome_before=$(show_outcome "$bead_id" 2>/dev/null || true)
+    if [ "$status_before" != "open" ] || [ "$outcome_before" = "skipped" ]; then
+        trace "skip-before-action bead=$bead_id ref=$ref status=$status_before outcome=$outcome_before"
+        sleep 0.2
+        continue
+    fi
+
     printf '%s\n' "$ref" >> "$REPORT_FILE"
     trace "run bead=$bead_id ref=$ref kind=$kind source=$source_id work_dir=$work_dir"
     trace_store
@@ -171,6 +187,14 @@ while true; do
             trace "cleanup unset work_dir source=$source_id"
             ;;
     esac
+
+    status_before=$(show_status "$bead_id" 2>/dev/null || true)
+    outcome_before=$(show_outcome "$bead_id" 2>/dev/null || true)
+    if [ "$status_before" != "open" ] || [ "$outcome_before" = "skipped" ]; then
+        trace "skip-before-close bead=$bead_id ref=$ref status=$status_before outcome=$outcome_before"
+        sleep 0.2
+        continue
+    fi
 
     trace "close bead=$bead_id ref=$ref"
     trace_store
