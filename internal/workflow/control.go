@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/convergence"
@@ -323,6 +324,8 @@ func buildAttemptRecipe(step *formula.Step, control beads.Bead, attemptNum int) 
 }
 
 // findLatestAttempt finds the most recent attempt/iteration child of a control bead.
+// Matches by gc.step_ref pattern: the attempt's step_ref ends with
+// .attempt.N or .iteration.N where the prefix matches the control's step_ref.
 func findLatestAttempt(store beads.Store, control beads.Bead) (beads.Bead, error) {
 	rootID := control.Metadata["gc.root_bead_id"]
 	if rootID == "" {
@@ -334,30 +337,47 @@ func findLatestAttempt(store beads.Store, control beads.Bead) (beads.Bead, error
 		return beads.Bead{}, err
 	}
 
+	controlRef := control.Metadata["gc.step_ref"]
+	if controlRef == "" {
+		controlRef = control.ID
+	}
+
 	var latest beads.Bead
 	latestAttempt := 0
 
 	for _, b := range all {
-		// Match beads that are direct attempt children of this control bead.
-		deps, err := store.DepList(control.ID, "down")
-		if err != nil {
-			return beads.Bead{}, err
-		}
-		isChild := false
-		for _, dep := range deps {
-			if dep.DependsOnID == b.ID && dep.Type == "blocks" {
-				isChild = true
-				break
-			}
-		}
-		if !isChild {
+		// Skip control beads.
+		switch b.Metadata["gc.kind"] {
+		case "scope-check", "workflow-finalize", "fanout", "check", "retry-eval", "retry", "ralph", "scope", "workflow":
 			continue
 		}
 
-		// Skip control beads (scope-check, workflow-finalize, fanout, etc.)
-		// that happen to be blocking deps with gc.attempt set.
-		switch b.Metadata["gc.kind"] {
-		case "scope-check", "workflow-finalize", "fanout", "check", "retry-eval", "retry", "ralph":
+		ref := b.Metadata["gc.step_ref"]
+		if ref == "" {
+			continue
+		}
+
+		// Match: attempt ref starts with the control's ref + ".attempt." or ".iteration."
+		isAttempt := strings.HasPrefix(ref, controlRef+".attempt.") ||
+			strings.HasPrefix(ref, controlRef+".iteration.")
+		// Also match by step_id (ralph parent ID).
+		stepID := control.Metadata["gc.step_id"]
+		if !isAttempt && stepID != "" {
+			isAttempt = strings.HasPrefix(ref, stepID+".attempt.") ||
+				strings.HasPrefix(ref, stepID+".iteration.")
+		}
+		// Also match short refs from nested retries inside ralphs where the
+		// step_ref is the bare child ID + ".attempt.N" (not fully namespaced).
+		// Extract the last path segment of the control's step_ref as an
+		// additional prefix to check.
+		if !isAttempt {
+			if lastDot := strings.LastIndex(controlRef, "."); lastDot >= 0 {
+				shortRef := controlRef[lastDot+1:]
+				isAttempt = strings.HasPrefix(ref, shortRef+".attempt.") ||
+					strings.HasPrefix(ref, shortRef+".iteration.")
+			}
+		}
+		if !isAttempt {
 			continue
 		}
 

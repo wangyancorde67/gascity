@@ -435,5 +435,105 @@ func TestBuildAttemptRecipeWithChildren(t *testing.T) {
 	}
 }
 
+func TestFindLatestAttemptNestedRetryInsideRalph(t *testing.T) {
+	t.Parallel()
+	store := beads.NewMemStore()
+
+	root := mustCreate(t, store, beads.Bead{
+		Title:    "workflow",
+		Metadata: map[string]string{"gc.kind": "workflow"},
+	})
+
+	// Retry control inside a ralph iteration — step_ref is fully namespaced
+	control := mustCreate(t, store, beads.Bead{
+		Title: "review-own-code retry",
+		Metadata: map[string]string{
+			"gc.kind":         "retry",
+			"gc.root_bead_id": root.ID,
+			"gc.step_ref":     "mol-demo-v2.self-review.iteration.1.review-own-code",
+			"gc.step_id":      "self-review",
+		},
+	})
+
+	// Attempt bead — step_ref is SHORT (bare child ID, not fully namespaced)
+	attempt := mustCreate(t, store, beads.Bead{
+		Title: "review-own-code attempt 1",
+		Metadata: map[string]string{
+			"gc.root_bead_id": root.ID,
+			"gc.step_ref":     "review-own-code.attempt.1",
+			"gc.attempt":      "1",
+		},
+	})
+	mustClose(t, store, attempt.ID)
+
+	// Scope-check (should be skipped by findLatestAttempt)
+	scopeCheck := mustCreate(t, store, beads.Bead{
+		Title: "scope-check for attempt",
+		Metadata: map[string]string{
+			"gc.kind":         "scope-check",
+			"gc.root_bead_id": root.ID,
+			"gc.attempt":      "1",
+		},
+	})
+	mustClose(t, store, scopeCheck.ID)
+	mustDep(t, store, control.ID, scopeCheck.ID, "blocks")
+
+	found, err := findLatestAttempt(store, mustGet(t, store, control.ID))
+	if err != nil {
+		t.Fatalf("findLatestAttempt: %v", err)
+	}
+	if found.ID != attempt.ID {
+		t.Fatalf("findLatestAttempt returned %q, want %q (attempt bead)", found.ID, attempt.ID)
+	}
+}
+
+func TestFindLatestAttemptDirectRef(t *testing.T) {
+	t.Parallel()
+	store := beads.NewMemStore()
+
+	root := mustCreate(t, store, beads.Bead{
+		Title:    "workflow",
+		Metadata: map[string]string{"gc.kind": "workflow"},
+	})
+
+	control := mustCreate(t, store, beads.Bead{
+		Title: "review retry",
+		Metadata: map[string]string{
+			"gc.kind":         "retry",
+			"gc.root_bead_id": root.ID,
+			"gc.step_ref":     "mol-feature.review",
+			"gc.step_id":      "review",
+		},
+	})
+
+	attempt1 := mustCreate(t, store, beads.Bead{
+		Title: "attempt 1",
+		Metadata: map[string]string{
+			"gc.root_bead_id": root.ID,
+			"gc.step_ref":     "mol-feature.review.attempt.1",
+			"gc.attempt":      "1",
+		},
+	})
+	mustClose(t, store, attempt1.ID)
+
+	attempt2 := mustCreate(t, store, beads.Bead{
+		Title: "attempt 2",
+		Metadata: map[string]string{
+			"gc.root_bead_id": root.ID,
+			"gc.step_ref":     "mol-feature.review.attempt.2",
+			"gc.attempt":      "2",
+		},
+	})
+	mustClose(t, store, attempt2.ID)
+
+	found, err := findLatestAttempt(store, mustGet(t, store, control.ID))
+	if err != nil {
+		t.Fatalf("findLatestAttempt: %v", err)
+	}
+	if found.ID != attempt2.ID {
+		t.Fatalf("findLatestAttempt returned %q, want %q (latest attempt)", found.ID, attempt2.ID)
+	}
+}
+
 // Unused import guard.
 var _ = strconv.Itoa
