@@ -209,6 +209,41 @@ func TestSlingPoolTargetDelegatesToGcSling(t *testing.T) {
 	}
 }
 
+func TestSlingFormulaParsesWispRootOutput(t *testing.T) {
+	state := newFakeMutatorState(t)
+	state.cfg.Agents = []config.Agent{
+		{
+			Name: "polecat",
+			Dir:  "myrig",
+			Pool: &config.PoolConfig{Min: 0, Max: 3},
+		},
+	}
+	srv := New(state)
+
+	oldRunner := slingCommandRunner
+	defer func() { slingCommandRunner = oldRunner }()
+
+	slingCommandRunner = func(_ context.Context, _ string, _ []string) (string, string, error) {
+		return "Slung formula \"mol-review\" (wisp root wf_pool) → myrig/polecat\n", "", nil
+	}
+
+	body := `{"target":"myrig/polecat","formula":"mol-review","scope_kind":"city","scope_ref":"test-city"}`
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, newPostRequest("/v0/sling", strings.NewReader(body)))
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body = %s", rec.Code, rec.Body.String())
+	}
+
+	var resp slingResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.WorkflowID != "wf_pool" || resp.RootBeadID != "wf_pool" {
+		t.Fatalf("response = %+v, want workflow/root wf_pool", resp)
+	}
+}
+
 func TestSlingAttachedFormulaDelegatesToGcSling(t *testing.T) {
 	state := newFakeMutatorState(t)
 	srv := New(state)
