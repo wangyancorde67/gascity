@@ -205,6 +205,9 @@ func (s *Server) handleBeadClose(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBeadUpdate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var body struct {
+		Title        *string           `json:"title"`
+		Status       *string           `json:"status"`
+		Type         *string           `json:"type"`
 		Assignee     *string           `json:"assignee"`
 		Description  *string           `json:"description"`
 		Labels       []string          `json:"labels"`
@@ -218,6 +221,9 @@ func (s *Server) handleBeadUpdate(w http.ResponseWriter, r *http.Request) {
 
 	stores := s.state.BeadStores()
 	opts := beads.UpdateOpts{
+		Title:        body.Title,
+		Status:       body.Status,
+		Type:         body.Type,
 		Assignee:     body.Assignee,
 		Description:  body.Description,
 		Labels:       body.Labels,
