@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,21 +18,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// remotePacksCached reports whether all named remote packs declared in
-// city.toml have been fetched (their cache directories exist). Returns
-// true when there are no remote packs or the config cannot be parsed.
-func remotePacksCached(cityPath string) bool {
-	cfg, err := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
-	if err != nil {
-		return true // Can't parse → nothing to check.
-	}
-	for name := range cfg.Packs {
-		cacheDir := filepath.Join(cityPath, citylayout.CachePacksRoot, name, ".git")
-		if _, err := os.Stat(cacheDir); err != nil {
-			return false
-		}
-	}
-	return true
+// quietLoadCityConfig loads city config with log output suppressed.
+// ExpandCityPacks logs "not found, skipping" for uncached remote packs
+// which is confusing during cobra command-tree setup (before gc start
+// has fetched them). The expander already skips missing packs gracefully;
+// we just silence the log noise.
+func quietLoadCityConfig(cityPath string) (*config.City, error) {
+	prev := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(prev)
+	return loadCityConfig(cityPath)
 }
 
 // registerPackCommands attempts to discover the city, load config, and
@@ -43,14 +39,7 @@ func registerPackCommands(root *cobra.Command, stdout, stderr io.Writer) {
 	if err != nil {
 		return
 	}
-	// Skip if remote packs haven't been fetched yet. LoadWithIncludes
-	// would log confusing "not found, skipping" messages for uncached
-	// named packs. The actual startup path (gc start) fetches them
-	// before its own LoadWithIncludes.
-	if !remotePacksCached(cityPath) {
-		return
-	}
-	cfg, err := loadCityConfig(cityPath)
+	cfg, err := quietLoadCityConfig(cityPath)
 	if err != nil {
 		return
 	}
@@ -224,7 +213,7 @@ func tryPackCommandFallback(args []string, stdout, stderr io.Writer) bool {
 	if err != nil {
 		return false
 	}
-	cfg, err := loadCityConfig(cityPath)
+	cfg, err := quietLoadCityConfig(cityPath)
 	if err != nil {
 		return false
 	}

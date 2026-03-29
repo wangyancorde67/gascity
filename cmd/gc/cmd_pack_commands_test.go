@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -430,10 +431,13 @@ done
 	}
 }
 
-func TestRemotePacksCached_ColdCache(t *testing.T) {
+func TestRegisterPackCommands_UncachedPacksNoLogNoise(t *testing.T) {
+	// Regression guard: registerPackCommands must not emit "not found,
+	// skipping" log messages when remote packs haven't been fetched yet.
+	// It should still succeed for any locally-available packs.
 	cityPath := t.TempDir()
 
-	// Write city.toml with a remote pack reference.
+	// Write city.toml with a remote pack reference whose cache is missing.
 	cityTOML := `[workspace]
 name = "test"
 includes = ["mypk"]
@@ -447,54 +451,16 @@ path = "packs/mypk"
 		t.Fatal(err)
 	}
 
-	// No cache dir at all — should return false.
-	if remotePacksCached(cityPath) {
-		t.Error("remotePacksCached returned true with empty cache")
-	}
-}
+	// Capture log output to verify no noise.
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
 
-func TestRemotePacksCached_WarmCache(t *testing.T) {
-	cityPath := t.TempDir()
+	// quietLoadCityConfig should suppress log noise from ExpandCityPacks.
+	_, _ = quietLoadCityConfig(cityPath)
 
-	// Write city.toml with a remote pack reference.
-	cityTOML := `[workspace]
-name = "test"
-includes = ["mypk"]
-
-[packs.mypk]
-source = "https://example.com/repo.git"
-ref = "main"
-path = "packs/mypk"
-`
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityTOML), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create the cache with .git dir — should return true.
-	cacheDir := filepath.Join(cityPath, ".gc", "cache", "packs", "mypk", ".git")
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	if !remotePacksCached(cityPath) {
-		t.Error("remotePacksCached returned false with warm cache")
-	}
-}
-
-func TestRemotePacksCached_NoPacks(t *testing.T) {
-	cityPath := t.TempDir()
-
-	// Write city.toml with no packs section.
-	cityTOML := `[workspace]
-name = "test"
-`
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityTOML), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// No remote packs — should return true (nothing to wait for).
-	if !remotePacksCached(cityPath) {
-		t.Error("remotePacksCached returned false with no remote packs")
+	if strings.Contains(logBuf.String(), "not found, skipping") {
+		t.Errorf("quietLoadCityConfig produced log noise: %s", logBuf.String())
 	}
 }
 
