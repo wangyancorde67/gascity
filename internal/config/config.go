@@ -1481,17 +1481,38 @@ func InjectImplicitAgents(cfg *City) {
 }
 
 // injectWorkflowControlAgents adds city-scoped and rig-scoped workflow-control
-// agents when graph_workflows is enabled and no explicit entry exists.
+// agents and named sessions when graph_workflows is enabled and no explicit
+// entry exists. Using named sessions ensures the reconciler reopens the
+// existing session bead on restart instead of creating a new one (which
+// would conflict on the session alias).
 func injectWorkflowControlAgents(cfg *City, existing map[agentKey]bool) {
 	if !cfg.Daemon.GraphWorkflows {
 		return
 	}
+	existingNS := make(map[string]bool, len(cfg.NamedSessions))
+	for _, ns := range cfg.NamedSessions {
+		existingNS[ns.QualifiedName()] = true
+	}
 	if !existing[agentKey{"", WorkflowControlAgentName}] {
 		cfg.Agents = append(cfg.Agents, newWorkflowControlAgent(""))
+		if !existingNS[WorkflowControlAgentName] {
+			cfg.NamedSessions = append(cfg.NamedSessions, NamedSession{
+				Template: WorkflowControlAgentName,
+				Mode:     "always",
+			})
+		}
 	}
 	for _, rig := range cfg.Rigs {
 		if !existing[agentKey{rig.Name, WorkflowControlAgentName}] {
 			cfg.Agents = append(cfg.Agents, newWorkflowControlAgent(rig.Name))
+			qn := rig.Name + "/" + WorkflowControlAgentName
+			if !existingNS[qn] {
+				cfg.NamedSessions = append(cfg.NamedSessions, NamedSession{
+					Template: WorkflowControlAgentName,
+					Dir:      rig.Name,
+					Mode:     "always",
+				})
+			}
 		}
 	}
 }
