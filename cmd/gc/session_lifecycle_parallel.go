@@ -308,50 +308,26 @@ func prepareStartCandidate(
 		firstStart := session.Metadata["started_config_hash"] == ""
 		agentCfg.Command = resolveSessionCommand(agentCfg.Command, sk, tp.ResolvedProvider, firstStart)
 	}
+	// Initial message: append to prompt on first start only.
+	// Schema overrides were already applied in the block above (before coreHash).
+	// resolveSessionCommand only adds --resume/--session-id which are not schema
+	// flags, so the overrides don't need to be re-applied.
 	if raw := session.Metadata["template_overrides"]; raw != "" {
 		var overrides map[string]string
-		if err := json.Unmarshal([]byte(raw), &overrides); err == nil && len(overrides) > 0 {
-			// Initial message: append to prompt on first start only.
-			// The template's PromptSuffix is already shell-quoted; we rebuild
-			// a combined prompt with the user's message appended.
+		if err := json.Unmarshal([]byte(raw), &overrides); err == nil {
 			firstStart := session.Metadata["started_config_hash"] == ""
-			if msg, ok := overrides["initial_message"]; ok && msg != "" {
-				delete(overrides, "initial_message")
-				if firstStart {
-					// Reconstruct: unquote existing prompt, append message, re-quote
-					existing := ""
-					if agentCfg.PromptSuffix != "" {
-						parts := shellquote.Split(agentCfg.PromptSuffix)
-						if len(parts) > 0 {
-							existing = parts[0]
-						}
-					}
-					if existing != "" {
-						agentCfg.PromptSuffix = shellquote.Quote(existing + "\n\n---\n\nUser message:\n" + msg)
-					} else {
-						agentCfg.PromptSuffix = shellquote.Quote(msg)
+			if msg, ok := overrides["initial_message"]; ok && msg != "" && firstStart {
+				existing := ""
+				if agentCfg.PromptSuffix != "" {
+					parts := shellquote.Split(agentCfg.PromptSuffix)
+					if len(parts) > 0 {
+						existing = parts[0]
 					}
 				}
-			}
-
-			// Schema overrides (model, permission_mode, etc.)
-			// Build complete options: effective defaults + explicit overrides.
-			// This ensures unoverridden defaults (e.g., permission_mode) are
-			// preserved when the user only overrides a subset (e.g., model).
-			if len(overrides) > 0 && tp.ResolvedProvider != nil && len(tp.ResolvedProvider.OptionsSchema) > 0 {
-				fullOptions := make(map[string]string)
-				for k, v := range tp.ResolvedProvider.EffectiveDefaults {
-					fullOptions[k] = v
-				}
-				for k, v := range overrides {
-					fullOptions[k] = v
-				}
-				args, resolveErr := config.ResolveExplicitOptions(tp.ResolvedProvider.OptionsSchema, fullOptions)
-				if resolveErr == nil && len(args) > 0 {
-					agentCfg.Command = replaceSchemaFlags(agentCfg.Command, tp.ResolvedProvider.OptionsSchema, args)
-				}
-				if resolveErr != nil {
-					log.Printf("session %s: template_overrides resolution failed: %v", session.ID, resolveErr)
+				if existing != "" {
+					agentCfg.PromptSuffix = shellquote.Quote(existing + "\n\n---\n\nUser message:\n" + msg)
+				} else {
+					agentCfg.PromptSuffix = shellquote.Quote(msg)
 				}
 			}
 		}
