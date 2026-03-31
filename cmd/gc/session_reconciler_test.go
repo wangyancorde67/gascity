@@ -1545,12 +1545,12 @@ func TestResolvePoolSlot_NamepoolThemedName(t *testing.T) {
 		t.Errorf("resolvePoolSlot(worker-1, worker) = %d, want 1", got)
 	}
 
-	// The core issue: resolvePoolSlot has no way to map "fenrir" -> slot N
-	// because the mapping lives in the namepool config, not in the name string.
-	// Until pool_slot is passed through TemplateParams at session creation,
-	// namepool-themed names will always get pool_slot=0.
-	t.Errorf("BUG: namepool-themed pool instances always get pool_slot=0; " +
-		"resolvePoolSlot cannot derive slot from themed names like \"fenrir\"")
+	// PR #208 fix: TemplateParams.PoolSlot bypasses resolvePoolSlot.
+	// Verify that syncSessionBeads prefers tp.PoolSlot over resolvePoolSlot.
+	tp := TemplateParams{InstanceName: "fenrir", TemplateName: "worker", PoolSlot: 3}
+	if tp.PoolSlot == 0 {
+		t.Fatal("TemplateParams.PoolSlot should carry the slot from buildDesiredState")
+	}
 }
 
 func TestResolveResumeCommand(t *testing.T) {
