@@ -2100,54 +2100,83 @@ func TestTranscriptPathSameWorkDirDifferentProvidersUsesProviderSpecificFallback
 	}
 }
 
-// BUG: PR #206 — this test fails on current code because Kill() only
-// accepts StateActive, StateCreating, and StateDraining (manager.go:614).
-// Sessions with state=awake are rejected with "session is not active"
-// even though awake is a live state with a running runtime process.
-// The fix is to add "awake" to the accepted states in Kill().
-func TestKill_AcceptsAwakeState(t *testing.T) {
+func TestKill_ActiveState(t *testing.T) {
 	store := beads.NewMemStore()
 	sp := runtime.NewFake()
 	mgr := NewManager(store, sp)
 
-	// Create a session bead with state=awake and a matching runtime process.
+	info, err := mgr.CreateNamedWithTransport(context.Background(), "sky", "helper", "test", "claude", "/tmp", "claude", "", nil, ProviderResume{}, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := mgr.Kill(info.ID); err != nil {
+		t.Fatalf("Kill active session: %v", err)
+	}
+}
+
+func TestKill_AwakeState(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.CreateNamedWithTransport(context.Background(), "sky", "helper", "test", "claude", "/tmp", "claude", "", nil, ProviderResume{}, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := store.SetMetadata(info.ID, "state", string(StateAwake)); err != nil {
+		t.Fatalf("SetMetadata: %v", err)
+	}
+	if err := mgr.Kill(info.ID); err != nil {
+		t.Fatalf("Kill awake session: %v", err)
+	}
+}
+
+func TestKill_StoppedState_NotRunning(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
 	b, err := store.Create(beads.Bead{
-		Title:  "awake worker",
-		Type:   BeadType,
-		Labels: []string{LabelSession},
-		Metadata: map[string]string{
-			"template":     "worker",
-			"state":        "awake",
-			"session_name": "s-awake-worker",
-		},
+		Title:    "helper",
+		Type:     BeadType,
+		Labels:   []string{LabelSession},
+		Metadata: map[string]string{"session_name": "sky", "state": "stopped"},
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-
-	// Start a runtime process so Kill() has something to stop.
-	if err := sp.Start(context.Background(), "s-awake-worker", runtime.Config{Command: "true"}); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-
-	// Kill should succeed for awake sessions, but the bug causes it to
-	// return "session is not active" because "awake" is not in the
-	// accepted state list.
-	if err := mgr.Kill(b.ID); err != nil {
-		t.Fatalf("Kill(awake session) = %v, want nil", err)
+	if err := mgr.Kill(b.ID); err == nil {
+		t.Fatal("expected Kill to fail for stopped non-running session")
 	}
 }
 
-// BUG: PR #203 — When ensureRunning resumes with --resume <key> and the
+func TestKill_UnknownState_ButRunning(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	_ = sp.Start(context.Background(), "sky", runtime.Config{Command: "claude"})
+	mgr := NewManager(store, sp)
+
+	b, err := store.Create(beads.Bead{
+		Title:    "helper",
+		Type:     BeadType,
+		Labels:   []string{LabelSession},
+		Metadata: map[string]string{"session_name": "sky", "state": "some-future-state"},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := mgr.Kill(b.ID); err != nil {
+		t.Fatalf("Kill running session with unknown state: %v", err)
+	}
+}
+
+// PR #203 — When ensureRunning resumes with --resume <key> and the
 // process dies immediately (stale session key), it should clear the key and
-// retry fresh without the --resume flag. Currently there is no retry logic:
-// the session stays dead after a stale key failure.
+// retry fresh without the --resume flag.
 func TestEnsureRunning_RetriesWithoutStaleSessionKey(t *testing.T) {
 	store := beads.NewMemStore()
 	base := runtime.NewFake()
 
-	// failOnceStartProvider fails the first Start after arming, then
-	// succeeds on retry. Simulates: stale key rejected, fresh start works.
 	sp := &failOnceStartProvider{Fake: base}
 	mgr := NewManager(store, sp)
 
@@ -2172,14 +2201,10 @@ func TestEnsureRunning_RetriesWithoutStaleSessionKey(t *testing.T) {
 		t.Fatalf("Suspend: %v", err)
 	}
 
-	// Arm: next Start fails (stale key), the one after succeeds.
 	sp.armed = true
 
 	resumeCmd := "claude --dangerously --resume " + sessionKey
 	err = mgr.Send(context.Background(), info.ID, "hello", resumeCmd, runtime.Config{WorkDir: "/tmp"})
-	// BUG: ensureRunning propagates the error without retrying fresh.
-	// When PR #203 is applied, Send should succeed because ensureRunning
-	// strips --resume, clears session_key, and retries.
 	if err != nil {
 		t.Fatalf("Send should retry without stale resume flag but failed: %v", err)
 	}
@@ -2188,7 +2213,6 @@ func TestEnsureRunning_RetriesWithoutStaleSessionKey(t *testing.T) {
 		t.Fatal("session should be running after fresh retry")
 	}
 
-	// The stale session_key should be cleared from bead metadata.
 	b, _ = store.Get(info.ID)
 	if b.Metadata["session_key"] != "" {
 		t.Errorf("session_key should be cleared after stale key retry, got %q", b.Metadata["session_key"])
@@ -2201,8 +2225,6 @@ func TestEnsureRunning_StaleKeyRetryAlsoFails(t *testing.T) {
 	store := beads.NewMemStore()
 	base := runtime.NewFake()
 
-	// dieAndFailProvider: first Start succeeds but process dies (stale key
-	// detection triggers), second Start fails outright (fresh retry fails).
 	sp := &dieAndFailProvider{Fake: base}
 	mgr := NewManager(store, sp)
 
@@ -2226,18 +2248,13 @@ func TestEnsureRunning_StaleKeyRetryAlsoFails(t *testing.T) {
 		t.Fatalf("Suspend: %v", err)
 	}
 
-	// Reset callCount — Create already called Start once during setup.
-	// We want the NEXT Start (from Send) to be treated as call 1 (dies)
-	// and the retry as call 2 (fails outright).
 	sp.callCount = 0
 	resumeCmd := "claude --dangerously --resume " + b.Metadata["session_key"]
 	err = mgr.Send(context.Background(), info.ID, "hello", resumeCmd, runtime.Config{WorkDir: "/tmp"})
 
-	// Both attempts should fail, and the error must propagate (not silently swallowed).
 	if err == nil {
 		t.Fatal("Send should fail when both stale-key resume and fresh retry fail")
 	}
-	// The session_key should still be cleared even though retry failed.
 	b, _ = store.Get(info.ID)
 	if b.Metadata["session_key"] != "" {
 		t.Errorf("session_key should be cleared even on retry failure, got %q", b.Metadata["session_key"])
