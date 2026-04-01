@@ -53,13 +53,13 @@ jobs:
     env:
       # Pinned dependency versions — keep in sync with deps.env.
       DOLT_VERSION: "1.83.5"
-      BD_COMMIT: "6f216bfc46690361a8a89c52dcefbf169b17d8e4"
+      BD_COMMIT: "9d9d0e53c2330bd081bef350883f56c2557eb78b"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          repository: gascity/beads
+          repository: gastownhall/beads
           ref: ${{ env.BD_COMMIT }}
           path: .beads-src
 
@@ -80,7 +80,7 @@ jobs:
           curl -fsSL https://github.com/dolthub/dolt/releases/download/v${{ env.DOLT_VERSION }}/install.sh | sudo bash
           dolt version
 
-      - name: Build pinned beads (bd) from gascity/beads@${{ env.BD_COMMIT }}
+      - name: Build pinned beads (bd) from gastownhall/beads@${{ env.BD_COMMIT }}
         working-directory: .beads-src
         run: |
           mkdir -p "$GITHUB_WORKSPACE/.bd-release"
@@ -133,7 +133,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          repository: gascity/beads
+          repository: gastownhall/beads
           ref: ${{ env.BD_COMMIT }}
           path: .beads-src
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
@@ -161,7 +161,7 @@ jobs:
         run: make test-acceptance
     env:
       DOLT_VERSION: "1.83.5"
-      BD_COMMIT: "6f216bfc46690361a8a89c52dcefbf169b17d8e4"
+      BD_COMMIT: "9d9d0e53c2330bd081bef350883f56c2557eb78b"
 
   # Runs when mail-related source paths change.
   mcp-mail:

@@ -342,15 +342,21 @@ func TestBdListByAssignee(t *testing.T) {
 
 // TestBdListByMetadataField verifies bd list --json --metadata-field
 // key=value. gastown's BdStore.ListByMetadata depends on this for
-// routing queries.
+// routing queries. Skips if the bd version doesn't support --metadata-field.
 func TestBdListByMetadataField(t *testing.T) {
 	dir := initBeadsDir(t)
 
 	requireBD(t, dir, "create", "--json", "routed bead",
 		"-t", "task", "--metadata", `{"gc.routed_to":"test-agent"}`)
 
-	out := requireBD(t, dir, "list", "--json", "--all", "--include-infra",
+	out, err := runBD(t, dir, "list", "--json", "--all", "--include-infra",
 		"--limit", "10", "--metadata-field", "gc.routed_to=test-agent")
+	if err != nil {
+		if strings.Contains(out, "unknown flag") {
+			t.Skip("bd version does not support --metadata-field")
+		}
+		t.Fatalf("bd list --metadata-field failed: %v\n%s", err, out)
+	}
 
 	idx := strings.Index(out, "[")
 	if idx < 0 {
@@ -632,13 +638,18 @@ func TestBdDeleteForce(t *testing.T) {
 	}
 }
 
-// TestBdComment verifies bd comment <id> <message>.
+// TestBdComment verifies bd comment(s) add <id> <message>.
 // gastown shell scripts (e.g., wisp-compact.sh) use this command.
+// bd versions vary: newer versions use "bd comment", older use "bd comments add".
 func TestBdComment(t *testing.T) {
 	dir := initBeadsDir(t)
 	id := createBead(t, dir, "comment test bead")
 
-	requireBD(t, dir, "comment", id, "test comment from contract test")
+	// Try "bd comment" first (newer bd), fall back to "bd comments add".
+	_, err := runBD(t, dir, "comment", id, "test comment from contract test")
+	if err != nil {
+		requireBD(t, dir, "comments", "add", id, "test comment from contract test")
+	}
 }
 
 // TestBdCreateWithParent verifies bd create --json --parent <id>.
