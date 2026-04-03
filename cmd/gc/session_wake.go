@@ -117,7 +117,7 @@ func validateWorkDir(dir string) error {
 // Without this, a single bad tick can interrupt a working agent mid-tool-call.
 func beginSessionDrain(
 	session beads.Bead,
-	sp runtime.Provider,
+	_ runtime.Provider, // kept for caller compatibility; interrupt deferred to advanceSessionDrains
 	dt *drainTracker,
 	reason string,
 	clk clock.Clock,
@@ -235,14 +235,19 @@ func advanceSessionDrainsWithSessions(
 			}
 		}
 
-		// Deferred interrupt: send Ctrl-C only after the drain has survived
+		// Deferred drain signal: set GC_DRAIN_ACK after the drain has survived
 		// at least one full tick without being canceled. This prevents a
 		// single transient store failure from interrupting a working agent
 		// — the false-orphan drain is canceled on the next tick when the
-		// store recovers, before any signal reaches the process.
-		if !ds.interruptSent {
-			_ = verifiedInterrupt(*session, sp)
-			ds.interruptSent = true
+		// store recovers, before any signal is set.
+		//
+		// Uses the same GC_DRAIN_ACK env var that agents set via
+		// `gc runtime drain-ack`. The reconciler's Phase 1 drain-ack check
+		// sees it on the next tick and calls sp.Stop() for a clean
+		// SIGTERM/SIGKILL — no Ctrl-C keystroke injection into the pane.
+		if !ds.ackSet {
+			_ = sp.SetMeta(name, "GC_DRAIN_ACK", "1")
+			ds.ackSet = true
 		}
 
 		if clk.Now().After(ds.deadline) {

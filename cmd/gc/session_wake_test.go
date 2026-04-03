@@ -549,14 +549,24 @@ func TestAdvanceSessionDrains_DeferredInterrupt_CanceledBeforeSignal(t *testing.
 	// deferred interrupt. Let's verify the interrupt WAS sent for a
 	// non-cancelable drain.
 
-	// For orphaned drains (non-cancelable), the interrupt should fire
+	// For orphaned drains (non-cancelable), GC_DRAIN_ACK should be set
 	// on the advance tick since the drain isn't canceled.
 	ds := dt.get(b.ID)
 	if ds == nil {
 		t.Fatal("orphaned drain should not be canceled by wake reasons")
 	}
-	if !ds.interruptSent {
-		t.Error("interrupt should have been sent during advance")
+	if !ds.ackSet {
+		t.Error("drain-ack should have been set during advance")
+	}
+	// Verify GC_DRAIN_ACK was set (not Ctrl-C)
+	ack, _ := sp.GetMeta("test-session", "GC_DRAIN_ACK")
+	if ack != "1" {
+		t.Errorf("GC_DRAIN_ACK = %q, want \"1\"", ack)
+	}
+	for _, c := range sp.Calls {
+		if c.Method == "Interrupt" {
+			t.Error("Interrupt (Ctrl-C) should never be sent — use GC_DRAIN_ACK instead")
+		}
 	}
 }
 
@@ -605,10 +615,13 @@ func TestAdvanceSessionDrains_DeferredInterrupt_CancelableNoSignal(t *testing.T)
 		t.Error("no-wake-reason drain should be canceled when wake reasons reappear")
 	}
 
-	// No interrupt should have been sent — cancel happened first.
+	// No drain signal should have been sent — cancel happened first.
 	for _, c := range sp.Calls {
 		if c.Method == "Interrupt" {
-			t.Error("interrupt should not fire for a drain that was canceled before advance")
+			t.Error("Interrupt should not fire for a drain that was canceled before advance")
+		}
+		if c.Method == "SetMeta" && c.Name == "test-session" {
+			t.Error("GC_DRAIN_ACK should not be set for a drain that was canceled before advance")
 		}
 	}
 }
