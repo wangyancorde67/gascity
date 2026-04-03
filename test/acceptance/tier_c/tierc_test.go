@@ -14,6 +14,7 @@ package tierc_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,6 +79,14 @@ func TestMain(m *testing.M) {
 	doltCfg := `{"user.name":"gc-test","user.email":"gc-test@test.local"}`
 	if err := os.WriteFile(filepath.Join(doltCfgDir, "config_global.json"), []byte(doltCfg), 0o644); err != nil {
 		panic("acceptance-c: " + err.Error())
+	}
+
+	// Force a token refresh before staging credentials. Claude Code
+	// refreshes tokens in-memory but may not persist to .credentials.json,
+	// leaving the on-disk token expired. A quick --print call forces the
+	// refresh and (in newer versions) persists it.
+	if refreshOut, err := exec.Command("claude", "--print", "ok").CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "acceptance-c: OAuth preflight refresh failed: %v\n%s\n", err, refreshOut)
 	}
 
 	// Symlink the host's .claude dir so the test always sees fresh OAuth
