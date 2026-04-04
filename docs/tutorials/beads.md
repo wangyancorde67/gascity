@@ -25,8 +25,7 @@ gc-11   convoy    open         sprint-42
 
 Every bead has:
 
-// actually don't some beads use the city prefix - that is, beads initated outside of a rig?
-- **ID** — unique identifier with a prefix derived from its rig (e.g., `gc-5`, `ma-12`)
+- **ID** — unique identifier with a short prefix derived from the city or rig name (e.g., `gc-5` for a city named "gascity", `ma-12` for a rig named "my-app")
 - **Title** — human-readable name
 - **Status** — `open`, `in_progress`, or `closed`
 - **Type** — what type of bead it is
@@ -89,9 +88,21 @@ ID      TYPE    STATUS  TITLE
 gc-16   feature open    Refactor auth module
 ```
 
+## Beads as execution state
 
-// ok, so to this point, I THINK we have neough to exmplain how there is a beads database that keeps the exection state of work as it flows thorugh the system. I believe this is effectively the execution state the sytem.   Can we bring that material up here and then make labels etc just details afterwards?
+The bead store is effectively the execution state of the entire system. Every session that's running, every message in flight, every formula step being worked on — all of it is a bead with a status. If you want to know what the city is doing right now, you query the store:
 
+```
+$ bd list --state in_progress
+ID      TYPE      STATUS       TITLE
+gc-1    session   in_progress  mayor
+gc-2    session   in_progress  helper
+gc-15   task      in_progress  Fix the login bug
+```
+
+This is what makes Gas City crash-safe. Work isn't held in memory or tracked by a running process — it's persisted in the store. If an agent dies, its beads stay open. When the agent restarts, its hooks discover the same work and pick up where it left off. If the whole city stops and restarts, the bead store is the ground truth for what was happening and what still needs to happen.
+
+The rest of this chapter covers the details — how beads get organized, routed, grouped, and discovered by agents. You can skim these sections and come back when you need them.
 
 ## Labels
 
