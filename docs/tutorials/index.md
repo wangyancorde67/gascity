@@ -1,17 +1,20 @@
 ---
 title: Tutorials
-description: Published tutorials and example-driven learning paths.
+description: Hands-on guides for learning Gas City's core concepts.
 ---
 
-Only published, maintained tutorials live in this section.
+## Tutorials
 
-## Available Tutorials
+| Tutorial | Description | Status |
+|----------|-------------|--------|
+| [Cities, Rigs, and Packs](cities.md) | Creating and managing a workspace | In Progress |
+| [Agents](agents.md) | Configuring agent templates | 1st Draft |
+| [Sessions](sessions.md) | Running and interacting with agents | 1st Draft |
+| [Formulas](formulas.md) | Declarative workflow templates | 1st Draft |
+| [Rigs](rigs.md) | Rig reference (fields, status, restart) | Reference |
+| [Beads](beads.md) | The universal work primitive | 1st Draft |
 
-- [Tutorial 1 - Beads](/tutorials/01-beads)
+## Also in this directory
 
-## What Changed
-
-Older numbered progression notes and roadmap material were removed from the
-published tutorial path instead of being left as broken or half-written pages.
-That older planning material now lives in `engdocs/archive/`
-when it is still useful as historical context.
+- [Tutorial 01 - Beads](01-beads.md) — Original walkthrough (boneyard — will be archived)
+- [Issues](issues.md) — Issue tracking for tutorial content
