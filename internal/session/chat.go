@@ -250,6 +250,11 @@ func (m *Manager) ensureRunning(ctx context.Context, id string, b beads.Bead, se
 	// with a fresh start so the user isn't stuck with a dead pane.
 	if started && b.Metadata["session_key"] != "" {
 		if err := sleepWithContext(ctx, staleKeyDetectDelay); err != nil {
+			// Context canceled during stale-key sleep: the runtime session
+			// may already be running but we skip setting state="active".
+			// This is self-healing via NDI — the next ensureRunning call
+			// sees the suspended-state bead, attempts sp.Start, gets
+			// ErrSessionExists (IsRunning=true), and persists "active".
 			if unroute != nil {
 				unroute()
 			}

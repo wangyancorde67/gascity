@@ -518,7 +518,12 @@ func doStartSession(ctx context.Context, ops startOps, name string, cfg runtime.
 		len(cfg.SessionLive) > 0
 
 	if !hasHints {
-		return nil // fire-and-forget
+		// Fire-and-forget: caller may SendImmediate before the agent is
+		// fully interactive. This is an accepted narrow race — it only
+		// occurs when no readiness hints are configured, and the message
+		// lands in tmux scrollback where the agent picks it up at its
+		// next turn boundary.
+		return nil
 	}
 
 	// Step 2: Wait for agent command to appear (not still in shell).
@@ -566,9 +571,6 @@ func doStartSession(ctx context.Context, ops startOps, name string, cfg runtime.
 		return err
 	}
 	runSessionSetup(ctx, ops, name, cfg, os.Stderr, setupTimeout)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 
 	// Step 6: Send nudge text if configured.
 	if err := ctx.Err(); err != nil {
@@ -577,18 +579,12 @@ func doStartSession(ctx context.Context, ops startOps, name string, cfg runtime.
 	if cfg.Nudge != "" {
 		_ = ops.sendKeys(name, cfg.Nudge) // best-effort
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 
 	// Step 6.5: Run session_live commands (idempotent, re-applicable).
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	runSessionLive(ctx, ops, name, cfg, os.Stderr, setupTimeout)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 
 	return nil
 }
