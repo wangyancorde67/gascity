@@ -445,7 +445,7 @@ func agentSessionName(cityName, qualifiedName, sessionTemplate string) string {
 func findAgent(cfg *config.City, name string) (config.Agent, bool) {
 	dir, baseName := config.ParseQualifiedName(name)
 	for _, a := range cfg.Agents {
-		if a.Dir == dir && a.Name == baseName {
+		if config.AgentMatchesIdentity(&a, name) {
 			return a, true
 		}
 		// Check multi-session instance members.

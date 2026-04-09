@@ -53,12 +53,29 @@ func (a *Agent) QualifiedName() string {
 
 // ParseQualifiedName splits an agent identity into (dir, name).
 // "hello-world/polecat" → ("hello-world", "polecat").
+// "hello-world/gastown.polecat" → ("hello-world", "gastown.polecat").
+// "gastown.mayor" → ("", "gastown.mayor").
 // "mayor" → ("", "mayor").
 func ParseQualifiedName(identity string) (dir, name string) {
 	if i := strings.LastIndex(identity, "/"); i >= 0 {
 		return identity[:i], identity[i+1:]
 	}
 	return "", identity
+}
+
+// AgentMatchesIdentity returns true if the agent's qualified name matches
+// the given identity string. Handles both V1 format ("dir/name") and V2
+// format ("dir/binding.name", "binding.name"). This is the canonical way
+// to match user-supplied identity strings against agents; prefer it over
+// manual Dir+Name comparisons.
+func AgentMatchesIdentity(a *Agent, identity string) bool {
+	// Try V2 qualified name first (includes binding).
+	if a.QualifiedName() == identity {
+		return true
+	}
+	// Fallback: V1-style dir+name match (for cities without imports).
+	dir, name := ParseQualifiedName(identity)
+	return a.Dir == dir && a.Name == name
 }
 
 // City is the top-level configuration for a Gas City instance.

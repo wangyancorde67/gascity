@@ -1052,6 +1052,67 @@ source = "../nonexistent"
 	}
 }
 
+func TestAgentMatchesIdentity(t *testing.T) {
+	tests := []struct {
+		name     string
+		agent    Agent
+		identity string
+		want     bool
+	}{
+		{
+			name:     "bare name match",
+			agent:    Agent{Name: "mayor"},
+			identity: "mayor",
+			want:     true,
+		},
+		{
+			name:     "V1 dir/name match",
+			agent:    Agent{Name: "polecat", Dir: "proj"},
+			identity: "proj/polecat",
+			want:     true,
+		},
+		{
+			name:     "V2 binding.name match",
+			agent:    Agent{Name: "mayor", BindingName: "gastown"},
+			identity: "gastown.mayor",
+			want:     true,
+		},
+		{
+			name:     "V2 dir/binding.name match",
+			agent:    Agent{Name: "polecat", BindingName: "gastown", Dir: "proj"},
+			identity: "proj/gastown.polecat",
+			want:     true,
+		},
+		{
+			name:     "V1 fallback for V2 agent",
+			agent:    Agent{Name: "mayor", BindingName: "gastown"},
+			identity: "mayor",
+			want:     true,
+		},
+		{
+			name:     "no match",
+			agent:    Agent{Name: "mayor", BindingName: "gastown"},
+			identity: "maint.mayor",
+			want:     false,
+		},
+		{
+			name:     "wrong dir",
+			agent:    Agent{Name: "polecat", Dir: "proj"},
+			identity: "other/polecat",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := AgentMatchesIdentity(&tt.agent, tt.identity)
+			if got != tt.want {
+				t.Errorf("AgentMatchesIdentity(%v, %q) = %v, want %v", tt.agent.QualifiedName(), tt.identity, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestQualifiedName_WithBindingName(t *testing.T) {
 	tests := []struct {
 		name        string
