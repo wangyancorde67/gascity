@@ -1,0 +1,491 @@
+package config
+
+// Tests for V2 [imports.X] support in pack.toml.
+// These test the new import schema parsing, binding-name stamping,
+// and qualified name generation that form the foundation of #360.
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/BurntSushi/toml"
+	"github.com/gastownhall/gascity/internal/fsys"
+)
+
+// tomlDecode wraps toml.Decode for test use.
+func tomlDecode(data string, v interface{}) (toml.MetaData, error) {
+	return toml.Decode(data, v)
+}
+
+// writeTestFile creates a file at dir/name with the given content.
+func writeTestFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestImport_BasicLocalPath(t *testing.T) {
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	packDir := filepath.Join(dir, "city", "assets", "imports", "mypk")
+	os.MkdirAll(packDir, 0o755)
+
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test"
+includes = ["assets/imports/mypk"]
+`)
+	writeTestFile(t, packDir, "pack.toml", `
+[pack]
+name = "mypk"
+schema = 1
+
+[imports.helper]
+source = "../helper"
+
+[[agent]]
+name = "worker"
+scope = "city"
+`)
+
+	// Create the helper pack that mypk imports.
+	helperDir := filepath.Join(dir, "city", "assets", "imports", "helper")
+	os.MkdirAll(helperDir, 0o755)
+	writeTestFile(t, helperDir, "pack.toml", `
+[pack]
+name = "helper"
+schema = 1
+
+[[agent]]
+name = "assist"
+scope = "city"
+`)
+
+	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	explicit := explicitAgents(cfg.Agents)
+	found := map[string]bool{}
+	for _, a := range explicit {
+		found[a.QualifiedName()] = true
+	}
+
+	// The "worker" agent is from mypk directly (no binding name since it comes
+	// via the old includes path on the city, not via [imports]).
+	if !found["worker"] {
+		t.Error("missing worker agent from mypk (via includes)")
+	}
+
+	// The "assist" agent should have binding name "helper" from [imports.helper].
+	if !found["helper.assist"] {
+		t.Errorf("missing helper.assist agent; got qualified names: %v", found)
+	}
+}
+
+func TestImport_BindingNameStamped(t *testing.T) {
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	packDir := filepath.Join(dir, "city", "mypk")
+	os.MkdirAll(packDir, 0o755)
+
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test"
+includes = ["mypk"]
+`)
+	writeTestFile(t, packDir, "pack.toml", `
+[pack]
+name = "mypk"
+schema = 1
+
+[imports.gs]
+source = "../gastown"
+
+[[agent]]
+name = "own-agent"
+scope = "city"
+`)
+
+	// gastown lives at city/gastown/ so "../gastown" from city/mypk/ resolves correctly.
+	gasDir := filepath.Join(dir, "city", "gastown")
+	os.MkdirAll(gasDir, 0o755)
+	writeTestFile(t, gasDir, "pack.toml", `
+[pack]
+name = "gastown"
+schema = 1
+
+[[agent]]
+name = "mayor"
+scope = "city"
+`)
+
+	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	explicit := explicitAgents(cfg.Agents)
+	for _, a := range explicit {
+		if a.Name == "mayor" {
+			if a.BindingName != "gs" {
+				t.Errorf("mayor BindingName = %q, want %q", a.BindingName, "gs")
+			}
+			if a.PackName != "gastown" {
+				t.Errorf("mayor PackName = %q, want %q", a.PackName, "gastown")
+			}
+			if a.QualifiedName() != "gs.mayor" {
+				t.Errorf("mayor QualifiedName = %q, want %q", a.QualifiedName(), "gs.mayor")
+			}
+			return
+		}
+	}
+	t.Error("mayor agent not found")
+}
+
+func TestImport_QualifiedNameWithRig(t *testing.T) {
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	packDir := filepath.Join(dir, "city", "mypk")
+	gasDir := filepath.Join(dir, "gastown")
+
+	for _, d := range []string{cityDir, packDir, gasDir} {
+		os.MkdirAll(d, 0o755)
+	}
+
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test"
+
+[[rigs]]
+name = "proj"
+path = "/tmp/proj"
+includes = ["mypk"]
+`)
+	writeTestFile(t, packDir, "pack.toml", `
+[pack]
+name = "mypk"
+schema = 1
+
+[imports.gs]
+source = "../../gastown"
+
+[[agent]]
+name = "own-rig-agent"
+scope = "rig"
+`)
+	writeTestFile(t, gasDir, "pack.toml", `
+[pack]
+name = "gastown"
+schema = 1
+
+[[agent]]
+name = "polecat"
+scope = "rig"
+`)
+
+	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	explicit := explicitAgents(cfg.Agents)
+	found := map[string]bool{}
+	for _, a := range explicit {
+		found[a.QualifiedName()] = true
+	}
+
+	// Rig-scoped agent from import: "proj/gs.polecat"
+	if !found["proj/gs.polecat"] {
+		t.Errorf("missing proj/gs.polecat; got: %v", found)
+	}
+}
+
+func TestImport_ExportFlattensBinding(t *testing.T) {
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	outerDir := filepath.Join(dir, "outer")
+	innerDir := filepath.Join(dir, "inner")
+
+	for _, d := range []string{cityDir, outerDir, innerDir} {
+		os.MkdirAll(d, 0o755)
+	}
+
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test"
+includes = ["../outer"]
+`)
+	// outer imports inner with export = true
+	writeTestFile(t, outerDir, "pack.toml", `
+[pack]
+name = "outer"
+schema = 1
+
+[imports.inner]
+source = "../inner"
+export = true
+
+[[agent]]
+name = "outer-agent"
+scope = "city"
+`)
+	writeTestFile(t, innerDir, "pack.toml", `
+[pack]
+name = "inner"
+schema = 1
+
+[[agent]]
+name = "deep-agent"
+scope = "city"
+`)
+
+	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	explicit := explicitAgents(cfg.Agents)
+	found := map[string]bool{}
+	bindings := map[string]string{}
+	for _, a := range explicit {
+		found[a.QualifiedName()] = true
+		bindings[a.Name] = a.BindingName
+	}
+
+	// deep-agent was re-exported from outer → its binding should be
+	// flattened to "inner" (the immediate binding in outer's [imports.inner]).
+	// But since the city includes outer via V1 includes (not [imports]),
+	// outer itself has no binding name. The deep-agent gets binding "inner"
+	// from outer's import declaration.
+	if bindings["deep-agent"] != "inner" {
+		t.Errorf("deep-agent BindingName = %q, want %q (flattened from export)", bindings["deep-agent"], "inner")
+	}
+}
+
+func TestImport_CycleDetected(t *testing.T) {
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	packA := filepath.Join(dir, "pack-a")
+	packB := filepath.Join(dir, "pack-b")
+
+	for _, d := range []string{cityDir, packA, packB} {
+		os.MkdirAll(d, 0o755)
+	}
+
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test"
+includes = ["../pack-a"]
+`)
+	writeTestFile(t, packA, "pack.toml", `
+[pack]
+name = "pack-a"
+schema = 1
+
+[imports.b]
+source = "../pack-b"
+`)
+	writeTestFile(t, packB, "pack.toml", `
+[pack]
+name = "pack-b"
+schema = 1
+
+[imports.a]
+source = "../pack-a"
+`)
+
+	_, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err == nil {
+		t.Fatal("expected error for import cycle")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("error = %q, want mention of cycle", err)
+	}
+}
+
+func TestImport_TransitiveDefault(t *testing.T) {
+	// By default, imports are transitive: if A imports B and B imports C,
+	// importing A gives you C's agents too.
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	packA := filepath.Join(dir, "pack-a")
+	packB := filepath.Join(dir, "pack-b")
+	packC := filepath.Join(dir, "pack-c")
+
+	for _, d := range []string{cityDir, packA, packB, packC} {
+		os.MkdirAll(d, 0o755)
+	}
+
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test"
+includes = ["../pack-a"]
+`)
+	writeTestFile(t, packA, "pack.toml", `
+[pack]
+name = "pack-a"
+schema = 1
+
+[imports.b]
+source = "../pack-b"
+`)
+	writeTestFile(t, packB, "pack.toml", `
+[pack]
+name = "pack-b"
+schema = 1
+
+[imports.c]
+source = "../pack-c"
+`)
+	writeTestFile(t, packC, "pack.toml", `
+[pack]
+name = "pack-c"
+schema = 1
+
+[[agent]]
+name = "deep-agent"
+scope = "city"
+`)
+
+	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	explicit := explicitAgents(cfg.Agents)
+	found := false
+	for _, a := range explicit {
+		if a.Name == "deep-agent" {
+			found = true
+			// Should have binding from the chain.
+			if a.BindingName != "c" {
+				t.Errorf("deep-agent BindingName = %q, want %q", a.BindingName, "c")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("deep-agent not found — transitive imports should be on by default")
+	}
+}
+
+func TestImport_ParseImportStruct(t *testing.T) {
+	// Test that the Import struct parses correctly from TOML.
+	fs := fsys.NewFake()
+	fs.Files["/city/city.toml"] = []byte(`
+[workspace]
+name = "test"
+`)
+	fs.Files["/city/pack-a/pack.toml"] = []byte(`
+[pack]
+name = "pack-a"
+schema = 1
+
+[imports.gastown]
+source = "./gs"
+version = "^1.2"
+export = true
+shadow = "silent"
+`)
+
+	// Just verify the TOML parses — this test doesn't need pack resolution.
+	// We'll parse manually rather than going through LoadWithIncludes.
+	data := `
+[pack]
+name = "test-pack"
+schema = 1
+
+[imports.gastown]
+source = "./gs"
+version = "^1.2"
+export = true
+shadow = "silent"
+
+[imports.util]
+source = "../util"
+transitive = false
+`
+	var tc struct {
+		Pack    PackMeta          `toml:"pack"`
+		Imports map[string]Import `toml:"imports,omitempty"`
+	}
+	if _, err := tomlDecode(data, &tc); err != nil {
+		t.Fatalf("TOML parse: %v", err)
+	}
+
+	if len(tc.Imports) != 2 {
+		t.Fatalf("len(Imports) = %d, want 2", len(tc.Imports))
+	}
+
+	gs := tc.Imports["gastown"]
+	if gs.Source != "./gs" {
+		t.Errorf("gastown.Source = %q, want %q", gs.Source, "./gs")
+	}
+	if gs.Version != "^1.2" {
+		t.Errorf("gastown.Version = %q, want %q", gs.Version, "^1.2")
+	}
+	if !gs.Export {
+		t.Error("gastown.Export should be true")
+	}
+	if gs.Shadow != "silent" {
+		t.Errorf("gastown.Shadow = %q, want %q", gs.Shadow, "silent")
+	}
+	if !gs.ImportIsTransitive() {
+		t.Error("gastown should be transitive by default (nil)")
+	}
+
+	util := tc.Imports["util"]
+	if util.Source != "../util" {
+		t.Errorf("util.Source = %q, want %q", util.Source, "../util")
+	}
+	if util.ImportIsTransitive() {
+		t.Error("util should not be transitive (explicit false)")
+	}
+}
+
+func TestQualifiedName_WithBindingName(t *testing.T) {
+	tests := []struct {
+		name        string
+		agent       Agent
+		wantQN      string
+	}{
+		{
+			name:   "bare name, no binding, no dir",
+			agent:  Agent{Name: "mayor"},
+			wantQN: "mayor",
+		},
+		{
+			name:   "with dir, no binding",
+			agent:  Agent{Name: "mayor", Dir: "proj"},
+			wantQN: "proj/mayor",
+		},
+		{
+			name:   "with binding, no dir",
+			agent:  Agent{Name: "mayor", BindingName: "gastown"},
+			wantQN: "gastown.mayor",
+		},
+		{
+			name:   "with binding and dir",
+			agent:  Agent{Name: "polecat", BindingName: "gastown", Dir: "proj"},
+			wantQN: "proj/gastown.polecat",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.agent.QualifiedName()
+			if got != tt.wantQN {
+				t.Errorf("QualifiedName() = %q, want %q", got, tt.wantQN)
+			}
+		})
+	}
+}

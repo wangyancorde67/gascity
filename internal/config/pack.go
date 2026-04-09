@@ -25,6 +25,7 @@ const currentPackSchema = 1
 // It has a [pack] metadata header and agent definitions.
 type packConfig struct {
 	Pack          PackMeta                `toml:"pack"`
+	Imports       map[string]Import       `toml:"imports,omitempty"`
 	Agents        []Agent                 `toml:"agent"`
 	NamedSessions []NamedSession          `toml:"named_session,omitempty"`
 	Services      []Service               `toml:"service,omitempty"`
@@ -565,6 +566,81 @@ func loadPack(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, seen map[
 
 		// Merge providers: included first, no overwrite.
 		for name, spec := range incProviders {
+			if _, exists := includedProviders[name]; !exists {
+				includedProviders[name] = spec
+			}
+		}
+	}
+
+	// Process V2 [imports.X] entries. These are named bindings that
+	// produce agents with qualified names (bindingName.agentName).
+	// Local-path imports are resolved now; remote imports require
+	// gc import install to have already cached them (future work).
+	// Process in sorted order for deterministic output.
+	importNames := make([]string, 0, len(tc.Imports))
+	for name := range tc.Imports {
+		importNames = append(importNames, name)
+	}
+	sort.Strings(importNames)
+
+	for _, bindingName := range importNames {
+		imp := tc.Imports[bindingName]
+
+		// Resolve the import source. For now, only local paths are
+		// supported. Remote sources require the cache populated by
+		// gc import install (which we don't have yet).
+		impDir, err := resolvePackRef(imp.Source, topoDir, cityRoot)
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("import %q: %w", bindingName, err)
+		}
+
+		impPath := filepath.Join(impDir, packFile)
+		impAgents, impNamedSessions, impProviders, impServices, impTopoDirs, impReqs, impGlobals, err := loadPack(
+			fs, impPath, impDir, cityRoot, rigName, seen)
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("import %q: %w", bindingName, err)
+		}
+
+		// Stamp binding name on all agents from this import.
+		for i := range impAgents {
+			if impAgents[i].BindingName == "" {
+				impAgents[i].BindingName = bindingName
+			} else {
+				// Agent already has a binding from a nested import.
+				// If the parent re-exports with export=true, flatten:
+				// the consumer sees the parent's binding, not the nested one.
+				if imp.Export {
+					impAgents[i].BindingName = bindingName
+				}
+				// Otherwise, the nested binding stays (it's only visible
+				// if the import is transitive, which is the default).
+			}
+		}
+
+		// Read the imported pack name for provenance tracking.
+		impData, _ := fs.ReadFile(impPath)
+		var impMeta struct {
+			Pack struct {
+				Name string `toml:"name"`
+			} `toml:"pack"`
+		}
+		if impData != nil {
+			toml.Decode(string(impData), &impMeta)
+		}
+		for i := range impAgents {
+			if impAgents[i].PackName == "" {
+				impAgents[i].PackName = impMeta.Pack.Name
+			}
+		}
+
+		includedAgents = append(includedAgents, impAgents...)
+		includedNamedSessions = append(includedNamedSessions, impNamedSessions...)
+		includedServices = append(includedServices, impServices...)
+		includedTopoDirs = append(includedTopoDirs, impTopoDirs...)
+		allRequires = append(allRequires, impReqs...)
+		includedGlobals = append(includedGlobals, impGlobals...)
+
+		for name, spec := range impProviders {
 			if _, exists := includedProviders[name]; !exists {
 				includedProviders[name] = spec
 			}

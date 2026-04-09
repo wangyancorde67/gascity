@@ -41,10 +41,14 @@ func ControlDispatcherStartCommandFor(qualifiedName string) string {
 // QualifiedName returns the agent's canonical identity.
 // Rig-scoped: "hello-world/polecat". City-wide: "mayor".
 func (a *Agent) QualifiedName() string {
-	if a.Dir == "" {
-		return a.Name
+	name := a.Name
+	if a.BindingName != "" {
+		name = a.BindingName + "." + a.Name
 	}
-	return a.Dir + "/" + a.Name
+	if a.Dir == "" {
+		return name
+	}
+	return a.Dir + "/" + name
 }
 
 // ParseQualifiedName splits an agent identity into (dir, name).
@@ -370,6 +374,32 @@ type PackSource struct {
 	Path string `toml:"path,omitempty"`
 }
 
+// Import defines a named import of another pack. This is the V2
+// replacement for the flat `includes` list. Each import has a binding
+// name (the TOML key), a source (local path or remote URL), and
+// optional version/export/transitive controls.
+type Import struct {
+	// Source is the pack location: a local relative path (e.g.,
+	// "./assets/imports/gastown") or a remote URL (e.g.,
+	// "github.com/gastownhall/gastown"). Local paths have no version.
+	Source string `toml:"source" jsonschema:"required"`
+	// Version is a semver constraint for remote imports (e.g., "^1.2").
+	// Empty for local paths. "sha:<hex>" for commit pinning.
+	Version string `toml:"version,omitempty"`
+	// Export re-exports this import's contents into the parent pack's
+	// namespace. Consumers of the parent get this import's agents
+	// flattened under the parent's binding name.
+	Export bool `toml:"export,omitempty"`
+	// Transitive controls whether this import's own imports are visible
+	// to the consumer. Defaults to true (transitive). Set to false to
+	// suppress transitive resolution for this specific import.
+	Transitive *bool `toml:"transitive,omitempty"`
+	// Shadow controls shadow warnings when the importer defines an agent
+	// with the same name as one from this import. "warn" (default) emits
+	// a warning; "silent" suppresses it.
+	Shadow string `toml:"shadow,omitempty" jsonschema:"enum=warn,enum=silent"`
+}
+
 // PackMeta holds metadata from a pack's [pack] header.
 type PackMeta struct {
 	// Name is the pack's identifier.
@@ -380,7 +410,7 @@ type PackMeta struct {
 	Schema int `toml:"schema" jsonschema:"required"`
 	// RequiresGC is an optional minimum gc version requirement.
 	RequiresGC string `toml:"requires_gc,omitempty"`
-	// Includes lists other packs to compose into this one.
+	// Includes lists other packs to compose into this one (V1 mechanism).
 	// Each entry is a local relative path (e.g. "../maintenance") or a
 	// remote git URL (SSH or HTTPS) with optional //subpath and #ref.
 	Includes []string `toml:"includes,omitempty"`
@@ -388,6 +418,15 @@ type PackMeta struct {
 	// for this pack's formulas/orders to function. Validated
 	// after all packs are expanded.
 	Requires []PackRequirement `toml:"requires,omitempty"`
+}
+
+// ImportIsTransitive returns whether an Import should resolve
+// transitively. Defaults to true if Transitive is nil.
+func (imp *Import) ImportIsTransitive() bool {
+	if imp.Transitive == nil {
+		return true
+	}
+	return *imp.Transitive
 }
 
 // PackRequirement declares an agent that must exist in the
@@ -1315,6 +1354,16 @@ type Agent struct {
 	// expansion. Pool instances use this for gc.routed_to-based work discovery
 	// (e.g., dog) rather than their concrete instance name (e.g., dog-1).
 	PoolName string `toml:"-"`
+	// BindingName is the name of the [imports.X] block that brought this
+	// agent into scope. Empty for the city pack's own agents. Set during
+	// V2 import expansion. Used to construct qualified names like
+	// "gastown.mayor" or "proj/gastown.polecat".
+	// Runtime-only — not persisted to TOML or JSON.
+	BindingName string `toml:"-" json:"-"`
+	// PackName is the pack.name of the pack that defined this agent.
+	// Set during V2 import expansion.
+	// Runtime-only — not persisted to TOML or JSON.
+	PackName string `toml:"-" json:"-"`
 }
 
 // IdleTimeoutDuration returns the idle timeout as a time.Duration.
