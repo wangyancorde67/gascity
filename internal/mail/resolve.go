@@ -30,7 +30,9 @@ func (a AgentEntry) QualifiedName() string {
 //
 // Resolution order:
 //  1. "human" passes through unchanged (reserved recipient).
-//  2. Qualified name ("rig/name") is matched literally.
+//  2. Qualified name — matched literally against QualifiedName(). Handles
+//     V1 ("rig/name"), V2 ("rig/binding.name"), and city-scoped V2
+//     ("binding.name") forms.
 //  3. Bare name ("name") is matched against all agents by Name field.
 //     Succeeds only when exactly one agent matches; rejects ambiguous names.
 //

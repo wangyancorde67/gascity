@@ -39,7 +39,8 @@ func ControlDispatcherStartCommandFor(qualifiedName string) string {
 }
 
 // QualifiedName returns the agent's canonical identity.
-// Rig-scoped: "hello-world/polecat". City-wide: "mayor".
+// V1: "hello-world/polecat" (rig-scoped) or "mayor" (city-wide).
+// V2 with binding: "hello-world/gastown.polecat" or "gastown.mayor".
 func (a *Agent) QualifiedName() string {
 	name := a.Name
 	if a.BindingName != "" {
@@ -63,11 +64,6 @@ func ParseQualifiedName(identity string) (dir, name string) {
 	return "", identity
 }
 
-// AgentMatchesIdentity returns true if the agent's qualified name matches
-// the given identity string. Handles both V1 format ("dir/name") and V2
-// format ("dir/binding.name", "binding.name"). This is the canonical way
-// to match user-supplied identity strings against agents; prefer it over
-// manual Dir+Name comparisons.
 // QualifiedInstanceName builds a qualified identity for a pool instance
 // of this agent. For V2 agents with a BindingName, produces
 // "dir/binding.instanceName" or "binding.instanceName". For V1 agents,
@@ -83,6 +79,13 @@ func (a *Agent) QualifiedInstanceName(instanceName string) string {
 	return a.Dir + "/" + name
 }
 
+// AgentMatchesIdentity returns true if the agent's qualified name matches
+// the given identity string. Handles both V1 format ("dir/name") and V2
+// format ("dir/binding.name", "binding.name"). This is the canonical way
+// to match user-supplied identity strings against agents; prefer it over
+// manual Dir+Name comparisons. The V1 fallback only applies to agents
+// without a BindingName — imported V2 agents must be addressed by their
+// qualified name.
 func AgentMatchesIdentity(a *Agent, identity string) bool {
 	// Try V2 qualified name first (includes binding).
 	if a.QualifiedName() == identity {

@@ -38,9 +38,10 @@ type packConfig struct {
 }
 
 // ExpandPacks resolves pack references on all rigs. For each rig
-// with pack fields set, it loads the pack directories, stamps agents
-// with dir = rig.Name, resolves prompt_template paths relative to the
-// pack directory, and appends the agents to the city config.
+// with pack fields set (V1 includes or V2 [rigs.imports.X]), it loads
+// the pack directories, stamps agents with dir = rig.Name and
+// BindingName from imports, resolves paths relative to the pack
+// directory, and appends the agents to the city config.
 //
 // Overrides from the rig are applied to the stamped agents (after all
 // packs for the rig are expanded). All expansion happens before
@@ -325,8 +326,8 @@ func ExpandPacks(cfg *City, fs fsys.FS, cityRoot string, rigFormulaDirs map[stri
 
 // ExpandCityPacks loads all city-level packs from workspace.includes (V1)
 // and city-level [imports.X] (V2). City pack agents are stamped with
-// dir="" (city-scoped) and prepended to the agent list. Returns the
-// resolved formula dirs (one per pack that has formulas). cityRoot is
+// dir="" (city-scoped) and prepended to the agent list. Returns
+// (formulaDirs, packRequirements, shadowWarnings, error). cityRoot is
 // the city directory.
 func ExpandCityPacks(cfg *City, fs fsys.FS, cityRoot string) ([]string, []PackRequirement, []string, error) {
 	topos := cfg.Workspace.Includes
