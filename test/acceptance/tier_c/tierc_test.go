@@ -90,6 +90,9 @@ func TestMain(m *testing.M) {
 	// leaving the on-disk token expired. A quick --print call forces the
 	// refresh and (in newer versions) persists it.
 	if refreshOut, err := exec.Command("claude", "--print", "ok").CombinedOutput(); err != nil {
+		if apiKey != "" {
+			panic(fmt.Sprintf("acceptance-c: provider preflight failed: %v\n%s", err, refreshOut))
+		}
 		fmt.Fprintf(os.Stderr, "acceptance-c: OAuth preflight refresh failed: %v\n%s\n", err, refreshOut)
 	}
 
