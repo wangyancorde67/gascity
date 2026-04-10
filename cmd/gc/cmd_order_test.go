@@ -208,6 +208,89 @@ schedule = "*/5 * * * *"
 	}
 }
 
+func TestScanAllOrdersRemoteImportedFlatPackOrders(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cityDir := t.TempDir()
+	source := "https://github.com/example/orders-pack.git"
+	commit := "abc123def456"
+	cacheDir := filepath.Join(home, ".gc", "cache", "repos", config.RepoCacheKey(source, commit))
+	if err := os.MkdirAll(filepath.Join(cacheDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cacheDir, "formulas"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cacheDir, "orders"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(cacheDir, "pack.toml"), []byte(`
+[pack]
+name = "ops"
+schema = 1
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "orders", "health-check.order.toml"), []byte(`
+[order]
+formula = "health-check"
+gate = "cron"
+schedule = "*/5 * * * *"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(`
+[workspace]
+name = "test"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityDir, "pack.toml"), []byte(`
+[pack]
+name = "test"
+schema = 1
+
+[imports.ops]
+source = "https://github.com/example/orders-pack.git"
+version = "^1.2"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityDir, "packs.lock"), []byte(`
+schema = 1
+
+[packs."https://github.com/example/orders-pack.git"]
+version = "1.2.3"
+commit = "abc123def456"
+fetched = "2026-04-10T00:00:00Z"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadCityConfig(cityDir)
+	if err != nil {
+		t.Fatalf("loadCityConfig: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	aa, err := scanAllOrders(cityDir, cfg, &stderr, "gc order list")
+	if err != nil {
+		t.Fatalf("scanAllOrders: %v", err)
+	}
+	if len(aa) != 1 {
+		t.Fatalf("got %d orders, want 1", len(aa))
+	}
+	if aa[0].Name != "health-check" {
+		t.Fatalf("Name = %q, want %q", aa[0].Name, "health-check")
+	}
+	if aa[0].Source != filepath.Join(cacheDir, "orders", "health-check.order.toml") {
+		t.Fatalf("Source = %q, want %q", aa[0].Source, filepath.Join(cacheDir, "orders", "health-check.order.toml"))
+	}
+}
+
 func TestScanAllOrdersCityLegacyFormulaOrdersWarns(t *testing.T) {
 	cityDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cityDir, "formulas", "orders", "health-check"), 0o755); err != nil {

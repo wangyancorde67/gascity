@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -325,5 +326,67 @@ source = "../a"
 	}
 	if doctorCount != 1 {
 		t.Fatalf("got %d shared doctor checks, want 1", doctorCount)
+	}
+}
+
+func TestLoadWithIncludes_ImplicitImportsComposeCommandsAndDoctors(t *testing.T) {
+	gcHome := t.TempDir()
+	t.Setenv("GC_HOME", gcHome)
+
+	cacheDir := GlobalRepoCachePath(gcHome, "github.com/gastownhall/gc-import", "abc123")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, cacheDir, "pack.toml", `
+[pack]
+name = "gc-import"
+schema = 1
+`)
+	writeTestFile(t, cacheDir, "commands/list/run.sh", "#!/bin/sh\nexit 0\n")
+	writeTestFile(t, cacheDir, "doctor/cache/run.sh", "#!/bin/sh\nexit 0\n")
+
+	writeTestFile(t, gcHome, "implicit-import.toml", `
+schema = 1
+
+[imports.import]
+source = "github.com/gastownhall/gc-import"
+version = "0.2.0"
+commit = "abc123"
+`)
+
+	cityDir := t.TempDir()
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test-city"
+`)
+
+	cfg, prov, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	if got := prov.Imports["import"]; got != "(implicit)" {
+		t.Fatalf("prov.Imports[import] = %q, want %q", got, "(implicit)")
+	}
+
+	if len(cfg.PackCommands) != 1 {
+		t.Fatalf("got %d PackCommands, want 1", len(cfg.PackCommands))
+	}
+	if !reflect.DeepEqual(cfg.PackCommands[0].Command, []string{"list"}) {
+		t.Fatalf("command words = %#v, want %#v", cfg.PackCommands[0].Command, []string{"list"})
+	}
+	if cfg.PackCommands[0].BindingName != "import" {
+		t.Fatalf("command BindingName = %q, want %q", cfg.PackCommands[0].BindingName, "import")
+	}
+
+	if len(cfg.PackDoctors) != 1 {
+		t.Fatalf("got %d PackDoctors, want 1", len(cfg.PackDoctors))
+	}
+	if cfg.PackDoctors[0].Name != "cache" {
+		t.Fatalf("doctor Name = %q, want %q", cfg.PackDoctors[0].Name, "cache")
+	}
+	if cfg.PackDoctors[0].BindingName != "import" {
+		t.Fatalf("doctor BindingName = %q, want %q", cfg.PackDoctors[0].BindingName, "import")
 	}
 }
