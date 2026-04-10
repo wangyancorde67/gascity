@@ -288,6 +288,188 @@ source = ""
 	}
 }
 
+func TestImport_FullV2KitchenSink(t *testing.T) {
+	// Exercises all V2 features simultaneously:
+	// - pack.toml as definition layer
+	// - city.toml as deployment layer
+	// - Convention-based agent discovery (agents/ dirs)
+	// - [imports.X] with qualified names
+	// - Transitive imports (default)
+	// - transitive=false on one import
+	// - export=true re-export with flattening
+	// - Shadow warning (city agent masks import)
+	// - Rig imports
+	// - Named session from import
+	// - depends_on with binding rewrite
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	gasDir := filepath.Join(dir, "gastown")
+	utilDir := filepath.Join(dir, "util")
+	privateDir := filepath.Join(dir, "private")
+
+	for _, d := range []string{
+		cityDir,
+		gasDir,
+		filepath.Join(gasDir, "agents", "mayor"),
+		filepath.Join(gasDir, "agents", "polecat"),
+		utilDir,
+		privateDir,
+	} {
+		os.MkdirAll(d, 0o755)
+	}
+
+	// City pack.toml: definition with imports.
+	writeTestFile(t, cityDir, "pack.toml", `
+[pack]
+name = "kitchen-sink"
+schema = 1
+
+[imports.gs]
+source = "../gastown"
+
+[imports.priv]
+source = "../private"
+transitive = false
+
+[[agent]]
+name = "mayor"
+scope = "city"
+`)
+	// City city.toml: deployment with rig.
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "kitchen-sink"
+provider = "claude"
+
+[[rigs]]
+name = "api"
+path = "/tmp/api"
+
+[rigs.imports.gs]
+source = "../gastown"
+`)
+	// Gastown pack: has agents/ dirs, imports util with export, named session.
+	writeTestFile(t, gasDir, "pack.toml", `
+[pack]
+name = "gastown"
+schema = 1
+
+[imports.util]
+source = "../util"
+export = true
+
+[[named_session]]
+template = "mayor"
+mode = "always"
+scope = "city"
+`)
+	writeTestFile(t, filepath.Join(gasDir, "agents", "mayor"), "agent.toml", `
+scope = "city"
+provider = "claude"
+`)
+	writeTestFile(t, filepath.Join(gasDir, "agents", "mayor"), "prompt.md", `Gastown mayor.`)
+	writeTestFile(t, filepath.Join(gasDir, "agents", "polecat"), "agent.toml", `
+scope = "rig"
+depends_on = ["db"]
+`)
+	writeTestFile(t, filepath.Join(gasDir, "agents", "polecat"), "prompt.md", `Polecat.`)
+
+	// Util pack: provides a rig-scoped db agent (transitive through gastown).
+	writeTestFile(t, utilDir, "pack.toml", `
+[pack]
+name = "util"
+schema = 1
+
+[[agent]]
+name = "db"
+scope = "rig"
+`)
+	// Private pack: has a nested dep that should be blocked by transitive=false.
+	writeTestFile(t, privateDir, "pack.toml", `
+[pack]
+name = "private"
+schema = 1
+
+[imports.util]
+source = "../util"
+
+[[agent]]
+name = "secret"
+scope = "city"
+`)
+
+	cfg, prov, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	explicit := explicitAgents(cfg.Agents)
+	qnames := map[string]bool{}
+	for _, a := range explicit {
+		qnames[a.QualifiedName()] = true
+	}
+
+	// City's own mayor (no binding).
+	if !qnames["mayor"] {
+		t.Errorf("missing city mayor; got: %v", qnames)
+	}
+	// Gastown mayor from import (convention-discovered).
+	if !qnames["gs.mayor"] {
+		t.Errorf("missing gs.mayor; got: %v", qnames)
+	}
+	// Shadow warning for mayor.
+	hasShadow := false
+	for _, w := range prov.Warnings {
+		if strings.Contains(w, "shadows") && strings.Contains(w, "mayor") {
+			hasShadow = true
+		}
+	}
+	if !hasShadow {
+		t.Errorf("expected shadow warning for mayor; warnings: %v", prov.Warnings)
+	}
+	// Rig-scoped polecat from gastown under rig "api".
+	if !qnames["api/gs.polecat"] {
+		t.Errorf("missing api/gs.polecat; got: %v", qnames)
+	}
+	// Rig-scoped db from util (transitive through gastown export).
+	if !qnames["api/gs.db"] {
+		t.Errorf("missing api/gs.db; got: %v", qnames)
+	}
+	// Private secret agent should be present.
+	if !qnames["priv.secret"] {
+		t.Errorf("missing priv.secret; got: %v", qnames)
+	}
+	// Private's transitive dep (util.db) should NOT be present at city
+	// level because transitive=false. (It would be rig-scoped anyway,
+	// but let's verify no unexpected agents leak through.)
+	for qn := range qnames {
+		if strings.Contains(qn, "priv.db") {
+			t.Errorf("priv.db should not appear (transitive=false); got: %v", qnames)
+		}
+	}
+	// Named session from gastown import (references mayor, which is city-scoped).
+	nsFound := false
+	for _, ns := range cfg.NamedSessions {
+		if ns.Template == "mayor" && ns.BindingName == "gs" {
+			nsFound = true
+			if ns.QualifiedName() != "gs.mayor" {
+				t.Errorf("named session QN = %q, want %q", ns.QualifiedName(), "gs.mayor")
+			}
+		}
+	}
+	if !nsFound {
+		t.Error("named session gs.mayor not found")
+	}
+	// Polecat depends_on should be rewritten to "api/gs.db".
+	for _, a := range explicit {
+		if a.Name == "polecat" && a.Dir == "api" {
+			if len(a.DependsOn) != 1 || a.DependsOn[0] != "api/gs.db" {
+				t.Errorf("polecat DependsOn = %v, want [api/gs.db]", a.DependsOn)
+			}
+		}
+	}
+}
+
 func TestImport_AgentDiscoveryWithNoPromptOrToml(t *testing.T) {
 	// An agents/<name>/ directory with neither prompt.md nor agent.toml
 	// should still create an agent (minimal discovery).
