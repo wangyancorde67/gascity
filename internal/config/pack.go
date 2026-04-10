@@ -784,13 +784,19 @@ func loadPackWithCache(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, 
 		return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cycle detected: pack %q already visited", topoDir)
 	}
 
-	// Dedup: if we've already loaded this exact directory, return empty
-	// results. The first load through the graph got the agents; subsequent
-	// loads of the same pack (via diamond DAG) should not produce
-	// duplicates. We still return topoDirs/requires/globals/providers
-	// so formula layers and requirements are consistent.
+	// Dedup: if we've already loaded this exact directory, return a copy
+	// of the cached agents so the caller can stamp different bindings.
+	// This supports both diamond DAGs (same binding, deduped by downstream
+	// collision checks) and intentional multi-binding (same pack imported
+	// as both "foo" and "bar").
 	if cached, ok := cache.results[absTopoDir]; ok {
-		return nil, nil, cached.providers, nil, cached.topoDirs, cached.requires, cached.globals, nil
+		agents := make([]Agent, len(cached.agents))
+		copy(agents, cached.agents)
+		ns := make([]NamedSession, len(cached.namedSessions))
+		copy(ns, cached.namedSessions)
+		svcs := make([]Service, len(cached.services))
+		copy(svcs, cached.services)
+		return agents, ns, cached.providers, svcs, cached.topoDirs, cached.requires, cached.globals, nil
 	}
 
 	seen[absTopoDir] = true
