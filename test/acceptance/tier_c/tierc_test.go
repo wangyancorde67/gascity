@@ -112,11 +112,13 @@ func TestMain(m *testing.M) {
 	} else if err := stageClaudeOAuth(realHome, gcHome); err != nil {
 		panic("acceptance-c: staging Claude oauth: " + err.Error())
 	}
-	// Also symlink .claude.json if it exists (legacy config location).
-	srcClaudeJSON := filepath.Join(realHome, ".claude.json")
-	dstClaudeJSON := filepath.Join(gcHome, ".claude.json")
-	if _, err := os.Stat(srcClaudeJSON); err == nil {
-		_ = os.Symlink(srcClaudeJSON, dstClaudeJSON)
+	// Keep onboarding state isolated from the host, then force the minimal
+	// accepted/trusted flags so workers do not stall on first-run UI.
+	if err := copyFileIfExists(filepath.Join(realHome, ".claude.json"), filepath.Join(gcHome, ".claude.json"), 0o600); err != nil {
+		panic("acceptance-c: staging Claude state: " + err.Error())
+	}
+	if err := helpers.EnsureClaudeStateFile(gcHome); err != nil {
+		panic("acceptance-c: ensuring Claude state: " + err.Error())
 	}
 
 	testEnvC = helpers.NewEnv(gcBinary, gcHome, runtimeDir).
@@ -542,7 +544,7 @@ func stageClaudeOAuth(realHome, gcHome string) error {
 			return err
 		}
 	}
-	return copyFileIfExists(filepath.Join(realHome, ".claude.json"), filepath.Join(gcHome, ".claude.json"), 0o600)
+	return nil
 }
 
 func copyFileIfExists(src, dst string, perm os.FileMode) error {
