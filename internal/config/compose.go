@@ -261,8 +261,14 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 	// explicit agents always take precedence.
 	InjectImplicitAgents(root)
 
-	// Apply [agent_defaults] values to all agents (explicit and implicit)
-	// that don't set their own override.
+	// V2: merge [agents] defaults into [agent_defaults]. [agents] takes
+	// precedence when both are set.
+	if root.AgentsDefaults.DefaultSlingFormula != "" && root.AgentDefaults.DefaultSlingFormula == "" {
+		root.AgentDefaults.DefaultSlingFormula = root.AgentsDefaults.DefaultSlingFormula
+	}
+
+	// Apply [agent_defaults] / [agents] values to all agents (explicit
+	// and implicit) that don't set their own override.
 	ApplyAgentDefaults(root)
 
 	// Canonicalize duration-or-"off" session sleep fields after all config

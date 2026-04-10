@@ -226,7 +226,12 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 
 	// Step 9: Render prompt with beacon.
 	var prompt string
+	// Merge fragment sources: V1 global_fragments + inject_fragments,
+	// plus V2 append_fragments from agent defaults.
 	fragments := mergeFragmentLists(p.globalFragments, cfgAgent.InjectFragments)
+	if len(p.appendFragments) > 0 {
+		fragments = mergeFragmentLists(fragments, p.appendFragments)
+	}
 	prompt = renderPrompt(p.fs, p.cityPath, p.cityName, cfgAgent.PromptTemplate, PromptContext{
 		CityRoot:      p.cityPath,
 		AgentName:     qualifiedName,

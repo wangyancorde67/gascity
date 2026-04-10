@@ -154,9 +154,11 @@ type City struct {
 	// controller edge under /svc/{name}.
 	Services []Service `toml:"service,omitempty"`
 	// AgentDefaults provides default values applied to all agents that
-	// don't override them. Useful for setting city-wide model, wake_mode,
-	// and overlay allowlists.
+	// don't override them (V1 TOML key: agent_defaults).
 	AgentDefaults AgentDefaults `toml:"agent_defaults,omitempty"`
+	// AgentsDefaults is the V2 name for agent defaults (TOML key: agents).
+	// Both keys are accepted during migration; [agents] takes precedence.
+	AgentsDefaults AgentDefaults `toml:"agents,omitempty"`
 	// ResolvedWorkspaceName is the effective city name derived from the
 	// config file path when workspace.name is omitted. Runtime-only.
 	ResolvedWorkspaceName string `toml:"-" json:"-"`
@@ -1235,6 +1237,11 @@ type AgentDefaults struct {
 	// AllowEnvOverride lists environment variable names that sessions may
 	// override at creation time. Names must match ^[A-Z][A-Z0-9_]{0,127}$.
 	AllowEnvOverride []string `toml:"allow_env_override,omitempty"`
+	// AppendFragments lists named template fragments to auto-append to
+	// .md.tmpl prompts after rendering. V2 migration convenience —
+	// replaces global_fragments/inject_fragments for city-wide defaults.
+	// Only applies to .md.tmpl prompts (plain .md is inert).
+	AppendFragments []string `toml:"append_fragments,omitempty"`
 }
 
 // Agent defines a configured agent in the city.
