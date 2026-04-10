@@ -220,6 +220,72 @@ prompt_template = "prompts/shared.md"
 	}
 }
 
+func TestMigrateResolvesPackRegistryIncludeSources(t *testing.T) {
+	t.Parallel()
+
+	cityDir := t.TempDir()
+	writeFile(t, cityDir, "city.toml", `
+[workspace]
+name = "legacy-city"
+includes = ["gastown"]
+
+[packs.gastown]
+source = "https://github.com/example/gastown.git"
+ref = "main"
+path = "packs/gastown"
+`)
+
+	if _, err := Apply(cityDir, Options{}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	packToml := readFile(t, filepath.Join(cityDir, "pack.toml"))
+	if !strings.Contains(packToml, "[imports.gastown]") {
+		t.Fatalf("pack.toml missing gastown import:\n%s", packToml)
+	}
+	if !strings.Contains(packToml, "source = \"https://github.com/example/gastown.git//packs/gastown#main\"") {
+		t.Fatalf("pack.toml missing converted pack source:\n%s", packToml)
+	}
+}
+
+func TestMigratePackAgentsYieldToCityAgents(t *testing.T) {
+	t.Parallel()
+
+	cityDir := t.TempDir()
+	writeFile(t, cityDir, "city.toml", `
+[workspace]
+name = "legacy-city"
+
+[[agent]]
+name = "mayor"
+provider = "codex"
+prompt_template = "prompts/mayor.md"
+`)
+	writeFile(t, cityDir, "pack.toml", `
+[pack]
+name = "legacy-city"
+schema = 1
+
+[[agent]]
+name = "mayor"
+provider = "claude"
+`)
+	writeFile(t, cityDir, "prompts/mayor.md", "hello\n")
+
+	if _, err := Apply(cityDir, Options{}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	agentToml := readFile(t, filepath.Join(cityDir, "agents", "mayor", "agent.toml"))
+	if !strings.Contains(agentToml, "provider = \"codex\"") {
+		t.Fatalf("expected city agent to win over pack agent:\n%s", agentToml)
+	}
+	packToml := readFile(t, filepath.Join(cityDir, "pack.toml"))
+	if strings.Contains(packToml, "[[agent]]") {
+		t.Fatalf("pack.toml still contains [[agent]] after migration:\n%s", packToml)
+	}
+}
+
 func writeFile(t *testing.T, root, rel, contents string) {
 	t.Helper()
 	path := filepath.Join(root, rel)

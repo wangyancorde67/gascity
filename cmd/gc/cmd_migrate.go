@@ -59,7 +59,11 @@ func doImportMigrate(dryRun bool, stdout, stderr io.Writer) int {
 	if len(report.Changes) == 0 {
 		fmt.Fprintln(stdout, "No migration changes needed.") //nolint:errcheck // best-effort stdout
 	} else {
-		fmt.Fprintf(stdout, "Planned changes for %s:\n", cityPath) //nolint:errcheck // best-effort stdout
+		header := "Applied changes"
+		if dryRun {
+			header = "Planned changes"
+		}
+		fmt.Fprintf(stdout, "%s for %s:\n", header, cityPath) //nolint:errcheck // best-effort stdout
 		for _, change := range report.Changes {
 			fmt.Fprintf(stdout, "  - %s\n", change) //nolint:errcheck // best-effort stdout
 		}

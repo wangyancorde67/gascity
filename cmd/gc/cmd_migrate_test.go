@@ -9,8 +9,6 @@ import (
 )
 
 func TestDoImportMigrateDryRun(t *testing.T) {
-	t.Parallel()
-
 	cityDir := t.TempDir()
 	writeMigrateTestFile(t, cityDir, "city.toml", `
 [workspace]
@@ -40,8 +38,6 @@ prompt_template = "prompts/mayor.md"
 }
 
 func TestDoImportMigrateWritesFiles(t *testing.T) {
-	t.Parallel()
-
 	cityDir := t.TempDir()
 	writeMigrateTestFile(t, cityDir, "city.toml", `
 [workspace]
@@ -61,6 +57,9 @@ fallback = true
 	var stdout, stderr bytes.Buffer
 	if code := doImportMigrate(false, &stdout, &stderr); code != 0 {
 		t.Fatalf("doImportMigrate = %d, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Applied changes for") {
+		t.Fatalf("stdout missing applied-changes header:\n%s", stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "warning: dropped fallback field") {
 		t.Fatalf("stdout missing fallback warning:\n%s", stdout.String())

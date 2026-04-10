@@ -222,6 +222,7 @@ func loadPackFile(path string) (packFile, bool, error) {
 
 func selectAgents(packAgents, cityAgents []config.Agent) ([]agentEntry, []string) {
 	selected := make(map[string]agentEntry)
+	seenNames := make(map[string]bool)
 	var names []string
 	var fallbackNames []string
 
@@ -230,27 +231,22 @@ func selectAgents(packAgents, cityAgents []config.Agent) ([]agentEntry, []string
 			if agent.Fallback {
 				fallbackNames = append(fallbackNames, agent.Name)
 			}
+			if !seenNames[agent.Name] {
+				seenNames[agent.Name] = true
+				names = append(names, agent.Name)
+			}
 			if override {
 				selected[agent.Name] = agentEntry{Agent: agent, Origin: origin}
 				continue
 			}
 			if _, exists := selected[agent.Name]; !exists {
 				selected[agent.Name] = agentEntry{Agent: agent, Origin: origin}
-				names = append(names, agent.Name)
 			}
 		}
 	}
 
 	add(originPack, packAgents, false)
-	for _, agent := range cityAgents {
-		if _, exists := selected[agent.Name]; !exists {
-			names = append(names, agent.Name)
-		}
-		if agent.Fallback {
-			fallbackNames = append(fallbackNames, agent.Name)
-		}
-		selected[agent.Name] = agentEntry{Agent: agent, Origin: originCity}
-	}
+	add(originCity, cityAgents, true)
 
 	sort.Strings(names)
 	result := make([]agentEntry, 0, len(names))
@@ -300,7 +296,7 @@ func migrateAgentAssets(cityPath string, entry agentEntry, usage usageCounts, re
 		}
 		dest := filepath.Join(agentDir, destName)
 		removeSrc := usage.prompts[src] <= 1
-		if err := stageFileMove(src, dest, data, removeSrc, report, opts.DryRun); err != nil {
+		if err := stageFileMove(src, dest, data, removeSrc, cityPath, report, opts.DryRun); err != nil {
 			return err
 		}
 	}
@@ -309,7 +305,7 @@ func migrateAgentAssets(cityPath string, entry agentEntry, usage usageCounts, re
 		src := resolvePath(cityPath, agent.OverlayDir)
 		dest := filepath.Join(agentDir, "overlay")
 		removeSrc := usage.overlays[src] <= 1
-		if err := stageDirMove(src, dest, removeSrc, report, opts.DryRun); err != nil {
+		if err := stageDirMove(src, dest, removeSrc, cityPath, report, opts.DryRun); err != nil {
 			return fmt.Errorf("overlay_dir %q: %w", agent.OverlayDir, err)
 		}
 	}
@@ -322,7 +318,7 @@ func migrateAgentAssets(cityPath string, entry agentEntry, usage usageCounts, re
 		}
 		dest := filepath.Join(agentDir, "namepool.txt")
 		removeSrc := usage.namepool[src] <= 1
-		if err := stageFileMove(src, dest, data, removeSrc, report, opts.DryRun); err != nil {
+		if err := stageFileMove(src, dest, data, removeSrc, cityPath, report, opts.DryRun); err != nil {
 			return err
 		}
 	}
@@ -457,19 +453,19 @@ func ensureDir(path string, report *Report, dryRun bool) error {
 	return os.MkdirAll(path, 0o755)
 }
 
-func stageFileMove(src, dest string, data []byte, removeSrc bool, report *Report, dryRun bool) error {
+func stageFileMove(src, dest string, data []byte, removeSrc bool, stopDir string, report *Report, dryRun bool) error {
 	if err := maybeWriteFile(dest, data, fmt.Sprintf("write %s", relativeOrSame(dest)), report, dryRun); err != nil {
 		return err
 	}
 	if removeSrc && filepath.Clean(src) != filepath.Clean(dest) {
-		if err := maybeRemoveFile(src, report, dryRun); err != nil {
+		if err := maybeRemoveFile(src, stopDir, report, dryRun); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func stageDirMove(src, dest string, removeSrc bool, report *Report, dryRun bool) error {
+func stageDirMove(src, dest string, removeSrc bool, stopDir string, report *Report, dryRun bool) error {
 	info, err := os.Stat(src)
 	if err != nil {
 		return err
@@ -481,7 +477,7 @@ func stageDirMove(src, dest string, removeSrc bool, report *Report, dryRun bool)
 		return err
 	}
 	if removeSrc && filepath.Clean(src) != filepath.Clean(dest) {
-		if err := maybeRemoveDir(src, report, dryRun); err != nil {
+		if err := maybeRemoveDir(src, stopDir, report, dryRun); err != nil {
 			return err
 		}
 	}
@@ -526,7 +522,7 @@ func maybeWriteFile(path string, data []byte, change string, report *Report, dry
 	return os.WriteFile(path, data, 0o644)
 }
 
-func maybeRemoveFile(path string, report *Report, dryRun bool) error {
+func maybeRemoveFile(path, stopDir string, report *Report, dryRun bool) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil
 	}
@@ -537,11 +533,11 @@ func maybeRemoveFile(path string, report *Report, dryRun bool) error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	pruneEmptyParents(filepath.Dir(path))
+	pruneEmptyParents(filepath.Dir(path), stopDir)
 	return nil
 }
 
-func maybeRemoveDir(path string, report *Report, dryRun bool) error {
+func maybeRemoveDir(path, stopDir string, report *Report, dryRun bool) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil
 	}
@@ -552,12 +548,13 @@ func maybeRemoveDir(path string, report *Report, dryRun bool) error {
 	if err := os.RemoveAll(path); err != nil {
 		return err
 	}
-	pruneEmptyParents(filepath.Dir(path))
+	pruneEmptyParents(filepath.Dir(path), stopDir)
 	return nil
 }
 
-func pruneEmptyParents(dir string) {
-	for dir != "." && dir != string(filepath.Separator) {
+func pruneEmptyParents(dir, stopDir string) {
+	stopDir = filepath.Clean(stopDir)
+	for dir != "." && dir != string(filepath.Separator) && filepath.Clean(dir) != stopDir {
 		entries, err := os.ReadDir(dir)
 		if err != nil || len(entries) != 0 {
 			return
