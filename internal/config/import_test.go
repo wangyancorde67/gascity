@@ -1134,6 +1134,120 @@ scope = "city"
 	}
 }
 
+func TestImport_DependsOnRewriteWithBinding(t *testing.T) {
+	// When agent gs.worker depends on "db", the rewritten dep should be
+	// "gs.db" (matching the qualified name of a sibling in the same import).
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	packDir := filepath.Join(dir, "mypk")
+
+	for _, d := range []string{cityDir, packDir} {
+		os.MkdirAll(d, 0o755)
+	}
+
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test"
+
+[[rigs]]
+name = "proj"
+path = "/tmp/proj"
+
+[rigs.imports.gs]
+source = "../mypk"
+`)
+	writeTestFile(t, packDir, "pack.toml", `
+[pack]
+name = "mypk"
+schema = 1
+
+[[agent]]
+name = "worker"
+scope = "rig"
+depends_on = ["db"]
+
+[[agent]]
+name = "db"
+scope = "rig"
+`)
+
+	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	explicit := explicitAgents(cfg.Agents)
+	for _, a := range explicit {
+		if a.Name == "worker" && a.Dir == "proj" {
+			if len(a.DependsOn) != 1 {
+				t.Fatalf("worker DependsOn = %v, want 1 entry", a.DependsOn)
+			}
+			// Should be qualified with binding: "proj/gs.db"
+			want := "proj/gs.db"
+			if a.DependsOn[0] != want {
+				t.Errorf("worker DependsOn[0] = %q, want %q", a.DependsOn[0], want)
+			}
+			return
+		}
+	}
+	t.Error("worker agent not found under rig proj")
+}
+
+func TestImport_NamedSessionBindingStamped(t *testing.T) {
+	// Named sessions from imports should get BindingName stamped.
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	packDir := filepath.Join(dir, "mypk")
+
+	for _, d := range []string{cityDir, packDir} {
+		os.MkdirAll(d, 0o755)
+	}
+
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test"
+
+[imports.gs]
+source = "../mypk"
+
+[[agent]]
+name = "mayor"
+scope = "city"
+`)
+	writeTestFile(t, packDir, "pack.toml", `
+[pack]
+name = "mypk"
+schema = 1
+
+[[agent]]
+name = "polecat"
+scope = "city"
+
+[[named_session]]
+template = "polecat"
+mode = "always"
+scope = "city"
+`)
+
+	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	for _, ns := range cfg.NamedSessions {
+		if ns.Template == "polecat" {
+			if ns.BindingName != "gs" {
+				t.Errorf("NamedSession BindingName = %q, want %q", ns.BindingName, "gs")
+			}
+			if ns.QualifiedName() != "gs.polecat" {
+				t.Errorf("NamedSession QualifiedName = %q, want %q", ns.QualifiedName(), "gs.polecat")
+			}
+			return
+		}
+	}
+	t.Error("polecat named session not found")
+}
+
 func TestAgentMatchesIdentity(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -448,13 +448,24 @@ func findAgent(cfg *config.City, name string) (config.Agent, bool) {
 		if isMultiSession && a.Dir == dir {
 			isUnlimited := maxSess == nil || *maxSess < 0
 			if isUnlimited {
-				// Unlimited: match "{name}-{N}" where N >= 1.
-				prefix := a.Name + "-"
-				if strings.HasPrefix(baseName, prefix) {
-					suffix := baseName[len(prefix):]
-					if n, err := strconv.Atoi(suffix); err == nil && n >= 1 {
-						return a, true
+				// Unlimited: match "{name}-{N}" or "{binding.name}-{N}" where N >= 1.
+				// For V2 agents, try binding-qualified prefix first.
+				prefixes := []string{a.Name + "-"}
+				if a.BindingName != "" {
+					prefixes = append([]string{a.BindingName + "." + a.Name + "-"}, prefixes...)
+				}
+				matched := false
+				for _, prefix := range prefixes {
+					if strings.HasPrefix(baseName, prefix) {
+						suffix := baseName[len(prefix):]
+						if n, err := strconv.Atoi(suffix); err == nil && n >= 1 {
+							matched = true
+							break
+						}
 					}
+				}
+				if matched {
+					return a, true
 				}
 				continue
 			}

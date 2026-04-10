@@ -219,17 +219,28 @@ type NamedSession struct {
 	// defined. Set during pack/fragment loading; empty for inline config.
 	// Runtime-only — not persisted to TOML or JSON.
 	SourceDir string `toml:"-" json:"-"`
+	// BindingName is the import binding that brought this named session
+	// into scope. Set during V2 import expansion. Empty for the city
+	// pack's own sessions.
+	// Runtime-only — not persisted to TOML or JSON.
+	BindingName string `toml:"-" json:"-"`
 }
 
 // QualifiedName returns the canonical identity of the named session.
+// For V2 sessions with a binding, the template is qualified as
+// "binding.template".
 func (s *NamedSession) QualifiedName() string {
-	if s == nil || s.Dir == "" {
-		if s == nil {
-			return ""
-		}
-		return s.Template
+	if s == nil {
+		return ""
 	}
-	return s.Dir + "/" + s.Template
+	tmpl := s.Template
+	if s.BindingName != "" {
+		tmpl = s.BindingName + "." + s.Template
+	}
+	if s.Dir == "" {
+		return tmpl
+	}
+	return s.Dir + "/" + tmpl
 }
 
 // ModeOrDefault returns the normalized controller mode.

@@ -44,14 +44,13 @@ func ResolveRecipient(to string, agents []AgentEntry) (string, error) {
 		return "human", nil
 	}
 
-	// Qualified name: literal match.
-	if strings.Contains(to, "/") {
-		for _, a := range agents {
-			if a.QualifiedName() == to {
-				return to, nil
-			}
+	// Qualified name: literal match against QualifiedName().
+	// This handles both "rig/name" (V1), "rig/binding.name" (V2),
+	// and "binding.name" (city-scoped V2).
+	for _, a := range agents {
+		if a.QualifiedName() == to {
+			return a.QualifiedName(), nil
 		}
-		return "", fmt.Errorf("unknown recipient %q", to)
 	}
 
 	// Bare name: find all agents with this Name.

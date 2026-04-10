@@ -163,12 +163,40 @@ func ExpandPacks(cfg *City, fs fsys.FS, cityRoot string, rigFormulaDirs map[stri
 				}
 				rigGlobals = append(rigGlobals, globals...)
 
-				// Stamp binding name.
+				// Stamp binding name on agents and named sessions.
 				for i := range agents {
 					if agents[i].BindingName == "" {
 						agents[i].BindingName = bindingName
 					} else if imp.Export {
 						agents[i].BindingName = bindingName
+					}
+				}
+				for i := range namedSessions {
+					if namedSessions[i].BindingName == "" {
+						namedSessions[i].BindingName = bindingName
+					} else if imp.Export {
+						namedSessions[i].BindingName = bindingName
+					}
+				}
+
+				// Re-qualify depends_on with binding name now that it's stamped.
+				for i := range agents {
+					if agents[i].BindingName == "" || len(agents[i].DependsOn) == 0 {
+						continue
+					}
+					for j, dep := range agents[i].DependsOn {
+						// If dep was already rewritten with dir prefix but
+						// doesn't have the binding, inject it.
+						_, depName := ParseQualifiedName(dep)
+						if !strings.Contains(depName, ".") {
+							// Bare name after dir prefix: inject binding.
+							binding := agents[i].BindingName
+							if agents[i].Dir != "" {
+								agents[i].DependsOn[j] = agents[i].Dir + "/" + binding + "." + depName
+							} else {
+								agents[i].DependsOn[j] = binding + "." + depName
+							}
+						}
 					}
 				}
 
@@ -432,13 +460,37 @@ func ExpandCityPacks(cfg *City, fs fsys.FS, cityRoot string) ([]string, []PackRe
 				agents = direct
 			}
 
-			// Stamp binding name on all agents from this import.
+			// Stamp binding name on all agents and named sessions from this import.
 			for i := range agents {
 				if agents[i].BindingName == "" {
 					agents[i].BindingName = bindingName
 				} else if imp.Export {
-					// Re-export flattens the binding.
 					agents[i].BindingName = bindingName
+				}
+			}
+			for i := range namedSessions {
+				if namedSessions[i].BindingName == "" {
+					namedSessions[i].BindingName = bindingName
+				} else if imp.Export {
+					namedSessions[i].BindingName = bindingName
+				}
+			}
+
+			// Re-qualify depends_on with binding name.
+			for i := range agents {
+				if agents[i].BindingName == "" || len(agents[i].DependsOn) == 0 {
+					continue
+				}
+				for j, dep := range agents[i].DependsOn {
+					_, depName := ParseQualifiedName(dep)
+					if !strings.Contains(depName, ".") {
+						binding := agents[i].BindingName
+						if agents[i].Dir != "" {
+							agents[i].DependsOn[j] = agents[i].Dir + "/" + binding + "." + depName
+						} else {
+							agents[i].DependsOn[j] = binding + "." + depName
+						}
+					}
 				}
 			}
 
@@ -898,19 +950,19 @@ func loadPackWithCache(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, 
 			impAgents = direct
 		}
 
-		// Stamp binding name on all agents from this import.
+		// Stamp binding name on all agents and named sessions from this import.
 		for i := range impAgents {
 			if impAgents[i].BindingName == "" {
 				impAgents[i].BindingName = bindingName
-			} else {
-				// Agent already has a binding from a nested import.
-				// If the parent re-exports with export=true, flatten:
-				// the consumer sees the parent's binding, not the nested one.
-				if imp.Export {
-					impAgents[i].BindingName = bindingName
-				}
-				// Otherwise, the nested binding stays (it's only visible
-				// if the import is transitive, which is the default).
+			} else if imp.Export {
+				impAgents[i].BindingName = bindingName
+			}
+		}
+		for i := range impNamedSessions {
+			if impNamedSessions[i].BindingName == "" {
+				impNamedSessions[i].BindingName = bindingName
+			} else if imp.Export {
+				impNamedSessions[i].BindingName = bindingName
 			}
 		}
 
@@ -1062,23 +1114,33 @@ func loadPackWithCache(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, 
 
 	// Qualify depends_on entries AFTER patches so that patch-supplied
 	// bare names are also qualified. Pack agents have Dir = rigName,
-	// making their QualifiedName "rig/name", but DependsOn entries
-	// are written as bare names in pack TOML. Rewrite them to match.
-	if rigName != "" {
-		for i := range includedAgents {
-			if includedAgents[i].Dir != rigName || len(includedAgents[i].DependsOn) == 0 {
+	// making their QualifiedName "rig/name" (V1) or "rig/binding.name"
+	// (V2). DependsOn entries are written as bare names in pack TOML.
+	// Rewrite them to include the rig prefix and, for V2 agents, the
+	// binding name of the depending agent (sibling deps share binding).
+	for i := range includedAgents {
+		if len(includedAgents[i].DependsOn) == 0 {
+			continue
+		}
+		qualified := make([]string, len(includedAgents[i].DependsOn))
+		for j, dep := range includedAgents[i].DependsOn {
+			if strings.Contains(dep, "/") || strings.Contains(dep, ".") {
+				// Already qualified — leave as-is.
+				qualified[j] = dep
 				continue
 			}
-			qualified := make([]string, len(includedAgents[i].DependsOn))
-			for j, dep := range includedAgents[i].DependsOn {
-				if !strings.Contains(dep, "/") {
-					qualified[j] = rigName + "/" + dep
-				} else {
-					qualified[j] = dep
-				}
+			// Bare dep name: qualify with the same prefix as this agent.
+			// For V2 agents, prepend binding so "db" becomes "gs.db"
+			// (matching sibling agents from the same import).
+			if includedAgents[i].BindingName != "" {
+				dep = includedAgents[i].BindingName + "." + dep
 			}
-			includedAgents[i].DependsOn = qualified
+			if includedAgents[i].Dir != "" {
+				dep = includedAgents[i].Dir + "/" + dep
+			}
+			qualified[j] = dep
 		}
+		includedAgents[i].DependsOn = qualified
 	}
 
 	// Merge providers: parent wins over included.
