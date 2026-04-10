@@ -194,6 +194,8 @@ func (cr *CityRuntime) crashTrack() crashTracker {
 // the per-city main loop — it watches config, reconciles agents, runs
 // wisp GC, and dispatches orders.
 func (cr *CityRuntime) run(ctx context.Context) {
+	defer cr.shutdown()
+
 	dirty := &atomic.Bool{}
 	if cr.tomlPath != "" {
 		dirs := cr.watchDirs
