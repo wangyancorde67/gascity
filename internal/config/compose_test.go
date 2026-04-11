@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -87,6 +88,49 @@ dir = "project"
 	}
 	if len(prov.Sources) != 2 {
 		t.Errorf("len(Sources) = %d, want 2", len(prov.Sources))
+	}
+}
+
+func TestLoadWithIncludes_AgentDefaultsAliasFragment(t *testing.T) {
+	fs := fsys.NewFake()
+	fs.Files["/city/city.toml"] = []byte(`
+include = ["defaults.toml"]
+
+[workspace]
+name = "test"
+
+[[agent]]
+name = "mayor"
+`)
+	fs.Files["/city/defaults.toml"] = []byte(`
+[agents]
+default_sling_formula = "mol-focus-review"
+append_fragments = ["command-glossary"]
+`)
+	cfg, _, err := LoadWithIncludes(fs, "/city/city.toml")
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+	if cfg.AgentDefaults.DefaultSlingFormula != "mol-focus-review" {
+		t.Errorf("AgentDefaults.DefaultSlingFormula = %q, want %q", cfg.AgentDefaults.DefaultSlingFormula, "mol-focus-review")
+	}
+	if got := cfg.AgentDefaults.AppendFragments; len(got) != 1 || got[0] != "command-glossary" {
+		t.Errorf("AgentDefaults.AppendFragments = %v, want [command-glossary]", got)
+	}
+	if !reflect.DeepEqual(cfg.AgentsDefaults, AgentDefaults{}) {
+		t.Errorf("AgentsDefaults = %#v, want zero value after normalization", cfg.AgentsDefaults)
+	}
+	found := false
+	for _, a := range cfg.Agents {
+		if a.Name == "mayor" {
+			found = true
+			if got := a.EffectiveDefaultSlingFormula(); got != "mol-focus-review" {
+				t.Errorf("mayor EffectiveDefaultSlingFormula = %q, want %q", got, "mol-focus-review")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("agent 'mayor' not found")
 	}
 }
 

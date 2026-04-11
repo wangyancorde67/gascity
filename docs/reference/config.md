@@ -31,7 +31,7 @@ City is the top-level configuration for a Gas City instance.
 | `session_sleep` | SessionSleepConfig |  |  | SessionSleep configures idle sleep policy defaults for managed sessions. |
 | `convergence` | ConvergenceConfig |  |  | Convergence configures convergence loop limits. |
 | `service` | []Service |  |  | Services declares workspace-owned HTTP services mounted on the controller edge under /svc/&#123;name&#125;. |
-| `agent_defaults` | AgentDefaults |  |  | AgentDefaults provides default values applied to all agents that don't override them. Useful for setting city-wide model, wake_mode, and overlay allowlists. |
+| `agent_defaults` | AgentDefaults |  |  | AgentDefaults provides city-level defaults for agents that don't override them. The runtime currently applies `default_sling_formula` and `append_fragments`; other fields are parsed and composed but not yet inherited automatically. |
 
 ## ACPSessionConfig
 
@@ -107,15 +107,16 @@ Agent defines a configured agent in the city.
 
 ## AgentDefaults
 
-AgentDefaults provides default values applied to all agents that don't explicitly override them.
+AgentDefaults provides city-level agent defaults declared via `[agent_defaults]` in `city.toml`.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `model` | string |  |  | Model is the default model name for agents (e.g., "claude-sonnet-4-6"). Agents with their own model override take precedence. |
-| `wake_mode` | string |  |  | WakeMode is the default wake mode ("resume" or "fresh"). Enum: `resume`, `fresh` |
+| `model` | string |  |  | Model is the parsed/composed default model name for agents (e.g., "claude-sonnet-4-6"), but it is not yet auto-applied at runtime. Agents with their own model override would take precedence. |
+| `wake_mode` | string |  |  | WakeMode is the parsed/composed default wake mode ("resume" or "fresh"), but it is not yet auto-applied at runtime. Enum: `resume`, `fresh` |
 | `default_sling_formula` | string |  |  | DefaultSlingFormula is the city-level default formula used for agents that inherit [agent_defaults]. Explicit agents only receive this value when agent_defaults.default_sling_formula is set; implicit pool agents are seeded with "mol-do-work" elsewhere when no explicit default is set. |
-| `allow_overlay` | []string |  |  | AllowOverlay lists template fields that sessions may override at creation time (e.g., ["model", "prompt", "title"]). |
-| `allow_env_override` | []string |  |  | AllowEnvOverride lists environment variable names that sessions may override at creation time. Names must match ^[A-Z][A-Z0-9_]&#123;0,127&#125;$. |
+| `allow_overlay` | []string |  |  | AllowOverlay is parsed and composed as a city-level allowlist for session overlays, but it is not yet inherited onto agents automatically at runtime. |
+| `allow_env_override` | []string |  |  | AllowEnvOverride is parsed and composed as a city-level allowlist for session env overrides, but it is not yet inherited onto agents automatically at runtime. Names must match ^[A-Z][A-Z0-9_]&#123;0,127&#125;$. |
+| `append_fragments` | []string |  |  | AppendFragments lists named template fragments auto-appended to rendered `.md.tmpl` prompts for all agents. Plain `.md` prompts remain inert. |
 
 ## AgentOverride
 
@@ -552,4 +553,3 @@ Workspace holds city-level metadata and optional defaults that apply to all agen
 | `global_fragments` | []string |  |  | GlobalFragments lists named template fragments injected into every agent's rendered prompt. Applied before per-agent InjectFragments. Each name must match a &#123;&#123; define "name" &#125;&#125; block from a pack's prompts/shared/ directory. |
 | `includes` | []string |  |  | Includes lists pack directories or URLs to compose into this workspace. Replaces the older pack/packs fields. Each entry is a local path, a git source//sub#ref URL, or a GitHub tree URL. |
 | `default_rig_includes` | []string |  |  | DefaultRigIncludes lists pack directories applied to new rigs when "gc rig add" is called without --include. Allows cities to define a default pack for all rigs. |
-

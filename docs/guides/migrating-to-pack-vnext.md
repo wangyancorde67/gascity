@@ -165,7 +165,7 @@ defaults.
 - move each `[[agent]]` definition into `agents/<name>/`
 - move prompt content to `agents/<name>/prompt.md`
 - move agent-local overlay content to `agents/<name>/overlay/`
-- keep shared defaults in `[agents]`
+- keep shared defaults in `[agent_defaults]`
 - keep pack-wide providers in `[providers.*]`
 
 If you are migrating a city, city-local agents are still just agents in
@@ -489,7 +489,7 @@ schema, plus the qualified rows that matter most during migration.
 | `[session_sleep]` | Sleep policy defaults | Keep in `city.toml`. |
 | `[convergence]` | Convergence limits | Keep in `city.toml`. |
 | `[[service]]` | Workspace-owned service declarations | Keep in `city.toml` if they are deployment-owned services. |
-| `[agent_defaults]` | Defaults applied to agents in this city | Move to `[agents]` in the root city `pack.toml`. |
+| `[agent_defaults]` | Defaults applied to agents in this city | Keep in `city.toml` as the canonical city-wide agent-defaults table. |
 
 ## Reference: Gas City 0.13.5 `pack.toml` elements to 0.13.6
 
@@ -522,7 +522,6 @@ transitional pack fields that people are likely to have.
 | `[[commands]]` | Pack command inventory | Move toward `commands/<name>/run.sh` by default, with optional `command.toml` when needed. |
 | `commands.script` | Path to command entrypoint | Keep as a pack-local path, usually `commands/<name>/run.sh`. |
 | `[global]` | Pack-wide session-live behavior | Keep in `pack.toml` if the pack-global surface survives as designed. |
-| `[agents]` | Pack-wide agent defaults in transitional configs | Keep in `pack.toml`. |
 
 ## Reference: old top-level directories
 

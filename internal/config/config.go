@@ -153,12 +153,15 @@ type City struct {
 	// Services declares workspace-owned HTTP services mounted on the
 	// controller edge under /svc/{name}.
 	Services []Service `toml:"service,omitempty"`
-	// AgentDefaults provides default values applied to all agents that
-	// don't override them (V1 TOML key: agent_defaults).
+	// AgentDefaults provides city-level defaults for agents that don't
+	// override them (canonical TOML key: agent_defaults). The runtime
+	// currently applies default_sling_formula and append_fragments; other
+	// fields are parsed/composed but not yet inherited automatically.
 	AgentDefaults AgentDefaults `toml:"agent_defaults,omitempty"`
-	// AgentsDefaults is the V2 name for agent defaults (TOML key: agents).
-	// Both keys are accepted during migration; [agents] takes precedence.
-	AgentsDefaults AgentDefaults `toml:"agents,omitempty"`
+	// AgentsDefaults is a temporary compatibility alias for [agent_defaults].
+	// Parse/load normalize it into AgentDefaults and prefer [agent_defaults]
+	// when both tables are present.
+	AgentsDefaults AgentDefaults `toml:"agents,omitempty" jsonschema:"-"`
 	// ResolvedWorkspaceName is the effective city name derived from the
 	// config file path when workspace.name is omitted. Runtime-only.
 	ResolvedWorkspaceName string `toml:"-" json:"-"`
@@ -1219,35 +1222,47 @@ func (c *City) FormulasDir() string {
 	return citylayout.FormulasRoot
 }
 
-// AgentDefaults provides default values applied to all agents that don't
-// explicitly override them. Declared once at the city level via
-// [agent_defaults] in city.toml.
-//
-// NOTE: Model and WakeMode are parsed and composed but not yet applied
-// to individual agents at runtime. DefaultSlingFormula is applied via
-// ApplyAgentDefaults.
+// AgentDefaults provides city-level agent defaults declared via
+// [agent_defaults] in city.toml. The runtime currently applies
+// default_sling_formula and append_fragments; the remaining fields are
+// parsed and composed but are not yet inherited onto agents automatically.
 type AgentDefaults struct {
-	// Model is the default model name for agents (e.g., "claude-sonnet-4-6").
-	// Agents with their own model override take precedence.
+	// Model is the parsed/composed default model name for agents
+	// (e.g., "claude-sonnet-4-6"), but it is not yet auto-applied at
+	// runtime. Agents with their own model override would take precedence.
 	Model string `toml:"model,omitempty"`
-	// WakeMode is the default wake mode ("resume" or "fresh").
+	// WakeMode is the parsed/composed default wake mode ("resume" or
+	// "fresh"), but it is not yet auto-applied at runtime.
 	WakeMode string `toml:"wake_mode,omitempty" jsonschema:"enum=resume,enum=fresh"`
 	// DefaultSlingFormula is the city-level default formula used for agents
 	// that inherit [agent_defaults]. Explicit agents only receive this value
 	// when agent_defaults.default_sling_formula is set; implicit pool agents
 	// are seeded with "mol-do-work" elsewhere when no explicit default is set.
 	DefaultSlingFormula string `toml:"default_sling_formula,omitempty"`
-	// AllowOverlay lists template fields that sessions may override at
-	// creation time (e.g., ["model", "prompt", "title"]).
+	// AllowOverlay is parsed and composed as a city-level allowlist for
+	// session overlays, but it is not yet inherited onto agents
+	// automatically at runtime.
 	AllowOverlay []string `toml:"allow_overlay,omitempty"`
-	// AllowEnvOverride lists environment variable names that sessions may
-	// override at creation time. Names must match ^[A-Z][A-Z0-9_]{0,127}$.
+	// AllowEnvOverride is parsed and composed as a city-level allowlist for
+	// session env overrides, but it is not yet inherited onto agents
+	// automatically at runtime. Names must match ^[A-Z][A-Z0-9_]{0,127}$.
 	AllowEnvOverride []string `toml:"allow_env_override,omitempty"`
-	// AppendFragments lists named template fragments to auto-append to
-	// .md.tmpl prompts after rendering. V2 migration convenience —
+	// AppendFragments lists named template fragments auto-appended to
+	// rendered .md.tmpl prompts for all agents. V2 migration convenience —
 	// replaces global_fragments/inject_fragments for city-wide defaults.
-	// Only applies to .md.tmpl prompts (plain .md is inert).
+	// Plain .md prompts remain inert.
 	AppendFragments []string `toml:"append_fragments,omitempty"`
+}
+
+func normalizeAgentDefaultsAlias(cfg *City, meta toml.MetaData) {
+	if meta.IsDefined("agent_defaults") {
+		cfg.AgentsDefaults = AgentDefaults{}
+		return
+	}
+	if meta.IsDefined("agents") {
+		cfg.AgentDefaults = cfg.AgentsDefaults
+		cfg.AgentsDefaults = AgentDefaults{}
+	}
 }
 
 // Agent defines a configured agent in the city.
@@ -2167,9 +2182,11 @@ func Load(fs fsys.FS, path string) (*City, error) {
 // Parse decodes TOML data into a City config.
 func Parse(data []byte) (*City, error) {
 	cfg := City{}
-	if _, err := toml.Decode(string(data), &cfg); err != nil {
+	md, err := toml.Decode(string(data), &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
+	normalizeAgentDefaultsAlias(&cfg, md)
 	NormalizeSessionSleepFields(&cfg)
 	// Backwards compat: promote deprecated graph_workflows → formula_v2.
 	if cfg.Daemon.GraphWorkflows && !cfg.Daemon.FormulaV2 {

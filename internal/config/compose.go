@@ -296,14 +296,9 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 	// explicit agents always take precedence.
 	InjectImplicitAgents(root)
 
-	// V2: merge [agents] defaults into [agent_defaults]. [agents] takes
-	// precedence when both are set.
-	if root.AgentsDefaults.DefaultSlingFormula != "" && root.AgentDefaults.DefaultSlingFormula == "" {
-		root.AgentDefaults.DefaultSlingFormula = root.AgentsDefaults.DefaultSlingFormula
-	}
-
-	// Apply [agent_defaults] / [agents] values to all agents (explicit
-	// and implicit) that don't set their own override.
+	// Apply [agent_defaults] values to all agents (explicit and implicit)
+	// that don't set their own override. Deprecated [agents] aliases are
+	// normalized during parse/load before composition reaches this point.
 	ApplyAgentDefaults(root)
 
 	// Canonicalize duration-or-"off" session sleep fields after all config
@@ -415,7 +410,7 @@ func mergeFragment(base, fragment *City, fragMeta toml.MetaData, fragPath string
 	if fragMeta.IsDefined("convergence") {
 		base.Convergence = fragment.Convergence
 	}
-	if fragMeta.IsDefined("agent_defaults") {
+	if fragMeta.IsDefined("agent_defaults") || fragMeta.IsDefined("agents") {
 		base.AgentDefaults = fragment.AgentDefaults
 	}
 }
@@ -752,6 +747,7 @@ func parseWithMeta(data []byte, source string) (*City, toml.MetaData, []string, 
 	if err != nil {
 		return nil, md, nil, fmt.Errorf("parsing config: %w", err)
 	}
+	normalizeAgentDefaultsAlias(&cfg, md)
 	warnings := CheckUndecodedKeys(md, source)
 	return &cfg, md, warnings, nil
 }
