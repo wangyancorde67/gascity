@@ -24,12 +24,23 @@ type CityInfo struct {
 	PhasesCompleted []string `json:"phases_completed,omitempty"`
 }
 
+// CityUnregisterResult describes the outcome of an unregister operation.
+type CityUnregisterResult struct {
+	CityName   string `json:"city_name"`
+	CityPath   string `json:"city_path"`
+	WasRunning bool   `json:"was_running"`
+	Success    bool   `json:"success"`
+}
+
 // CityResolver provides city lookup for the supervisor API router.
 type CityResolver interface {
 	// ListCities returns all managed cities with status info.
 	ListCities() []CityInfo
 	// CityState returns the State for a named city, or nil if not found/not running.
 	CityState(name string) State
+	// UnregisterCity removes a city from the supervisor registry by name.
+	// Returns the result of the operation or an error if the city is not found.
+	UnregisterCity(name string) (CityUnregisterResult, error)
 }
 
 // cachedCityServer pairs a State with its pre-built Server for caching.
@@ -146,6 +157,26 @@ func (sm *SupervisorMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		handleCityCreate(w, r)
+		return
+	}
+
+	// City unregistration is supervisor-level: it calls Registry.Unregister
+	// and doesn't need a running city, so handle it before per-city routing.
+	if strings.HasPrefix(path, "/v0/city/") && r.Method == http.MethodDelete {
+		cityName := strings.TrimPrefix(path, "/v0/city/")
+		// Strip any trailing path segments — DELETE /v0/city/{name} only.
+		if idx := strings.IndexByte(cityName, '/'); idx >= 0 {
+			cityName = cityName[:idx]
+		}
+		if cityName == "" {
+			writeError(w, http.StatusBadRequest, "bad_request", "city name required in URL")
+			return
+		}
+		if sm.readOnly {
+			writeError(w, http.StatusForbidden, "read_only", "mutations disabled: server bound to non-localhost address")
+			return
+		}
+		sm.handleCityDelete(w, r, cityName)
 		return
 	}
 
@@ -393,6 +424,16 @@ func (sm *SupervisorMux) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		resp["startup"] = startup
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleCityDelete handles DELETE /v0/city/{name} — unregisters a city.
+func (sm *SupervisorMux) handleCityDelete(w http.ResponseWriter, _ *http.Request, cityName string) {
+	result, err := sm.resolver.UnregisterCity(cityName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // allStartupPhases returns the ordered list of all startup phases.

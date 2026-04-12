@@ -484,6 +484,7 @@ func runSupervisor(stdout, stderr io.Writer) int {
 	// Track managed cities via atomic-snapshot registry. API reads are
 	// lock-free (atomic pointer load); mutations go through citiesMu.
 	registry := newCityRegistry()
+	registry.SetUnregisterDeps(reg, reconcileCh)
 
 	// Start API server with city-namespaced routing (Phase 2).
 	startedAt := time.Now()

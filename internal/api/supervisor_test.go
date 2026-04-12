@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,8 @@ import (
 // fakeCityResolver implements CityResolver for testing.
 type fakeCityResolver struct {
 	cities map[string]*fakeState // keyed by city name
+	// nonRunning tracks cities that are registered but not running.
+	nonRunning map[string]string // name → path
 }
 
 func (f *fakeCityResolver) ListCities() []CityInfo {
@@ -32,6 +35,14 @@ func (f *fakeCityResolver) ListCities() []CityInfo {
 			Running: true,
 		})
 	}
+	for name, path := range f.nonRunning {
+		out = append(out, CityInfo{
+			Name:    name,
+			Path:    path,
+			Running: false,
+			Status:  "init_failed",
+		})
+	}
 	return out
 }
 
@@ -40,6 +51,29 @@ func (f *fakeCityResolver) CityState(name string) State {
 		return s
 	}
 	return nil
+}
+
+func (f *fakeCityResolver) UnregisterCity(name string) (CityUnregisterResult, error) {
+	if s, ok := f.cities[name]; ok {
+		path := s.CityPath()
+		delete(f.cities, name)
+		return CityUnregisterResult{
+			CityName:   name,
+			CityPath:   path,
+			WasRunning: true,
+			Success:    true,
+		}, nil
+	}
+	if path, ok := f.nonRunning[name]; ok {
+		delete(f.nonRunning, name)
+		return CityUnregisterResult{
+			CityName:   name,
+			CityPath:   path,
+			WasRunning: false,
+			Success:    true,
+		}, nil
+	}
+	return CityUnregisterResult{}, fmt.Errorf("city %q not found", name)
 }
 
 func newTestSupervisorMux(t *testing.T, cities map[string]*fakeState) *SupervisorMux {
@@ -794,5 +828,110 @@ func TestSupervisorGlobalEventStreamProjectsWorkflowMetadata(t *testing.T) {
 	}
 	if !strings.Contains(body, `"city":"alpha"`) {
 		t.Fatalf("global SSE body missing city tag: %s", body)
+	}
+}
+
+func TestSupervisorCityDeleteSuccess(t *testing.T) {
+	s := newFakeState(t)
+	s.cityName = "bright-lights"
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"bright-lights": s,
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/v0/city/bright-lights", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp CityUnregisterResult
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("Success = false, want true")
+	}
+	if resp.CityName != "bright-lights" {
+		t.Errorf("CityName = %q, want %q", resp.CityName, "bright-lights")
+	}
+	if !resp.WasRunning {
+		t.Errorf("WasRunning = false, want true")
+	}
+}
+
+func TestSupervisorCityDeleteNotFound(t *testing.T) {
+	sm := newTestSupervisorMux(t, map[string]*fakeState{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/v0/city/nonexistent", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestSupervisorCityDeleteNonRunning(t *testing.T) {
+	resolver := &fakeCityResolver{
+		cities:     map[string]*fakeState{},
+		nonRunning: map[string]string{"broken-city": "/tmp/broken-city"},
+	}
+	sm := NewSupervisorMux(resolver, false, "test", time.Now())
+
+	req := httptest.NewRequest(http.MethodDelete, "/v0/city/broken-city", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp CityUnregisterResult
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("Success = false, want true")
+	}
+	if resp.WasRunning {
+		t.Errorf("WasRunning = true, want false")
+	}
+}
+
+func TestSupervisorCityDeleteResponseFields(t *testing.T) {
+	s := newFakeState(t)
+	s.cityName = "test-city"
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"test-city": s,
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/v0/city/test-city", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var raw map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	requiredFields := []string{"city_name", "city_path", "was_running", "success"}
+	for _, field := range requiredFields {
+		if _, ok := raw[field]; !ok {
+			t.Errorf("response missing required field %q", field)
+		}
+	}
+	if raw["city_name"] != "test-city" {
+		t.Errorf("city_name = %v, want %q", raw["city_name"], "test-city")
+	}
+	if raw["success"] != true {
+		t.Errorf("success = %v, want true", raw["success"])
 	}
 }

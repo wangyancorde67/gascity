@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/api"
+	"github.com/gastownhall/gascity/internal/supervisor"
 )
 
 // cityView is a read-only projection of managedCity, built at snapshot time.
@@ -58,6 +60,11 @@ type cityRegistry struct {
 	panicHistory map[string]*panicRecord
 
 	gen uint64 // monotonic generation counter
+
+	// Supervisor-level deps for unregister. Set after construction
+	// via SetUnregisterDeps because reconcileCh is created later.
+	supReg      *supervisor.Registry
+	reconcileCh chan reconcileRequest
 }
 
 // newCityRegistry creates a registry initialized with an empty snapshot.
@@ -217,6 +224,49 @@ func (r *cityRegistry) ListCities() []api.CityInfo {
 		out = append(out, ci)
 	}
 	return out
+}
+
+// SetUnregisterDeps wires the supervisor Registry and reconcile channel
+// needed by UnregisterCity. Called once after construction.
+func (r *cityRegistry) SetUnregisterDeps(reg *supervisor.Registry, ch chan reconcileRequest) {
+	r.supReg = reg
+	r.reconcileCh = ch
+}
+
+// UnregisterCity removes a city from the supervisor registry by name.
+func (r *cityRegistry) UnregisterCity(name string) (api.CityUnregisterResult, error) {
+	snap := r.snap.Load()
+	view, ok := snap.byName[name]
+	if !ok {
+		return api.CityUnregisterResult{}, fmt.Errorf("city %q not found", name)
+	}
+
+	wasRunning := view.Started
+	cityPath := view.Path
+
+	if r.supReg == nil {
+		return api.CityUnregisterResult{}, fmt.Errorf("unregister not available: no supervisor registry")
+	}
+	if err := r.supReg.Unregister(cityPath); err != nil {
+		return api.CityUnregisterResult{}, fmt.Errorf("unregistering city %q: %w", name, err)
+	}
+
+	// Trigger reconciliation so the supervisor stops managing the city.
+	if r.reconcileCh != nil {
+		req := reconcileRequest{done: make(chan struct{})}
+		select {
+		case r.reconcileCh <- req:
+			<-req.done
+		default:
+		}
+	}
+
+	return api.CityUnregisterResult{
+		CityName:   name,
+		CityPath:   cityPath,
+		WasRunning: wasRunning,
+		Success:    true,
+	}, nil
 }
 
 // startupPhaseOrder is the ordered list of startup phases.
