@@ -16,6 +16,17 @@ state. It matters to the model, but it is mostly not user migration
 work, so this guide keeps the focus on `pack.toml`, `city.toml`, and the
 pack directory tree.
 
+> **Scope note:** This guide describes the target Pack/City v2 migration
+> shape. Some sections below point at documented end-state surfaces that
+> are still NYI in this wave. When that is true, the guide calls it out
+> inline and links the tracking issue. For release-gated behavior, also
+> consult `docs/packv2/skew-analysis.md` and
+> `docs/packv2/doc-conformance-matrix.md`.
+>
+> **NYI in this wave:** the `.gc/` site-binding split is part of the
+> long-term model, but the dedicated `.gc/site.toml` path split is still
+> tracked in [#588](https://github.com/gastownhall/gascity/issues/588).
+
 ## Before you start
 
 The important mental shift is:
@@ -123,6 +134,11 @@ source = "../shared/gastown"
 
 Use the city pack's `pack.toml` for city-wide imports. Use rig-scoped
 imports in `city.toml` when a pack should compose only into one rig.
+
+> **NYI in this wave:** rig-scoped `[rigs.imports.*]` is part of the
+> current release surface. Pack-level `[defaults.rig.imports]` is still a
+> target-shape migration destination rather than a completed runtime path.
+> Tracked in [#360](https://github.com/gastownhall/gascity/issues/360).
 
 Rigs are the main thing that remain in `city.toml`. As you migrate, the
 usual pattern is:
@@ -277,6 +293,12 @@ commands/repo-sync/
 └── help.md
 ```
 
+> **NYI in this wave:** the default `commands/<name>/run.sh` discovery
+> path is part of the current release surface. The final command manifest
+> shape, richer identity model, and collision-policy story are still
+> being settled. Tracked in
+> [#668](https://github.com/gastownhall/gascity/issues/668).
+
 ## Doctor checks
 
 Doctor checks are moving in parallel with commands.
@@ -303,6 +325,11 @@ The migration rule is the same as commands:
 
 - keep the entrypoint local to the check that uses it
 - use local TOML only when the default mapping is not enough
+
+> **NYI in this wave:** the default `doctor/<name>/run.sh` discovery
+> path is part of the current release surface. Final command/doctor
+> manifest symmetry and richer doctor metadata remain tracked in
+> [#668](https://github.com/gastownhall/gascity/issues/668).
 
 ## Overlays
 
@@ -335,6 +362,16 @@ and:
 
 when the asset belongs to one specific agent.
 
+> **NYI in this wave:** `skills/` and `agents/<name>/skills/` describe
+> the intended on-disk home for skills, but pack discovery/materialization
+> is still tracked in
+> [#669](https://github.com/gastownhall/gascity/issues/669).
+>
+> **NYI in this wave:** `mcp/` and `agents/<name>/mcp/` describe the
+> intended on-disk home for MCP definitions, but the provider-agnostic
+> TOML abstraction and provider projection model are still tracked in
+> [#670](https://github.com/gastownhall/gascity/issues/670).
+
 ## Fragment injection migration
 
 The old three-layer prompt injection pipeline is replaced by explicit
@@ -359,6 +396,11 @@ append_fragments = ["operational-awareness", "command-glossary"]
 
 Plain `.md` prompts are inert — no fragments attach, no template engine
 runs.
+
+> **NYI in this wave:** `[agent_defaults].append_fragments` is the
+> proven migration bridge in the current release. Agent-local
+> `append_fragments` is still tracked as a spec/runtime parity gap in
+> [#671](https://github.com/gastownhall/gascity/issues/671).
 
 ## Assets and paths
 
@@ -482,9 +524,9 @@ schema, plus the qualified rows that matter most during migration.
 |---|---|---|
 | `include` | Merged extra config fragments into `city.toml` before load | Remove as part of migration. Move real composition to imports and move remaining config to `pack.toml`, `city.toml`, or discovered directories. |
 | `[workspace]` | Held city metadata and pack composition in one place | Split across the root `pack.toml`, `city.toml`, and `.gc/`. |
-| `workspace.name` | Workspace identity | Remove from city.toml. Now derived from `pack.name` at registration time and stored in `.gc/` as site binding. Use `gc register --name` for machine-local alias. |
+| `workspace.name` | Workspace identity | Remove from city.toml. Now derived from `pack.name` at registration time and stored in `.gc/` as site binding. Use `gc register --name` for machine-local alias once [#602](https://github.com/gastownhall/gascity/issues/602) lands. |
 | `workspace.includes` | City-level pack composition | Move to `[imports.*]` in the root city `pack.toml`. |
-| `workspace.default_rig_includes` | Default pack composition for newly added rigs | Move to `[defaults.rig.imports]` in the root city `pack.toml`. |
+| `workspace.default_rig_includes` | Default pack composition for newly added rigs | Move to `[defaults.rig.imports]` in the root city `pack.toml`. This is the target shape, but loader-backed support is still tracked in [#360](https://github.com/gastownhall/gascity/issues/360). |
 | `[providers.*]` | Named provider presets | Usually move to `[providers.*]` in the root city `pack.toml`, unless the setting is truly deployment-only. |
 | `[packs.*]` | Named remote pack sources used by includes | Collapse into `[imports.*]` entries. There should no longer be a separate `[packs.*]` registry in `city.toml`. |
 | `[[agent]]` | Inline agent definitions | Move to `agents/<name>/`, with optional `agent.toml`. |
