@@ -180,6 +180,7 @@ Session stream subscriptions need explicit parameters and completion rules:
 - support the current session stream format modes rather than assuming one generic shape
 - closed sessions emit a bounded snapshot/terminal sequence and then complete instead of remaining live forever
 - live sessions remain open and continue streaming updates with normal cursor semantics
+- `turns: N` returns the most recent N turns (0=all, 1=latest turn, 5=latest 5 turns). Used consistently for both `session.transcript` (one-shot fetch) and `subscription.start kind=session.stream` (live streaming with initial snapshot). Replaces HTTP `?tail=N`.
 
 ## Migration Scope
 
