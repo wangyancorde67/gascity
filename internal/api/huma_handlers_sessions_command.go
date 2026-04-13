@@ -17,6 +17,7 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/sessionlog"
+	sessionprovider "github.com/gastownhall/gascity/internal/sessionprovider"
 	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 )
 
@@ -107,6 +108,11 @@ func (s *Server) humaHandleSessionCreate(ctx context.Context, input *SessionCrea
 
 	command := sessionCreateAgentCommand(resolved)
 	extraMeta := sessionTemplateOverridesMetadata(body.Options, body.Message)
+	sessionProviderMeta, err := s.sessionProviderMetadataForAgent(&agentCfg)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	extraMeta = sessionprovider.MergeMetadata(extraMeta, sessionProviderMeta)
 
 	mgr := s.sessionManager(store)
 	var info session.Info

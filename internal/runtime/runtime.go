@@ -242,6 +242,25 @@ type ImmediateNudgeProvider interface {
 	NudgeNow(name string, content []ContentBlock) error
 }
 
+// SessionCapabilitiesProvider is an optional extension for composite runtimes
+// that route different sessions to backends with different probe semantics.
+type SessionCapabilitiesProvider interface {
+	SessionCapabilities(name string) ProviderCapabilities
+}
+
+const providerBackendKeySeparator = "\x00profile:"
+
+// ProviderBackendKey returns the internal backend identity for a runtime
+// provider/profile pair. Empty profile preserves the historical provider key.
+func ProviderBackendKey(provider, profile string) string {
+	provider = strings.TrimSpace(provider)
+	profile = strings.TrimSpace(profile)
+	if provider == "" || profile == "" {
+		return provider
+	}
+	return provider + providerBackendKeySeparator + profile
+}
+
 // InterruptedTurnResetProvider is an optional extension for runtimes that can
 // discard the just-interrupted user turn from the provider's active
 // conversation state without restarting the session.

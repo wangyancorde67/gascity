@@ -317,6 +317,7 @@ func buildPreparedStart(
 		}
 	}
 
+	agentCfg = withSessionProviderFingerprint(agentCfg, *session, tp)
 	coreHash := runtime.CoreFingerprint(agentCfg)
 	coreBreakdown := runtime.CoreFingerprintBreakdown(agentCfg)
 	liveHash := runtime.LiveFingerprint(agentCfg)

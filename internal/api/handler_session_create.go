@@ -13,6 +13,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/session"
+	sessionprovider "github.com/gastownhall/gascity/internal/sessionprovider"
 	"github.com/gastownhall/gascity/internal/worker"
 )
 
@@ -138,6 +139,17 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		extraMeta = make(map[string]string)
 	}
 	extraMeta["session_origin"] = "ephemeral"
+	if cfg := s.state.Config(); cfg != nil {
+		if agentCfg, ok := resolveSessionTemplateAgent(cfg, template); ok {
+			sessionProviderMeta, metaErr := s.sessionProviderMetadataForAgent(&agentCfg)
+			if metaErr != nil {
+				s.idem.unreserve(idemKey)
+				writeSessionManagerError(w, metaErr)
+				return
+			}
+			extraMeta = sessionprovider.MergeMetadata(extraMeta, sessionProviderMeta)
+		}
+	}
 
 	// Agent sessions always use async (bead-only) creation. The reconciler
 	// starts the agent process on the next tick. This avoids blocking the

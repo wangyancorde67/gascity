@@ -449,6 +449,31 @@ func cancelStateAssignedToRetiredSessionBead(store beads.Store, sessionID string
 	}
 }
 
+func sessionProviderMetadataMutable(b beads.Bead, sessionName string, sp runtime.Provider) bool {
+	state := strings.TrimSpace(b.Metadata["state"])
+	if state == "active" || state == "awake" {
+		return sp != nil && sessionName != "" && !sp.IsRunning(sessionName)
+	}
+	return sp == nil || sessionName == "" || !sp.IsRunning(sessionName)
+}
+
+func queueSessionProviderMetadataIfMutable(b beads.Bead, sessionName string, tp TemplateParams, sp runtime.Provider, queueMeta func(string, string)) {
+	if strings.TrimSpace(tp.SessionProvider) == "" {
+		return
+	}
+	if b.Metadata[session.MetadataSessionProvider] == tp.SessionProvider &&
+		b.Metadata[session.MetadataSessionProviderProfile] == tp.SessionProviderProfile {
+		return
+	}
+	if !sessionProviderMetadataMutable(b, sessionName, sp) {
+		return
+	}
+	queueMeta(session.MetadataSessionProvider, tp.SessionProvider)
+	if tp.SessionProviderProfile != "" || b.Metadata[session.MetadataSessionProviderProfile] != "" {
+		queueMeta(session.MetadataSessionProviderProfile, tp.SessionProviderProfile)
+	}
+}
+
 // syncSessionBeads ensures every desired session has a corresponding session
 // bead. Accepts desiredState (sessionName → TemplateParams) instead of
 // map[string]TemplateParams, and uses runtime.Provider for liveness checks.
@@ -708,6 +733,7 @@ func syncSessionBeadsWithSnapshot(
 					meta["resume_command"] = tp.ResolvedProvider.ResumeCommand
 				}
 			}
+			meta = mergeExtraSessionMetadata(meta, sessionProviderMetadata(tp.SessionProvider, tp.SessionProviderProfile))
 			createBead := func() (beads.Bead, error) {
 				return store.Create(beads.Bead{
 					Title:    agentName,
@@ -896,6 +922,7 @@ func syncSessionBeadsWithSnapshot(
 				queueMeta("resume_command", tp.ResolvedProvider.ResumeCommand)
 			}
 		}
+		queueSessionProviderMetadataIfMutable(b, sn, tp, sp, queueMeta)
 
 		// Update existing bead metadata.
 		// live_hash is NOT updated here — it records what config the

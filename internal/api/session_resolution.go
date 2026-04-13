@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/extmsg"
 	"github.com/gastownhall/gascity/internal/session"
+	sessionprovider "github.com/gastownhall/gascity/internal/sessionprovider"
 	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 	"github.com/gastownhall/gascity/internal/worker"
 )
@@ -264,6 +266,18 @@ func parseAPITemplateTarget(identifier string) (string, bool) {
 	return name, true
 }
 
+func (s *Server) sessionProviderMetadataForAgent(agentCfg *config.Agent) (map[string]string, error) {
+	cfg := s.state.Config()
+	if cfg == nil || agentCfg == nil {
+		return nil, nil
+	}
+	defaultProvider := cfg.Session.Provider
+	if envProvider := os.Getenv("GC_SESSION"); envProvider != "" {
+		defaultProvider = envProvider
+	}
+	return sessionprovider.MetadataForAgent(agentCfg, s.state.CityPath(), sessionprovider.CanonicalName(defaultProvider))
+}
+
 func (s *Server) materializeNamedSessionWithContext(ctx context.Context, store beads.Store, spec apiNamedSessionSpec) (string, error) {
 	if bead, ok, err := s.findCanonicalNamedSession(store, spec); err != nil {
 		return "", err
@@ -308,6 +322,11 @@ func (s *Server) materializeNamedSessionWithContext(ctx context.Context, store b
 	if resolved.BuiltinAncestor != "" && resolved.BuiltinAncestor != resolved.Name {
 		extraMeta["builtin_ancestor"] = resolved.BuiltinAncestor
 	}
+	sessionProviderMeta, err := s.sessionProviderMetadataForAgent(spec.Agent)
+	if err != nil {
+		return "", err
+	}
+	extraMeta = sessionprovider.MergeMetadata(extraMeta, sessionProviderMeta)
 	hints := sessionCreateHints(resolved)
 	var info session.Info
 	err = session.WithCitySessionIdentifierLocks(s.state.CityPath(), []string{spec.Identity, spec.SessionName}, func() error {

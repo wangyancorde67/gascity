@@ -210,6 +210,11 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 	// via findAgentByTemplate (which compares against QualifiedName()).
 	canonicalTemplate := found.QualifiedName()
 	configuredOwner := sessionNewAliasOwner(cfg, &found)
+	sessionProviderMeta, err := sessionProviderMetadataForAgent(&found, cityPath, defaultSessionProviderForConfig(cfg))
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
 	reservationIDs := []string{alias, explicitName}
 	reserveConcreteIdentity := found.SupportsMultipleSessions() && strings.TrimSpace(sessionQualifiedName) != ""
 	if reserveConcreteIdentity {
@@ -245,6 +250,7 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 			if resolved.BuiltinAncestor != "" && resolved.BuiltinAncestor != resolved.Name {
 				kindMeta["builtin_ancestor"] = resolved.BuiltinAncestor
 			}
+			kindMeta = mergeExtraSessionMetadata(kindMeta, sessionProviderMeta)
 			handle, err := newWorkerSessionHandleForResolvedRuntimeWithConfig(
 				cityPath,
 				store,
@@ -328,6 +334,7 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 	if resolved.BuiltinAncestor != "" && resolved.BuiltinAncestor != resolved.Name {
 		kindMeta["builtin_ancestor"] = resolved.BuiltinAncestor
 	}
+	kindMeta = mergeExtraSessionMetadata(kindMeta, sessionProviderMeta)
 	handle, err := newWorkerSessionHandleForResolvedRuntimeWithConfig(
 		cityPath,
 		store,

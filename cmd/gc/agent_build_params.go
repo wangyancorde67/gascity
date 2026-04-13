@@ -16,24 +16,25 @@ import (
 // agentBuildParams holds shared, per-city parameters for building agents.
 // These are constant across all agents in a single buildDesiredState call.
 type agentBuildParams struct {
-	city            *config.City
-	cityName        string
-	cityPath        string
-	workspace       *config.Workspace
-	agents          []config.Agent
-	providers       map[string]config.ProviderSpec
-	lookPath        config.LookPathFunc
-	fs              fsys.FS
-	sp              runtime.Provider
-	rigs            []config.Rig
-	sessionTemplate string
-	beaconTime      time.Time
-	packDirs        []string
-	packOverlayDirs []string
-	rigOverlayDirs  map[string][]string
-	globalFragments []string
-	appendFragments []string // V2: city-level [agents].append_fragments / [agent_defaults].append_fragments
-	stderr          io.Writer
+	city                   *config.City
+	cityName               string
+	cityPath               string
+	workspace              *config.Workspace
+	agents                 []config.Agent
+	providers              map[string]config.ProviderSpec
+	lookPath               config.LookPathFunc
+	fs                     fsys.FS
+	sp                     runtime.Provider
+	rigs                   []config.Rig
+	sessionTemplate        string
+	defaultSessionProvider string
+	beaconTime             time.Time
+	packDirs               []string
+	packOverlayDirs        []string
+	rigOverlayDirs         map[string][]string
+	globalFragments        []string
+	appendFragments        []string // V2: city-level [agents].append_fragments / [agent_defaults].append_fragments
+	stderr                 io.Writer
 
 	// beadStore is the city-level bead store for session bead lookups.
 	// When non-nil, session names are derived from bead IDs ("s-{beadID}")
@@ -81,27 +82,28 @@ type agentBuildParams struct {
 // newAgentBuildParams constructs agentBuildParams from the common startup values.
 func newAgentBuildParams(cityName, cityPath string, cfg *config.City, sp runtime.Provider, beaconTime time.Time, store beads.Store, stderr io.Writer) *agentBuildParams {
 	params := &agentBuildParams{
-		city:            cfg,
-		cityName:        cityName,
-		cityPath:        cityPath,
-		workspace:       &cfg.Workspace,
-		agents:          append([]config.Agent(nil), cfg.Agents...),
-		providers:       cfg.Providers,
-		lookPath:        exec.LookPath,
-		fs:              fsys.OSFS{},
-		sp:              sp,
-		rigs:            cfg.Rigs,
-		sessionTemplate: cfg.Workspace.SessionTemplate,
-		beaconTime:      beaconTime,
-		packDirs:        cfg.PackDirs,
-		packOverlayDirs: cfg.PackOverlayDirs,
-		rigOverlayDirs:  cfg.RigOverlayDirs,
-		globalFragments: cfg.Workspace.GlobalFragments,
-		appendFragments: mergeFragmentLists(cfg.AgentDefaults.AppendFragments, cfg.AgentsDefaults.AppendFragments),
-		beadStore:       store,
-		beadNames:       make(map[string]string),
-		stderr:          stderr,
-		sessionProvider: cfg.Session.Provider,
+		city:                   cfg,
+		cityName:               cityName,
+		cityPath:               cityPath,
+		workspace:              &cfg.Workspace,
+		agents:                 append([]config.Agent(nil), cfg.Agents...),
+		providers:              cfg.Providers,
+		lookPath:               exec.LookPath,
+		fs:                     fsys.OSFS{},
+		sp:                     sp,
+		rigs:                   cfg.Rigs,
+		sessionTemplate:        cfg.Workspace.SessionTemplate,
+		defaultSessionProvider: defaultSessionProviderForConfig(cfg),
+		beaconTime:             beaconTime,
+		packDirs:               cfg.PackDirs,
+		packOverlayDirs:        cfg.PackOverlayDirs,
+		rigOverlayDirs:         cfg.RigOverlayDirs,
+		globalFragments:        cfg.Workspace.GlobalFragments,
+		appendFragments:        mergeFragmentLists(cfg.AgentDefaults.AppendFragments, cfg.AgentsDefaults.AppendFragments),
+		beadStore:              store,
+		beadNames:              make(map[string]string),
+		stderr:                 stderr,
+		sessionProvider:        cfg.Session.Provider,
 	}
 	// Load the shared skill catalog once per build cycle. Transient load
 	// failures (filesystem race during dolt sync / heavy I/O) used to

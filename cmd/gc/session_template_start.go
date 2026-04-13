@@ -128,6 +128,10 @@ func materializeSessionForTemplateWithOptions(
 		if err != nil {
 			return "", err
 		}
+		sessionProviderMeta, err := sessionProviderMetadataForAgent(spec.Agent, cityPath, defaultSessionProviderForConfig(cfg))
+		if err != nil {
+			return "", err
+		}
 
 		sp := newSessionProvider()
 		title := spec.Identity
@@ -153,6 +157,7 @@ func materializeSessionForTemplateWithOptions(
 		if resolved.BuiltinAncestor != "" && resolved.BuiltinAncestor != resolved.Name {
 			extraMeta["builtin_ancestor"] = resolved.BuiltinAncestor
 		}
+		extraMeta = mergeExtraSessionMetadata(extraMeta, sessionProviderMeta)
 		providerName := ""
 		if spec.Agent != nil {
 			providerName = spec.Agent.Provider
@@ -290,6 +295,10 @@ func materializeSessionForAgentConfig(cityPath string, cfg *config.City, store b
 	if err != nil {
 		return "", err
 	}
+	sessionProviderMeta, err := sessionProviderMetadataForAgent(agentCfg, cityPath, defaultSessionProviderForConfig(cfg))
+	if err != nil {
+		return "", err
+	}
 
 	sp := newSessionProvider()
 	title := agentCfg.QualifiedName()
@@ -303,6 +312,7 @@ func materializeSessionForAgentConfig(cityPath string, cfg *config.City, store b
 	if resolved.BuiltinAncestor != "" && resolved.BuiltinAncestor != resolved.Name {
 		extraMeta["builtin_ancestor"] = resolved.BuiltinAncestor
 	}
+	extraMeta = mergeExtraSessionMetadata(extraMeta, sessionProviderMeta)
 	handle, err := newWorkerSessionHandleForResolvedRuntimeWithConfig(
 		cityPath,
 		store,
