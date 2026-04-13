@@ -113,6 +113,50 @@ prompt_template = "agents/mayor/prompt.template.md"
 	}
 }
 
+func TestRenderPromptAgentDefaultsAppendFragmentsAffectRenderedPrompt(t *testing.T) {
+	data := []byte(`
+[workspace]
+name = "test-city"
+
+[agent_defaults]
+append_fragments = ["footer"]
+
+[[agent]]
+name = "mayor"
+prompt_template = "agents/mayor/prompt.template.md"
+`)
+	cfg, err := config.Parse(data)
+	if err != nil {
+		t.Fatalf("config.Parse: %v", err)
+	}
+	f := fsys.NewFake()
+	f.Files["/city/agents/mayor/prompt.template.md"] = []byte("Hello")
+	f.Files["/city/agents/mayor/template-fragments/footer.template.md"] = []byte(`{{ define "footer" }}Goodbye{{ end }}`)
+	got := renderPrompt(f, "/city", "", "agents/mayor/prompt.template.md", PromptContext{}, "", io.Discard, nil, cfg.AgentDefaults.AppendFragments, nil)
+	if got != "Hello\n\nGoodbye" {
+		t.Errorf("renderPrompt(agent_defaults append_fragments) = %q, want %q", got, "Hello\n\nGoodbye")
+	}
+}
+
+func TestRenderPromptPatchedTemplateSuffixRenders(t *testing.T) {
+	f := fsys.NewFake()
+	f.Files["/city/patches/gastown-mayor-prompt.template.md"] = []byte("Hello {{ .AgentName }}")
+	got := renderPrompt(f, "/city", "", "patches/gastown-mayor-prompt.template.md", PromptContext{AgentName: "gastown.mayor"}, "", io.Discard, nil, nil, nil)
+	if got != "Hello gastown.mayor" {
+		t.Errorf("renderPrompt(patched template suffix) = %q, want %q", got, "Hello gastown.mayor")
+	}
+}
+
+func TestRenderPromptPatchedPlainMarkdownStaysInert(t *testing.T) {
+	f := fsys.NewFake()
+	f.Files["/city/patches/gastown-mayor-prompt.md"] = []byte("Hello {{ .AgentName }}")
+	f.Files["/city/patches/template-fragments/footer.template.md"] = []byte(`{{ define "footer" }}Goodbye{{ end }}`)
+	got := renderPrompt(f, "/city", "", "patches/gastown-mayor-prompt.md", PromptContext{AgentName: "gastown.mayor"}, "", io.Discard, nil, []string{"footer"}, nil)
+	if got != "Hello {{ .AgentName }}" {
+		t.Errorf("renderPrompt(patched plain markdown) = %q, want raw markdown", got)
+	}
+}
+
 func TestRenderPromptTemplateName(t *testing.T) {
 	f := fsys.NewFake()
 	f.Files["/city/prompts/test.md.tmpl"] = []byte("Template: {{ .TemplateName }}")

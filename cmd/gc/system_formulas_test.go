@@ -210,3 +210,25 @@ func TestListEmbeddedWithFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestFormulaFilenameTruthHelpers(t *testing.T) {
+	tests := []struct {
+		path        string
+		wantFormula bool
+		wantOrder   bool
+	}{
+		{path: "hello.formula.toml", wantFormula: true, wantOrder: false},
+		{path: "orders/cleanup.order.toml", wantFormula: true, wantOrder: true},
+		{path: "hello.toml", wantFormula: false, wantOrder: false},
+		{path: "orders/cleanup/order.toml", wantFormula: false, wantOrder: false},
+	}
+
+	for _, tt := range tests {
+		if got := isFormulaFile(tt.path); got != tt.wantFormula {
+			t.Errorf("isFormulaFile(%q) = %v, want %v", tt.path, got, tt.wantFormula)
+		}
+		if got := isOrderFile(tt.path); got != tt.wantOrder {
+			t.Errorf("isOrderFile(%q) = %v, want %v", tt.path, got, tt.wantOrder)
+		}
+	}
+}
