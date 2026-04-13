@@ -2,6 +2,8 @@ package main
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -585,6 +587,40 @@ func TestRenderPromptGlobalAndPerAgent(t *testing.T) {
 	want := "Body.\n\nGLOBAL\n\nAGENT"
 	if got != want {
 		t.Errorf("global+agent = %q, want %q", got, want)
+	}
+}
+
+func TestRenderPromptMaintenanceDogPromptHasRequiredSharedTemplates(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("filepath.Abs(repo root): %v", err)
+	}
+	maintenanceDir := filepath.Join(repoRoot, "examples", "gastown", "packs", "maintenance")
+	promptPath := filepath.Join(maintenanceDir, "prompts", "dog.md.tmpl")
+
+	raw, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("os.ReadFile(maintenance dog prompt): %v", err)
+	}
+
+	var stderr strings.Builder
+	got := renderPrompt(fsys.OSFS{}, "/tmp/city", "", promptPath, PromptContext{
+		CityRoot:  "/tmp/city",
+		AgentName: "dog",
+		WorkQuery: "bd ready",
+	}, "", &stderr, []string{maintenanceDir}, nil, nil)
+
+	if strings.Contains(stderr.String(), "template not defined") {
+		t.Fatalf("renderPrompt emitted missing-template warning: %s", stderr.String())
+	}
+	if got == string(raw) {
+		t.Fatalf("renderPrompt fell back to raw prompt; expected rendered maintenance prompt")
+	}
+	if !strings.Contains(got, "Gas City Maintenance Context") {
+		t.Fatalf("rendered prompt missing maintenance architecture context:\n%s", got)
+	}
+	if !strings.Contains(got, "Following Your Formula") {
+		t.Fatalf("rendered prompt missing following-mol fragment:\n%s", got)
 	}
 }
 

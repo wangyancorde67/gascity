@@ -1381,12 +1381,12 @@ func TestDoInitSuccess(t *testing.T) {
 		}
 	}
 
-	// Verify prompt templates were written.
+	// Verify only the explicit init agent prompt template was written.
 	if _, ok := f.Files[filepath.Join("/bright-lights", "agents", "mayor", "prompt.template.md")]; !ok {
 		t.Error("agents/mayor/prompt.template.md not written")
 	}
-	if _, ok := f.Files[filepath.Join("/bright-lights", "agents", "worker", "prompt.template.md")]; !ok {
-		t.Error("agents/worker/prompt.template.md not written")
+	if _, ok := f.Files[filepath.Join("/bright-lights", "agents", "worker", "prompt.template.md")]; ok {
+		t.Error("agents/worker/prompt.template.md should not be written by default init")
 	}
 
 	// Verify pack.toml was written.
