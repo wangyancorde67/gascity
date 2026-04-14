@@ -675,14 +675,27 @@ func TestAsyncAPIActionsMatchGoCode(t *testing.T) {
 	}
 
 	// 2. Extract actions from the Go switch statement.
-	wsPath := filepath.Join(root, "internal", "api", "websocket.go")
-	wsData, err := os.ReadFile(wsPath)
+	// 2. Extract actions from Go dispatch registrations and websocket.go.
+	// Actions are registered in dispatch_*.go files via RegisterAction/RegisterVoidAction/registerRawAction,
+	// and also referenced in websocket.go for supervisor-only inline handling.
+	apiDir := filepath.Join(root, "internal", "api")
+	var allGoData []byte
+	entries, err := os.ReadDir(apiDir)
 	if err != nil {
-		t.Fatalf("read websocket.go: %v", err)
+		t.Fatalf("read api dir: %v", err)
 	}
-	goActions := extractGoSwitchActions(wsData)
+	for _, e := range entries {
+		if !e.IsDir() && (strings.HasPrefix(e.Name(), "dispatch_") || e.Name() == "websocket.go") {
+			data, err := os.ReadFile(filepath.Join(apiDir, e.Name()))
+			if err != nil {
+				t.Fatalf("read %s: %v", e.Name(), err)
+			}
+			allGoData = append(allGoData, data...)
+		}
+	}
+	goActions := extractGoSwitchActions(allGoData)
 	if len(goActions) == 0 {
-		t.Fatal("no case actions found in websocket.go")
+		t.Fatal("no actions found in dispatch_*.go or websocket.go")
 	}
 
 	// 3. Compare: every Go action must be in the spec.
