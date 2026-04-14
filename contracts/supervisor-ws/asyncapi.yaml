@@ -298,58 +298,753 @@ components:
         agent.delete:
           description: Delete an agent
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         agent.get:
           description: Get agent details
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
+          x-response-schema:
+            properties:
+              active_bead:
+                type: string
+              activity:
+                type: string
+              available:
+                type: boolean
+              context_pct:
+                type: integer
+              context_window:
+                type: integer
+              description:
+                type: string
+              display_name:
+                type: string
+              last_output:
+                type: string
+              model:
+                type: string
+              name:
+                type: string
+              pool:
+                type: string
+              provider:
+                type: string
+              rig:
+                type: string
+              running:
+                type: boolean
+              session:
+                properties:
+                  attached:
+                    type: boolean
+                  last_activity:
+                    properties:
+                    type: object
+                  name:
+                    type: string
+                required:
+                  - attached
+                  - name
+                type: object
+              state:
+                type: string
+              suspended:
+                type: boolean
+              unavailable_reason:
+                type: string
+            required:
+              - available
+              - name
+              - running
+              - state
+              - suspended
+            type: object
         agent.resume:
           description: Resume a suspended agent
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         agent.suspend:
           description: Suspend an agent
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         agent.update:
           description: Update agent config
           x-mutation: true
         agents.list:
           description: List agents
+          x-request-schema:
+            properties:
+              peek:
+                type: boolean
+              pool:
+                type: string
+              rig:
+                type: string
+              running:
+                type: string
+            type: object
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         bead.assign:
           description: Assign a bead to an agent
           x-mutation: true
+          x-request-schema:
+            properties:
+              assignee:
+                type: string
+              id:
+                type: string
+            required:
+              - assignee
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              assignee:
+                type: string
+              created_at:
+                properties:
+                type: object
+              dependencies:
+                items:
+                  properties:
+                    depends_on_id:
+                      type: string
+                    issue_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                    - depends_on_id
+                    - issue_id
+                    - type
+                  type: object
+                type: array
+              description:
+                type: string
+              from:
+                type: string
+              id:
+                type: string
+              issue_type:
+                type: string
+              labels:
+                items:
+                  type: string
+                type: array
+              metadata:
+                additionalProperties:
+                  type: string
+                type: object
+              needs:
+                items:
+                  type: string
+                type: array
+              parent:
+                type: string
+              priority:
+                type: integer
+              ref:
+                type: string
+              status:
+                type: string
+              title:
+                type: string
+            required:
+              - created_at
+              - id
+              - issue_type
+              - status
+              - title
+            type: object
         bead.close:
           description: Close a bead
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              assignee:
+                type: string
+              created_at:
+                properties:
+                type: object
+              dependencies:
+                items:
+                  properties:
+                    depends_on_id:
+                      type: string
+                    issue_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                    - depends_on_id
+                    - issue_id
+                    - type
+                  type: object
+                type: array
+              description:
+                type: string
+              from:
+                type: string
+              id:
+                type: string
+              issue_type:
+                type: string
+              labels:
+                items:
+                  type: string
+                type: array
+              metadata:
+                additionalProperties:
+                  type: string
+                type: object
+              needs:
+                items:
+                  type: string
+                type: array
+              parent:
+                type: string
+              priority:
+                type: integer
+              ref:
+                type: string
+              status:
+                type: string
+              title:
+                type: string
+            required:
+              - created_at
+              - id
+              - issue_type
+              - status
+              - title
+            type: object
         bead.create:
           description: Create a new bead
           x-mutation: true
+          x-request-schema:
+            properties:
+              assignee:
+                type: string
+              description:
+                type: string
+              labels:
+                items:
+                  type: string
+                type: array
+              priority:
+                type: integer
+              rig:
+                type: string
+              title:
+                type: string
+              type:
+                type: string
+            required:
+              - assignee
+              - description
+              - labels
+              - priority
+              - rig
+              - title
+              - type
+            type: object
+          x-response-schema:
+            properties:
+              assignee:
+                type: string
+              created_at:
+                properties:
+                type: object
+              dependencies:
+                items:
+                  properties:
+                    depends_on_id:
+                      type: string
+                    issue_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                    - depends_on_id
+                    - issue_id
+                    - type
+                  type: object
+                type: array
+              description:
+                type: string
+              from:
+                type: string
+              id:
+                type: string
+              issue_type:
+                type: string
+              labels:
+                items:
+                  type: string
+                type: array
+              metadata:
+                additionalProperties:
+                  type: string
+                type: object
+              needs:
+                items:
+                  type: string
+                type: array
+              parent:
+                type: string
+              priority:
+                type: integer
+              ref:
+                type: string
+              status:
+                type: string
+              title:
+                type: string
+            required:
+              - created_at
+              - id
+              - issue_type
+              - status
+              - title
+            type: object
         bead.delete:
           description: Delete a bead
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+            required:
+              - id
+            type: object
         bead.deps:
           description: Get bead dependencies
+          x-request-schema:
+            properties:
+              id:
+                type: string
+            required:
+              - id
+            type: object
         bead.get:
           description: Get a bead by ID
+          x-request-schema:
+            properties:
+              id:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              assignee:
+                type: string
+              created_at:
+                properties:
+                type: object
+              dependencies:
+                items:
+                  properties:
+                    depends_on_id:
+                      type: string
+                    issue_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                    - depends_on_id
+                    - issue_id
+                    - type
+                  type: object
+                type: array
+              description:
+                type: string
+              from:
+                type: string
+              id:
+                type: string
+              issue_type:
+                type: string
+              labels:
+                items:
+                  type: string
+                type: array
+              metadata:
+                additionalProperties:
+                  type: string
+                type: object
+              needs:
+                items:
+                  type: string
+                type: array
+              parent:
+                type: string
+              priority:
+                type: integer
+              ref:
+                type: string
+              status:
+                type: string
+              title:
+                type: string
+            required:
+              - created_at
+              - id
+              - issue_type
+              - status
+              - title
+            type: object
         bead.reopen:
           description: Reopen a closed bead
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              assignee:
+                type: string
+              created_at:
+                properties:
+                type: object
+              dependencies:
+                items:
+                  properties:
+                    depends_on_id:
+                      type: string
+                    issue_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                    - depends_on_id
+                    - issue_id
+                    - type
+                  type: object
+                type: array
+              description:
+                type: string
+              from:
+                type: string
+              id:
+                type: string
+              issue_type:
+                type: string
+              labels:
+                items:
+                  type: string
+                type: array
+              metadata:
+                additionalProperties:
+                  type: string
+                type: object
+              needs:
+                items:
+                  type: string
+                type: array
+              parent:
+                type: string
+              priority:
+                type: integer
+              ref:
+                type: string
+              status:
+                type: string
+              title:
+                type: string
+            required:
+              - created_at
+              - id
+              - issue_type
+              - status
+              - title
+            type: object
         bead.update:
           description: Update a bead
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              assignee:
+                type: string
+              created_at:
+                properties:
+                type: object
+              dependencies:
+                items:
+                  properties:
+                    depends_on_id:
+                      type: string
+                    issue_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                    - depends_on_id
+                    - issue_id
+                    - type
+                  type: object
+                type: array
+              description:
+                type: string
+              from:
+                type: string
+              id:
+                type: string
+              issue_type:
+                type: string
+              labels:
+                items:
+                  type: string
+                type: array
+              metadata:
+                additionalProperties:
+                  type: string
+                type: object
+              needs:
+                items:
+                  type: string
+                type: array
+              parent:
+                type: string
+              priority:
+                type: integer
+              ref:
+                type: string
+              status:
+                type: string
+              title:
+                type: string
+            required:
+              - created_at
+              - id
+              - issue_type
+              - status
+              - title
+            type: object
         beads.graph:
           description: Get bead dependency graph
+          x-request-schema:
+            properties:
+              root_id:
+                type: string
+            required:
+              - root_id
+            type: object
         beads.list:
           description: List beads with filters
+          x-request-schema:
+            properties:
+              assignee:
+                type: string
+              cursor:
+                type: string
+              label:
+                type: string
+              limit:
+                type: integer
+              rig:
+                type: string
+              status:
+                type: string
+              type:
+                type: string
+            type: object
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         beads.ready:
           description: List ready beads
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         cities.list:
           description: List managed cities (supervisor)
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         city.get:
           description: Get city details
         city.patch:
           description: Update city (suspend/resume)
           x-mutation: true
+          x-request-schema:
+            properties:
+              suspended:
+                type: boolean
+            type: object
         config.explain:
           description: Explain config resolution
         config.get:
           description: Get parsed city configuration
+          x-response-schema:
+            properties:
+              agents:
+                items:
+                  properties:
+                    dir:
+                      type: string
+                    is_pool:
+                      type: boolean
+                    name:
+                      type: string
+                    provider:
+                      type: string
+                    scope:
+                      type: string
+                    suspended:
+                      type: boolean
+                  required:
+                    - name
+                    - suspended
+                  type: object
+                type: array
+              patches:
+                properties:
+                  agent_count:
+                    type: integer
+                  provider_count:
+                    type: integer
+                  rig_count:
+                    type: integer
+                required:
+                  - agent_count
+                  - provider_count
+                  - rig_count
+                type: object
+              providers:
+                additionalProperties:
+                  properties:
+                    args:
+                      items:
+                        type: string
+                      type: array
+                    command:
+                      type: string
+                    display_name:
+                      type: string
+                    env:
+                      additionalProperties:
+                        type: string
+                      type: object
+                    prompt_flag:
+                      type: string
+                    prompt_mode:
+                      type: string
+                    ready_delay_ms:
+                      type: integer
+                  type: object
+                type: object
+              rigs:
+                items:
+                  properties:
+                    name:
+                      type: string
+                    path:
+                      type: string
+                    prefix:
+                      type: string
+                    suspended:
+                      type: boolean
+                  required:
+                    - name
+                    - path
+                    - suspended
+                  type: object
+                type: array
+              workspace:
+                properties:
+                  name:
+                    type: string
+                  provider:
+                    type: string
+                  session_template:
+                    type: string
+                  suspended:
+                    type: boolean
+                required:
+                  - name
+                  - suspended
+                type: object
+            required:
+              - agents
+              - rigs
+              - workspace
+            type: object
         config.validate:
           description: Validate city configuration
         convoy.add:
@@ -363,21 +1058,103 @@ components:
         convoy.create:
           description: Create a convoy
           x-mutation: true
+          x-request-schema:
+            properties:
+              items:
+                items:
+                  type: string
+                type: array
+              rig:
+                type: string
+              title:
+                type: string
+            required:
+              - items
+              - rig
+              - title
+            type: object
         convoy.delete:
           description: Delete a convoy
           x-mutation: true
         convoy.get:
           description: Get convoy details
+          x-request-schema:
+            properties:
+              id:
+                type: string
+            required:
+              - id
+            type: object
         convoy.remove:
           description: Remove items from a convoy
           x-mutation: true
         convoys.list:
           description: List convoys
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         event.emit:
           description: Emit a custom event
           x-mutation: true
+          x-request-schema:
+            properties:
+              actor:
+                type: string
+              message:
+                type: string
+              payload:
+                items:
+                  type: integer
+                type: array
+              seq:
+                type: integer
+              subject:
+                type: string
+              ts:
+                properties:
+                type: object
+              type:
+                type: string
+            required:
+              - actor
+              - seq
+              - ts
+              - type
+            type: object
         events.list:
           description: List events with filters
+          x-request-schema:
+            properties:
+              actor:
+                type: string
+              cursor:
+                type: string
+              limit:
+                type: integer
+              since:
+                type: string
+              type:
+                type: string
+            type: object
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         extmsg.adapters.list:
           description: List messaging adapters
         extmsg.adapters.register:
@@ -429,39 +1206,444 @@ components:
         mail.archive:
           description: Archive a mail message
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              rig:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              body:
+                type: string
+              cc:
+                items:
+                  type: string
+                type: array
+              created_at:
+                properties:
+                type: object
+              from:
+                type: string
+              id:
+                type: string
+              priority:
+                type: integer
+              read:
+                type: boolean
+              reply_to:
+                type: string
+              rig:
+                type: string
+              subject:
+                type: string
+              thread_id:
+                type: string
+              to:
+                type: string
+            required:
+              - body
+              - created_at
+              - from
+              - id
+              - read
+              - subject
+              - to
+            type: object
         mail.count:
           description: Count mail messages
+          x-request-schema:
+            properties:
+              agent:
+                type: string
+              rig:
+                type: string
+            type: object
         mail.delete:
           description: Delete a mail message
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              rig:
+                type: string
+            required:
+              - id
+            type: object
         mail.get:
           description: Get a mail message
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              rig:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              body:
+                type: string
+              cc:
+                items:
+                  type: string
+                type: array
+              created_at:
+                properties:
+                type: object
+              from:
+                type: string
+              id:
+                type: string
+              priority:
+                type: integer
+              read:
+                type: boolean
+              reply_to:
+                type: string
+              rig:
+                type: string
+              subject:
+                type: string
+              thread_id:
+                type: string
+              to:
+                type: string
+            required:
+              - body
+              - created_at
+              - from
+              - id
+              - read
+              - subject
+              - to
+            type: object
         mail.list:
           description: List mail messages
+          x-request-schema:
+            properties:
+              agent:
+                type: string
+              cursor:
+                type: string
+              limit:
+                type: integer
+              rig:
+                type: string
+              status:
+                type: string
+            type: object
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         mail.mark_unread:
           description: Mark mail as unread
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              rig:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              body:
+                type: string
+              cc:
+                items:
+                  type: string
+                type: array
+              created_at:
+                properties:
+                type: object
+              from:
+                type: string
+              id:
+                type: string
+              priority:
+                type: integer
+              read:
+                type: boolean
+              reply_to:
+                type: string
+              rig:
+                type: string
+              subject:
+                type: string
+              thread_id:
+                type: string
+              to:
+                type: string
+            required:
+              - body
+              - created_at
+              - from
+              - id
+              - read
+              - subject
+              - to
+            type: object
         mail.read:
           description: Mark mail as read
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              rig:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              body:
+                type: string
+              cc:
+                items:
+                  type: string
+                type: array
+              created_at:
+                properties:
+                type: object
+              from:
+                type: string
+              id:
+                type: string
+              priority:
+                type: integer
+              read:
+                type: boolean
+              reply_to:
+                type: string
+              rig:
+                type: string
+              subject:
+                type: string
+              thread_id:
+                type: string
+              to:
+                type: string
+            required:
+              - body
+              - created_at
+              - from
+              - id
+              - read
+              - subject
+              - to
+            type: object
         mail.reply:
           description: Reply to a mail message
           x-mutation: true
+          x-request-schema:
+            properties:
+              body:
+                type: string
+              from:
+                type: string
+              subject:
+                type: string
+            required:
+              - body
+              - from
+              - subject
+            type: object
         mail.send:
           description: Send a new mail message
           x-mutation: true
+          x-request-schema:
+            properties:
+              body:
+                type: string
+              from:
+                type: string
+              rig:
+                type: string
+              subject:
+                type: string
+              to:
+                type: string
+            required:
+              - body
+              - from
+              - rig
+              - subject
+              - to
+            type: object
+          x-response-schema:
+            properties:
+              body:
+                type: string
+              cc:
+                items:
+                  type: string
+                type: array
+              created_at:
+                properties:
+                type: object
+              from:
+                type: string
+              id:
+                type: string
+              priority:
+                type: integer
+              read:
+                type: boolean
+              reply_to:
+                type: string
+              rig:
+                type: string
+              subject:
+                type: string
+              thread_id:
+                type: string
+              to:
+                type: string
+            required:
+              - body
+              - created_at
+              - from
+              - id
+              - read
+              - subject
+              - to
+            type: object
         mail.thread:
           description: Get a mail thread
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              rig:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         order.disable:
           description: Disable an order
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         order.enable:
           description: Enable an order
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         order.get:
           description: Get order details
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         order.history.detail:
           description: Get order history detail
+          x-request-schema:
+            properties:
+              id:
+                type: string
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              assignee:
+                type: string
+              created_at:
+                properties:
+                type: object
+              dependencies:
+                items:
+                  properties:
+                    depends_on_id:
+                      type: string
+                    issue_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                    - depends_on_id
+                    - issue_id
+                    - type
+                  type: object
+                type: array
+              description:
+                type: string
+              from:
+                type: string
+              id:
+                type: string
+              issue_type:
+                type: string
+              labels:
+                items:
+                  type: string
+                type: array
+              metadata:
+                additionalProperties:
+                  type: string
+                type: object
+              needs:
+                items:
+                  type: string
+                type: array
+              parent:
+                type: string
+              priority:
+                type: integer
+              ref:
+                type: string
+              status:
+                type: string
+              title:
+                type: string
+            required:
+              - created_at
+              - id
+              - issue_type
+              - status
+              - title
+            type: object
         orders.check:
           description: Check order gate conditions
         orders.feed:
@@ -508,42 +1690,185 @@ components:
         provider.delete:
           description: Delete a provider
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         provider.get:
           description: Get provider details
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         provider.update:
           description: Update provider config
           x-mutation: true
         providers.list:
           description: List AI providers
+          x-request-schema:
+            properties:
+              view:
+                type: string
+            type: object
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         rig.create:
           description: Create a rig
           x-mutation: true
         rig.delete:
           description: Delete a rig
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         rig.get:
           description: Get rig details
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         rig.restart:
           description: Restart a rig
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         rig.resume:
           description: Resume a suspended rig
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         rig.suspend:
           description: Suspend a rig
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         rig.update:
           description: Update rig config
           x-mutation: true
         rigs.list:
           description: List rigs
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         service.get:
           description: Get service status
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
+          x-response-schema:
+            properties:
+              allow_websockets:
+                type: boolean
+              hostname:
+                type: string
+              kind:
+                type: string
+              local_state:
+                type: string
+              mount_path:
+                type: string
+              publication_state:
+                type: string
+              publish_mode:
+                type: string
+              reason:
+                type: string
+              service_name:
+                type: string
+              state:
+                type: string
+              state_root:
+                type: string
+              updated_at:
+                properties:
+                type: object
+              url:
+                type: string
+              visibility:
+                type: string
+              workflow_contract:
+                type: string
+            required:
+              - local_state
+              - mount_path
+              - publication_state
+              - publish_mode
+              - service_name
+              - state_root
+              - updated_at
+            type: object
         service.restart:
           description: Restart a service
           x-mutation: true
+          x-request-schema:
+            properties:
+              name:
+                type: string
+            required:
+              - name
+            type: object
         services.list:
           description: List workspace services
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         session.agent.get:
           description: Get session agent details
         session.agents.list:
@@ -551,14 +1876,141 @@ components:
         session.close:
           description: Close a session
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              peek:
+                type: boolean
+            required:
+              - id
+            type: object
         session.create:
           description: Create a new session
           x-mutation: true
+          x-request-schema:
+            properties:
+              alias:
+                type: string
+              async:
+                type: boolean
+              kind:
+                type: string
+              message:
+                type: string
+              name:
+                type: string
+              options:
+                additionalProperties:
+                  type: string
+                type: object
+              project_id:
+                type: string
+              session_name:
+                type: string
+              title:
+                type: string
+            type: object
         session.get:
           description: Get session details
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              peek:
+                type: boolean
+            required:
+              - id
+            type: object
+          x-response-schema:
+            properties:
+              active_bead:
+                type: string
+              activity:
+                type: string
+              alias:
+                type: string
+              attached:
+                type: boolean
+              configured_named_session:
+                type: boolean
+              context_pct:
+                type: integer
+              context_window:
+                type: integer
+              created_at:
+                type: string
+              display_name:
+                type: string
+              id:
+                type: string
+              kind:
+                type: string
+              last_active:
+                type: string
+              last_output:
+                type: string
+              metadata:
+                additionalProperties:
+                  type: string
+                type: object
+              model:
+                type: string
+              options:
+                additionalProperties:
+                  type: string
+                type: object
+              pool:
+                type: string
+              provider:
+                type: string
+              reason:
+                type: string
+              rig:
+                type: string
+              running:
+                type: boolean
+              session_name:
+                type: string
+              state:
+                type: string
+              submission_capabilities:
+                properties:
+                  supports_follow_up:
+                    type: boolean
+                  supports_interrupt_now:
+                    type: boolean
+                required:
+                  - supports_follow_up
+                  - supports_interrupt_now
+                type: object
+              template:
+                type: string
+              title:
+                type: string
+            required:
+              - attached
+              - created_at
+              - id
+              - provider
+              - running
+              - session_name
+              - state
+              - template
+              - title
+            type: object
         session.kill:
           description: Force-kill a session
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              peek:
+                type: boolean
+            required:
+              - id
+            type: object
         session.messages:
           description: Get session messages
         session.patch:
@@ -566,31 +2018,177 @@ components:
           x-mutation: true
         session.pending:
           description: Get pending input requests
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              peek:
+                type: boolean
+            required:
+              - id
+            type: object
         session.rename:
           description: Rename a session
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+            required:
+              - id
+              - title
+            type: object
         session.respond:
           description: Respond to a session prompt
           x-mutation: true
+          x-request-schema:
+            properties:
+              action:
+                type: string
+              id:
+                type: string
+              metadata:
+                additionalProperties:
+                  type: string
+                type: object
+              request_id:
+                type: string
+              text:
+                type: string
+            required:
+              - action
+              - id
+            type: object
         session.stop:
           description: Stop a session
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              peek:
+                type: boolean
+            required:
+              - id
+            type: object
         session.submit:
           description: Submit work to a session
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              intent:
+                type: string
+              message:
+                type: string
+            required:
+              - id
+              - message
+            type: object
         session.suspend:
           description: Suspend a session
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              peek:
+                type: boolean
+            required:
+              - id
+            type: object
         session.transcript:
           description: Get session transcript
+          x-request-schema:
+            properties:
+              before:
+                type: string
+              format:
+                type: string
+              id:
+                type: string
+              turns:
+                type: integer
+            required:
+              - id
+            type: object
         session.wake:
           description: Wake a suspended session
           x-mutation: true
+          x-request-schema:
+            properties:
+              id:
+                type: string
+              peek:
+                type: boolean
+            required:
+              - id
+            type: object
         sessions.list:
           description: List sessions
+          x-request-schema:
+            properties:
+              cursor:
+                type: string
+              limit:
+                type: integer
+              peek:
+                type: boolean
+              state:
+                type: string
+              template:
+                type: string
+            type: object
+          x-response-schema:
+            properties:
+              items:
+              next_cursor:
+                type: string
+              total:
+                type: integer
+            required:
+              - items
+              - total
+            type: object
         sling.run:
           description: Run sling dispatch
           x-mutation: true
+          x-request-schema:
+            properties:
+              attached_bead_id:
+                type: string
+              bead:
+                type: string
+              formula:
+                type: string
+              rig:
+                type: string
+              scope_kind:
+                type: string
+              scope_ref:
+                type: string
+              target:
+                type: string
+              title:
+                type: string
+              vars:
+                additionalProperties:
+                  type: string
+                type: object
+            required:
+              - attached_bead_id
+              - bead
+              - formula
+              - rig
+              - scope_kind
+              - scope_ref
+              - target
+              - title
+              - vars
+            type: object
         status.get:
           description: City status snapshot
         subscription.start:

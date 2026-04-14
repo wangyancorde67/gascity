@@ -19,11 +19,12 @@ import (
 	"path/filepath"
 	"runtime"
 
+	gcapi "github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/api/specgen"
 )
 
 func main() {
-	registry := specgen.BuildRegistry()
+	registry := gcapi.BuildActionRegistry()
 
 	root := repoRoot()
 	asyncAPIPath := filepath.Join(root, "contracts", "supervisor-ws", "asyncapi.yaml")
