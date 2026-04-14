@@ -16,6 +16,13 @@ servers:
     protocol: ws
 defaultContentType: application/json
 channels:
+  /v0/ws:
+    publish:
+      message:
+        $ref: '#/components/messages/SpecgenWireRequestEnvelope'
+    subscribe:
+      message:
+        $ref: '#/components/messages/SpecgenWireResponseEnvelope'
   actions/agent.create/request:
     publish:
       message:
@@ -1324,6 +1331,26 @@ channels:
         description: workflow.delete response payload
   actions/workflow.get/request:
     description: Get workflow snapshot
+  protocol/error:
+    subscribe:
+      message:
+        $ref: '#/components/messages/SpecgenWireErrorEnvelope'
+  protocol/event:
+    subscribe:
+      message:
+        $ref: '#/components/messages/SpecgenWireEventEnvelope'
+  protocol/hello:
+    subscribe:
+      message:
+        $ref: '#/components/messages/SpecgenWireHelloEnvelope'
+  protocol/subscription-start:
+    publish:
+      message:
+        $ref: '#/components/messages/SpecgenWireSubscriptionStartPayload'
+  protocol/subscription-stop:
+    publish:
+      message:
+        $ref: '#/components/messages/SpecgenWireSubscriptionStopPayload'
 components:
   schemas:
     ApiAgentCreateRequest:
@@ -2252,6 +2279,178 @@ components:
         supports_interrupt_now:
           type: boolean
       type: object
+    SpecgenWireErrorEnvelope:
+      properties:
+        code:
+          description: Machine-readable error code
+          type: string
+        details:
+          description: Per-field validation errors
+          items:
+            $ref: '#/components/schemas/SpecgenWireFieldError'
+          type: array
+        id:
+          description: Correlation ID (empty for connection-level errors)
+          type: string
+        message:
+          description: Human-readable error message
+          type: string
+        type:
+          description: Must be 'error'
+          enum:
+          - error
+          type: string
+      type: object
+    SpecgenWireEventEnvelope:
+      properties:
+        cursor:
+          description: Resume cursor for reconnection
+          type: string
+        event_type:
+          description: Event type (e.g. 'bead.created')
+          type: string
+        index:
+          description: Event sequence number
+          minimum: 0
+          type: integer
+        payload:
+          description: Event-specific payload
+        subscription_id:
+          description: Subscription that produced this event
+          type: string
+        type:
+          description: Must be 'event'
+          enum:
+          - event
+          type: string
+      type: object
+    SpecgenWireFieldError:
+      properties:
+        field:
+          description: Field path (e.g. 'payload.name')
+          type: string
+        message:
+          description: What's wrong with this field
+          type: string
+      type: object
+    SpecgenWireHelloEnvelope:
+      properties:
+        capabilities:
+          description: Sorted list of supported action names
+          items:
+            type: string
+          type:
+          - array
+          - "null"
+        protocol:
+          description: Protocol version (e.g. 'gc.v1alpha1')
+          type: string
+        read_only:
+          description: True if mutations are disabled
+          type: boolean
+        server_role:
+          description: '''city'' or ''supervisor'''
+          enum:
+          - city
+          - supervisor
+          type: string
+        subscription_kinds:
+          description: Supported subscription types (e.g. 'events', 'session.stream')
+          items:
+            type: string
+          type: array
+        type:
+          description: Must be 'hello'
+          enum:
+          - hello
+          type: string
+      type: object
+    SpecgenWireRequestEnvelope:
+      properties:
+        action:
+          description: Dotted action name (e.g. 'beads.list')
+          type: string
+        id:
+          description: Client-assigned correlation ID
+          type: string
+        idempotency_key:
+          description: Deduplication key for mutation replay
+          type: string
+        payload:
+          description: Action-specific request payload
+        scope:
+          $ref: '#/components/schemas/SpecgenWireScope'
+          description: City targeting for supervisor connections
+        type:
+          description: Must be 'request'
+          enum:
+          - request
+          type: string
+        watch:
+          $ref: '#/components/schemas/SpecgenWireWatch'
+          description: Blocking query parameters
+      type: object
+    SpecgenWireResponseEnvelope:
+      properties:
+        id:
+          description: Correlation ID matching the request
+          type: string
+        index:
+          description: Server event index for watch semantics
+          minimum: 0
+          type: integer
+        result:
+          description: Action-specific response payload
+        type:
+          description: Must be 'response'
+          enum:
+          - response
+          type: string
+      type: object
+    SpecgenWireScope:
+      properties:
+        city:
+          description: City name for supervisor-scoped requests
+          type: string
+      type: object
+    SpecgenWireSubscriptionStartPayload:
+      properties:
+        after_cursor:
+          description: Resume from this cursor
+          type: string
+        after_seq:
+          description: Resume from this event sequence
+          minimum: 0
+          type: integer
+        format:
+          description: 'Stream format: ''text'', ''raw'', ''jsonl'''
+          type: string
+        kind:
+          description: 'Subscription type: ''events'' or ''session.stream'''
+          type: string
+        target:
+          description: Session ID or name (for session.stream)
+          type: string
+        turns:
+          description: Most recent N turns (0=all)
+          type: integer
+      type: object
+    SpecgenWireSubscriptionStopPayload:
+      properties:
+        subscription_id:
+          description: Subscription to stop
+          type: string
+      type: object
+    SpecgenWireWatch:
+      properties:
+        index:
+          description: Block until server index exceeds this value
+          minimum: 0
+          type: integer
+        wait:
+          description: Maximum wait duration (e.g. '30s')
+          type: string
+      type: object
   messages:
     ApiAgentCreateRequest:
       payload:
@@ -2583,3 +2782,38 @@ components:
         $ref: '#/components/schemas/MailMessage'
       summary: Send a mail message
       description: mail.send response payload
+    SpecgenWireErrorEnvelope:
+      payload:
+        $ref: '#/components/schemas/SpecgenWireErrorEnvelope'
+      summary: Error Envelope
+      description: Sent by the server when a request fails
+    SpecgenWireEventEnvelope:
+      payload:
+        $ref: '#/components/schemas/SpecgenWireEventEnvelope'
+      summary: Event Envelope
+      description: Sent by the server for subscription events
+    SpecgenWireHelloEnvelope:
+      payload:
+        $ref: '#/components/schemas/SpecgenWireHelloEnvelope'
+      summary: Hello Envelope
+      description: Sent by the server immediately after WebSocket upgrade
+    SpecgenWireRequestEnvelope:
+      payload:
+        $ref: '#/components/schemas/SpecgenWireRequestEnvelope'
+      summary: Request Envelope
+      description: Client-to-server request envelope
+    SpecgenWireResponseEnvelope:
+      payload:
+        $ref: '#/components/schemas/SpecgenWireResponseEnvelope'
+      summary: Server Envelope
+      description: Server-to-client message (response, error, event, or hello)
+    SpecgenWireSubscriptionStartPayload:
+      payload:
+        $ref: '#/components/schemas/SpecgenWireSubscriptionStartPayload'
+      summary: Subscription Start Request
+      description: Start an event or session stream subscription
+    SpecgenWireSubscriptionStopPayload:
+      payload:
+        $ref: '#/components/schemas/SpecgenWireSubscriptionStopPayload'
+      summary: Subscription Stop Request
+      description: Stop a subscription by ID

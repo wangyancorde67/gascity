@@ -35,6 +35,80 @@ func GenerateAsyncAPI(r *Registry) ([]byte, error) {
 	ref := asyncapi.Reflector{}
 	ref.Schema = &api
 
+	// Register the main /v0/ws channel with wire protocol envelope types.
+	// These are the actual message shapes that go over the wire — the
+	// complete contract for any client implementing the protocol.
+	ref.AddChannel(asyncapi.ChannelInfo{
+		Name: "/v0/ws",
+		Publish: &asyncapi.MessageSample{
+			MessageEntity: asyncapispec.MessageEntity{
+				Description: "Client-to-server request envelope",
+				Summary:     "Request Envelope",
+			},
+			MessageSample: new(WireRequestEnvelope),
+		},
+		Subscribe: &asyncapi.MessageSample{
+			MessageEntity: asyncapispec.MessageEntity{
+				Description: "Server-to-client message (response, error, event, or hello)",
+				Summary:     "Server Envelope",
+			},
+			MessageSample: new(WireResponseEnvelope),
+		},
+	})
+
+	// Register each envelope type as a separate channel so the reflector
+	// generates full JSON Schema components for all of them.
+	ref.AddChannel(asyncapi.ChannelInfo{
+		Name: "protocol/hello",
+		Subscribe: &asyncapi.MessageSample{
+			MessageEntity: asyncapispec.MessageEntity{
+				Description: "Sent by the server immediately after WebSocket upgrade",
+				Summary:     "Hello Envelope",
+			},
+			MessageSample: new(WireHelloEnvelope),
+		},
+	})
+	ref.AddChannel(asyncapi.ChannelInfo{
+		Name: "protocol/error",
+		Subscribe: &asyncapi.MessageSample{
+			MessageEntity: asyncapispec.MessageEntity{
+				Description: "Sent by the server when a request fails",
+				Summary:     "Error Envelope",
+			},
+			MessageSample: new(WireErrorEnvelope),
+		},
+	})
+	ref.AddChannel(asyncapi.ChannelInfo{
+		Name: "protocol/event",
+		Subscribe: &asyncapi.MessageSample{
+			MessageEntity: asyncapispec.MessageEntity{
+				Description: "Sent by the server for subscription events",
+				Summary:     "Event Envelope",
+			},
+			MessageSample: new(WireEventEnvelope),
+		},
+	})
+	ref.AddChannel(asyncapi.ChannelInfo{
+		Name: "protocol/subscription-start",
+		Publish: &asyncapi.MessageSample{
+			MessageEntity: asyncapispec.MessageEntity{
+				Description: "Start an event or session stream subscription",
+				Summary:     "Subscription Start Request",
+			},
+			MessageSample: new(WireSubscriptionStartPayload),
+		},
+	})
+	ref.AddChannel(asyncapi.ChannelInfo{
+		Name: "protocol/subscription-stop",
+		Publish: &asyncapi.MessageSample{
+			MessageEntity: asyncapispec.MessageEntity{
+				Description: "Stop a subscription by ID",
+				Summary:     "Subscription Stop Request",
+			},
+			MessageSample: new(WireSubscriptionStopPayload),
+		},
+	})
+
 	// Register per-action channels. Each action gets at least a request
 	// channel (even with no typed payload) so it appears in the spec.
 	// Actions with typed payloads get full JSON Schema via the reflector.
