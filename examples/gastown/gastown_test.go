@@ -78,7 +78,7 @@ func TestPromptFilesExist(t *testing.T) {
 		if a.PromptTemplate == "" || a.Implicit {
 			continue
 		}
-		path := filepath.Join(dir, a.PromptTemplate)
+		path := resolveExamplePath(dir, a.PromptTemplate)
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("agent %q: prompt_template %q: %v", a.Name, a.PromptTemplate, err)
 		}
@@ -92,7 +92,7 @@ func TestOverlayDirsExist(t *testing.T) {
 		if a.OverlayDir == "" {
 			continue
 		}
-		path := filepath.Join(dir, a.OverlayDir)
+		path := resolveExamplePath(dir, a.OverlayDir)
 		if info, err := os.Stat(path); err != nil {
 			t.Errorf("agent %q: overlay_dir %q: %v", a.Name, a.OverlayDir, err)
 		} else if !info.IsDir() {
@@ -103,7 +103,7 @@ func TestOverlayDirsExist(t *testing.T) {
 
 func TestRefineryPromptSeedsTargetBranchVar(t *testing.T) {
 	dir := exampleDir()
-	path := filepath.Join(dir, "packs", "gastown", "prompts", "refinery.md.tmpl")
+	path := filepath.Join(dir, "packs", "gastown", "agents", "refinery", "prompt.template.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading refinery prompt: %v", err)
@@ -472,7 +472,7 @@ func TestWorktreeSetupSyncSkipsMissingOrigin(t *testing.T) {
 func TestPromptGuidanceUsesConfiguredRigRootsAndNamespacedWorktrees(t *testing.T) {
 	dir := exampleDir()
 
-	mayorPrompt, err := os.ReadFile(filepath.Join(dir, "packs", "gastown", "prompts", "mayor.md.tmpl"))
+	mayorPrompt, err := os.ReadFile(filepath.Join(dir, "packs", "gastown", "agents", "mayor", "prompt.template.md"))
 	if err != nil {
 		t.Fatalf("reading mayor prompt: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestPromptGuidanceUsesConfiguredRigRootsAndNamespacedWorktrees(t *testing.T
 		t.Fatalf("mayor prompt missing rig-status guidance:\n%s", mayorPrompt)
 	}
 
-	crewPrompt, err := os.ReadFile(filepath.Join(dir, "packs", "gastown", "prompts", "crew.md.tmpl"))
+	crewPrompt, err := os.ReadFile(filepath.Join(dir, "packs", "gastown", "assets", "prompts", "crew.template.md"))
 	if err != nil {
 		t.Fatalf("reading crew prompt: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestPromptGuidanceUsesConfiguredRigRootsAndNamespacedWorktrees(t *testing.T
 		t.Fatalf("crew prompt missing namespaced worktree path:\n%s", crewPrompt)
 	}
 
-	polecatPrompt, err := os.ReadFile(filepath.Join(dir, "packs", "gastown", "prompts", "polecat.md.tmpl"))
+	polecatPrompt, err := os.ReadFile(filepath.Join(dir, "packs", "gastown", "agents", "polecat", "prompt.template.md"))
 	if err != nil {
 		t.Fatalf("reading polecat prompt: %v", err)
 	}
@@ -567,33 +567,23 @@ func TestAllFormulasExist(t *testing.T) {
 }
 
 func TestAllPromptTemplatesExist(t *testing.T) {
-	dir := exampleDir()
-	promptDir := filepath.Join(dir, "packs", "gastown", "prompts")
-
-	entries, err := os.ReadDir(promptDir)
-	if err != nil {
-		t.Fatalf("reading prompts dir: %v", err)
-	}
-
 	var count int
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md.tmpl") {
+	for _, a := range discoverPackAgents(t, filepath.Join("packs", "gastown")) {
+		if a.PromptTemplate == "" {
 			continue
 		}
 		count++
-		t.Run(e.Name(), func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join(promptDir, e.Name()))
-			if err != nil {
-				t.Fatalf("reading %s: %v", e.Name(), err)
-			}
-			if len(data) == 0 {
-				t.Errorf("%s is empty", e.Name())
-			}
-		})
+		data, err := os.ReadFile(a.PromptTemplate)
+		if err != nil {
+			t.Fatalf("reading %s prompt: %v", a.Name, err)
+		}
+		if len(data) == 0 {
+			t.Errorf("%s prompt is empty", a.Name)
+		}
 	}
 
-	if count != 7 {
-		t.Errorf("found %d prompt template files, want 7", count)
+	if count != 6 {
+		t.Errorf("found %d prompt templates, want 6", count)
 	}
 }
 
@@ -707,8 +697,25 @@ func TestDaemonConfig(t *testing.T) {
 
 // packFileConfig mirrors the pack.toml structure for test parsing.
 type packFileConfig struct {
-	Pack   config.PackMeta `toml:"pack"`
-	Agents []config.Agent  `toml:"agent"`
+	Pack    config.PackMeta          `toml:"pack"`
+	Imports map[string]config.Import `toml:"imports"`
+}
+
+func discoverPackAgents(t *testing.T, rel string) []config.Agent {
+	t.Helper()
+	packDir := filepath.Join(exampleDir(), rel)
+	agents, err := config.DiscoverPackAgents(fsys.OSFS{}, packDir, filepath.Base(rel), nil)
+	if err != nil {
+		t.Fatalf("DiscoverPackAgents(%s): %v", rel, err)
+	}
+	return agents
+}
+
+func resolveExamplePath(base, candidate string) string {
+	if filepath.IsAbs(candidate) {
+		return candidate
+	}
+	return filepath.Join(base, candidate)
 }
 
 func TestCombinedPackParses(t *testing.T) {
@@ -728,17 +735,21 @@ func TestCombinedPackParses(t *testing.T) {
 	if tc.Pack.Name != "gastown" {
 		t.Errorf("[pack] name = %q, want %q", tc.Pack.Name, "gastown")
 	}
-	if tc.Pack.Schema != 1 {
-		t.Errorf("[pack] schema = %d, want 1", tc.Pack.Schema)
+	if tc.Pack.Schema != 2 {
+		t.Errorf("[pack] schema = %d, want 2", tc.Pack.Schema)
+	}
+	if len(tc.Pack.Includes) != 1 || tc.Pack.Includes[0] != "../maintenance" {
+		t.Fatalf("pack includes = %v, want [../maintenance]", tc.Pack.Includes)
 	}
 
-	// Expect 7 agents: gastown's own 6 + themed dog (overrides maintenance fallback).
+	// Expect 6 locally-discovered agents. Dog comes from the maintenance import
+	// and is themed via a pack patch, not a local agent file.
+	agents := discoverPackAgents(t, filepath.Join("packs", "gastown"))
 	want := map[string]bool{
 		"mayor": false, "deacon": false, "boot": false,
 		"witness": false, "refinery": false, "polecat": false,
-		"dog": false,
 	}
-	for _, a := range tc.Agents {
+	for _, a := range agents {
 		if _, ok := want[a.Name]; ok {
 			want[a.Name] = true
 		} else {
@@ -750,13 +761,13 @@ func TestCombinedPackParses(t *testing.T) {
 			t.Errorf("missing pack agent %q", name)
 		}
 	}
-	if len(tc.Agents) != 7 {
-		t.Errorf("pack has %d agents, want 7", len(tc.Agents))
+	if len(agents) != 6 {
+		t.Errorf("pack has %d locally-discovered agents, want 6", len(agents))
 	}
 
 	// Verify city-scoped agents have scope = "city".
-	wantCity := map[string]bool{"mayor": true, "deacon": true, "boot": true, "dog": true}
-	for _, a := range tc.Agents {
+	wantCity := map[string]bool{"mayor": true, "deacon": true, "boot": true}
+	for _, a := range agents {
 		if wantCity[a.Name] && a.Scope != "city" {
 			t.Errorf("agent %q: scope = %q, want %q", a.Name, a.Scope, "city")
 		}
@@ -764,19 +775,7 @@ func TestCombinedPackParses(t *testing.T) {
 }
 
 func TestPackUsesIsolatedWorkDirs(t *testing.T) {
-	dir := exampleDir()
-	topoPath := filepath.Join(dir, "packs", "gastown", "pack.toml")
-
-	data, err := os.ReadFile(topoPath)
-	if err != nil {
-		t.Fatalf("reading pack.toml: %v", err)
-	}
-
-	var tc packFileConfig
-	if _, err := toml.Decode(string(data), &tc); err != nil {
-		t.Fatalf("parsing pack.toml: %v", err)
-	}
-
+	agents := discoverPackAgents(t, filepath.Join("packs", "gastown"))
 	want := map[string]string{
 		"mayor":    ".gc/agents/mayor",
 		"deacon":   ".gc/agents/deacon",
@@ -784,9 +783,8 @@ func TestPackUsesIsolatedWorkDirs(t *testing.T) {
 		"witness":  ".gc/agents/{{.Rig}}/witness",
 		"refinery": ".gc/worktrees/{{.Rig}}/refinery",
 		"polecat":  ".gc/worktrees/{{.Rig}}/polecats/{{.AgentBase}}",
-		"dog":      ".gc/agents/dogs/{{.AgentBase}}",
 	}
-	for _, a := range tc.Agents {
+	for _, a := range agents {
 		if expected, ok := want[a.Name]; ok && a.WorkDir != expected {
 			t.Errorf("agent %q: work_dir = %q, want %q", a.Name, a.WorkDir, expected)
 		}
@@ -794,29 +792,12 @@ func TestPackUsesIsolatedWorkDirs(t *testing.T) {
 }
 
 func TestPackPromptFilesExist(t *testing.T) {
-	dir := exampleDir()
-	topoDir := filepath.Join(dir, "packs", "gastown")
-	topoPath := filepath.Join(topoDir, "pack.toml")
-
-	data, err := os.ReadFile(topoPath)
-	if err != nil {
-		t.Fatalf("reading pack.toml: %v", err)
-	}
-
-	var tc packFileConfig
-	if _, err := toml.Decode(string(data), &tc); err != nil {
-		t.Fatalf("parsing pack.toml: %v", err)
-	}
-
-	for _, a := range tc.Agents {
+	for _, a := range discoverPackAgents(t, filepath.Join("packs", "gastown")) {
 		if a.PromptTemplate == "" {
 			continue
 		}
-		// Paths in pack are relative to pack dir.
-		path := filepath.Join(topoDir, a.PromptTemplate)
-		if _, err := os.Stat(path); err != nil {
-			t.Errorf("agent %q: prompt_template %q resolves to %q: %v",
-				a.Name, a.PromptTemplate, path, err)
+		if _, err := os.Stat(a.PromptTemplate); err != nil {
+			t.Errorf("agent %q: prompt_template %q: %v", a.Name, a.PromptTemplate, err)
 		}
 	}
 }
@@ -859,17 +840,14 @@ func TestExpandedCityUsesGastownDogOverride(t *testing.T) {
 	if dog == nil {
 		t.Fatal("expected explicit dog agent in expanded gastown config")
 	}
-	if dog.Fallback {
-		t.Fatal("expanded dog should be the gastown override, not the fallback definition")
-	}
 	if dog.WorkDir != ".gc/agents/dogs/{{.AgentBase}}" {
 		t.Errorf("dog work_dir = %q, want gastown themed work dir", dog.WorkDir)
 	}
-	if dog.PromptTemplate != filepath.Join("packs", "maintenance", "prompts", "dog.md.tmpl") {
-		t.Errorf("dog prompt_template = %q, want maintenance shared dog prompt", dog.PromptTemplate)
+	if dog.PromptTemplate != filepath.Join("packs", "maintenance", "agents", "dog", "prompt.template.md") {
+		t.Errorf("dog prompt_template = %q, want gastown dog prompt", dog.PromptTemplate)
 	}
-	if dog.OverlayDir != filepath.Join("packs", "maintenance", "overlays", "default") {
-		t.Errorf("dog overlay_dir = %q, want maintenance shared dog overlay", dog.OverlayDir)
+	if dog.OverlayDir != filepath.Join("packs", "maintenance", "agents", "dog", "overlay") {
+		t.Errorf("dog overlay_dir = %q, want gastown dog overlay", dog.OverlayDir)
 	}
 	if len(dog.SessionLive) != 2 {
 		t.Fatalf("dog session_live has %d entries, want 2 gastown theming commands", len(dog.SessionLive))
@@ -899,33 +877,31 @@ func TestMaintenancePackParses(t *testing.T) {
 	if tc.Pack.Name != "maintenance" {
 		t.Errorf("[pack] name = %q, want %q", tc.Pack.Name, "maintenance")
 	}
-	if tc.Pack.Schema != 1 {
-		t.Errorf("[pack] schema = %d, want 1", tc.Pack.Schema)
+	if tc.Pack.Schema != 2 {
+		t.Errorf("[pack] schema = %d, want 2", tc.Pack.Schema)
 	}
 
+	agents := discoverPackAgents(t, filepath.Join("packs", "maintenance"))
 	// Maintenance has 1 agent: dog.
-	if len(tc.Agents) != 1 {
-		t.Errorf("pack has %d agents, want 1", len(tc.Agents))
+	if len(agents) != 1 {
+		t.Errorf("pack has %d agents, want 1", len(agents))
 	}
-	if len(tc.Agents) > 0 && tc.Agents[0].Name != "dog" {
-		t.Errorf("agent name = %q, want %q", tc.Agents[0].Name, "dog")
+	if len(agents) > 0 && agents[0].Name != "dog" {
+		t.Errorf("agent name = %q, want %q", agents[0].Name, "dog")
 	}
 
 	// Verify dog agent has scope = "city".
-	if len(tc.Agents) > 0 && tc.Agents[0].Scope != "city" {
-		t.Errorf("dog scope = %q, want %q", tc.Agents[0].Scope, "city")
+	if len(agents) > 0 && agents[0].Scope != "city" {
+		t.Errorf("dog scope = %q, want %q", agents[0].Scope, "city")
 	}
 
 	// Verify prompt file exists.
-	for _, a := range tc.Agents {
+	for _, a := range agents {
 		if a.PromptTemplate == "" {
 			continue
 		}
-		topoDir := filepath.Join(dir, "packs", "maintenance")
-		path := filepath.Join(topoDir, a.PromptTemplate)
-		if _, err := os.Stat(path); err != nil {
-			t.Errorf("agent %q: prompt_template %q resolves to %q: %v",
-				a.Name, a.PromptTemplate, path, err)
+		if _, err := os.Stat(a.PromptTemplate); err != nil {
+			t.Errorf("agent %q: prompt_template %q: %v", a.Name, a.PromptTemplate, err)
 		}
 	}
 }
