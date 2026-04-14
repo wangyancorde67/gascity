@@ -34,27 +34,27 @@ func init() {
 		RequiresCityScope: true,
 		SupportsWatch:     true,
 	}, func(_ context.Context, s *Server, payload socketFormulaScopePayload) (any, error) {
-		return s.listFormulas(payload.ScopeKind, payload.ScopeRef)
+		return s.Formulas.List(payload.ScopeKind, payload.ScopeRef)
 	})
 
 	RegisterAction("formulas.feed", ActionDef{
 		Description:       "Get formula activity feed",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketFormulaFeedPayload) (any, error) {
-		return s.getFormulaFeed(payload.ScopeKind, payload.ScopeRef, payload.Limit)
+		return s.Formulas.Feed(payload.ScopeKind, payload.ScopeRef, payload.Limit)
 	})
 
 	RegisterAction("formula.get", ActionDef{
 		Description:       "Get formula details",
 		RequiresCityScope: true,
 	}, func(ctx context.Context, s *Server, payload socketFormulaGetPayload) (any, error) {
-		return s.getFormulaDetail(ctx, payload.Name, payload.ScopeKind, payload.ScopeRef, payload.Target, payload.Vars)
+		return s.Formulas.Get(ctx, payload.Name, payload.ScopeKind, payload.ScopeRef, payload.Target, payload.Vars)
 	})
 
 	RegisterAction("formula.runs", ActionDef{
 		Description:       "Get formula run history",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketFormulaRunsPayload) (any, error) {
-		return s.getFormulaRuns(payload.Name, payload.ScopeKind, payload.ScopeRef, payload.Limit)
+		return s.Formulas.Runs(payload.Name, payload.ScopeKind, payload.ScopeRef, payload.Limit)
 	})
 }

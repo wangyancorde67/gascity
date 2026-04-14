@@ -26,7 +26,7 @@ func init() {
 		RequiresCityScope: true,
 		SupportsWatch:     true,
 	}, func(_ context.Context, s *Server, payload socketProvidersListPayload) (listResponse, error) {
-		items := s.listProviders(payload.View == "public")
+		items := s.Providers.List(payload.View == "public")
 		return listResponse{Items: items, Total: len(items)}, nil
 	})
 
@@ -34,7 +34,7 @@ func init() {
 		Description:       "Get provider details",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketNamePayload) (any, error) {
-		provider, err := s.getProvider(payload.Name)
+		provider, err := s.Providers.Get(payload.Name)
 		if err != nil {
 			return nil, err
 		}

@@ -43,7 +43,7 @@ func init() {
 		RequiresCityScope: true,
 		SupportsWatch:     true,
 	}, func(_ context.Context, s *Server, payload socketMailListPayload) (listResponse, error) {
-		items, err := s.listMailMessages(payload.Agent, payload.Status, payload.Rig)
+		items, err := s.Mail.List(payload.Agent, payload.Status, payload.Rig)
 		if err != nil {
 			return listResponse{}, err
 		}
@@ -66,21 +66,21 @@ func init() {
 		Description:       "Get a mail message",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketMailGetPayload) (mail.Message, error) {
-		return s.getMailMessage(payload.ID, payload.Rig)
+		return s.Mail.Get(payload.ID, payload.Rig)
 	})
 
 	RegisterAction("mail.count", ActionDef{
 		Description:       "Count mail messages",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketMailCountPayload) (map[string]int, error) {
-		return s.mailCount(payload.Agent, payload.Rig)
+		return s.Mail.Count(payload.Agent, payload.Rig)
 	})
 
 	RegisterAction("mail.thread", ActionDef{
 		Description:       "Get mail thread",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketMailThreadPayload) (listResponse, error) {
-		result, err := s.listMailThread(payload.ID, payload.Rig)
+		result, err := s.Mail.Thread(payload.ID, payload.Rig)
 		if err != nil {
 			return listResponse{}, err
 		}
@@ -92,7 +92,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketMailGetPayload) (map[string]string, error) {
-		return s.markMailRead(payload.ID, payload.Rig)
+		return s.Mail.Read(payload.ID, payload.Rig)
 	})
 
 	RegisterAction("mail.mark_unread", ActionDef{
@@ -100,7 +100,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketMailGetPayload) (map[string]string, error) {
-		return s.markMailUnread(payload.ID, payload.Rig)
+		return s.Mail.MarkUnread(payload.ID, payload.Rig)
 	})
 
 	RegisterAction("mail.archive", ActionDef{
@@ -108,7 +108,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketMailGetPayload) (map[string]string, error) {
-		return s.archiveMail(payload.ID, payload.Rig)
+		return s.Mail.Archive(payload.ID, payload.Rig)
 	})
 
 	RegisterAction("mail.reply", ActionDef{
@@ -116,7 +116,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketMailReplyPayload) (mail.Message, error) {
-		return s.replyMail(payload.ID, payload.Rig, mailReplyRequest{
+		return s.Mail.Reply(payload.ID, payload.Rig, mailReplyRequest{
 			From:    payload.From,
 			Subject: payload.Subject,
 			Body:    payload.Body,
@@ -128,7 +128,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, p mailSendRequest) (mail.Message, error) {
-		return s.sendMail(p)
+		return s.Mail.Send(p)
 	})
 
 	RegisterAction("mail.delete", ActionDef{
@@ -136,7 +136,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketMailGetPayload) (map[string]string, error) {
-		if err := s.deleteMail(payload.ID, payload.Rig); err != nil {
+		if err := s.Mail.Delete(payload.ID, payload.Rig); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "deleted"}, nil

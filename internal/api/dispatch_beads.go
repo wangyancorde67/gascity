@@ -33,12 +33,12 @@ func init() {
 		RequiresCityScope: true,
 		SupportsWatch:     true,
 	}, func(_ context.Context, s *Server, payload socketBeadsListPayload) (listResponse, error) {
-		items := s.listBeads(beads.ListQuery{
+		items := s.Beads.List(beads.ListQuery{
 			Status:   payload.Status,
 			Type:     payload.Type,
 			Label:    payload.Label,
 			Assignee: payload.Assignee,
-		}, payload.Rig, nil)
+		}, payload.Rig)
 		pp := socketPageParams(payload.Limit, payload.Cursor, 50)
 		if !pp.IsPaging {
 			if pp.Limit < len(items) {
@@ -58,7 +58,7 @@ func init() {
 		RequiresCityScope: true,
 		SupportsWatch:     true,
 	}, func(_ context.Context, s *Server) (listResponse, error) {
-		items, err := s.listReadyBeads()
+		items, err := s.Beads.ListReady()
 		if err != nil {
 			return listResponse{}, err
 		}
@@ -69,14 +69,14 @@ func init() {
 		Description:       "Get bead dependency graph",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketBeadGraphPayload) (beadGraphResponseJSON, error) {
-		return s.getBeadGraph(payload.RootID)
+		return s.Beads.Graph(payload.RootID)
 	})
 
 	RegisterAction("bead.get", ActionDef{
 		Description:       "Get bead details",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketIDPayload) (beads.Bead, error) {
-		bead, err := s.getBead(payload.ID)
+		bead, err := s.Beads.Get(payload.ID)
 		if err != nil {
 			if errors.Is(err, beads.ErrNotFound) {
 				return beads.Bead{}, httpError{status: 404, code: "not_found", message: "bead " + payload.ID + " not found"}
@@ -90,7 +90,7 @@ func init() {
 		Description:       "Get bead dependencies",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketIDPayload) (map[string]any, error) {
-		return s.getBeadDeps(payload.ID)
+		return s.Beads.Deps(payload.ID)
 	})
 
 	RegisterAction("bead.create", ActionDef{
@@ -98,7 +98,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, p beadCreateRequest) (beads.Bead, error) {
-		return s.createBead(p)
+		return s.Beads.Create(p)
 	})
 
 	RegisterAction("bead.close", ActionDef{
@@ -106,7 +106,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketIDPayload) (map[string]string, error) {
-		return s.closeBead(payload.ID)
+		return s.Beads.Close(payload.ID)
 	})
 
 	RegisterAction("bead.update", ActionDef{
@@ -114,12 +114,11 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload json.RawMessage) (map[string]string, error) {
-		// Extract the ID from the raw JSON payload.
 		var idHolder socketIDPayload
 		if err := json.Unmarshal(payload, &idHolder); err != nil {
 			return nil, httpError{status: 400, code: "invalid", message: err.Error()}
 		}
-		return s.updateBead(idHolder.ID, payload)
+		return s.Beads.Update(idHolder.ID, payload)
 	})
 
 	RegisterAction("bead.reopen", ActionDef{
@@ -127,7 +126,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketIDPayload) (map[string]string, error) {
-		return s.reopenBead(payload.ID)
+		return s.Beads.Reopen(payload.ID)
 	})
 
 	RegisterAction("bead.assign", ActionDef{
@@ -135,7 +134,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketBeadAssignPayload) (map[string]string, error) {
-		return s.assignBead(payload.ID, payload.Assignee)
+		return s.Beads.Assign(payload.ID, payload.Assignee)
 	})
 
 	RegisterAction("bead.delete", ActionDef{
@@ -143,7 +142,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketIDPayload) (map[string]string, error) {
-		if err := s.deleteBead(payload.ID); err != nil {
+		if err := s.Beads.Delete(payload.ID); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "deleted"}, nil

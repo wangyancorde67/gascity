@@ -39,6 +39,19 @@ type Server struct {
 
 	// LookPathFunc can be overridden in tests. Defaults to exec.LookPath.
 	LookPathFunc func(string) (string, error)
+
+	// Domain services — extracted from the Server god object.
+	// Each service has a focused interface and is independently testable.
+	Beads     BeadService
+	Mail      MailService
+	Events    EventService
+	Agents    AgentService
+	Rigs      RigService
+	Sessions  SessionService
+	Convoys   ConvoyService
+	Providers ProviderService
+	Formulas  FormulaService
+	Orders    OrderService
 }
 
 type lookPathEntry struct {
@@ -99,6 +112,7 @@ func New(state State) *Server {
 		mux:   http.NewServeMux(),
 		idem:  newIdempotencyCache(30 * time.Minute),
 	}
+	s.wireServices()
 	s.registerRoutes()
 	return s
 }
@@ -112,8 +126,24 @@ func NewReadOnly(state State) *Server {
 		readOnly: true,
 		idem:     newIdempotencyCache(30 * time.Minute),
 	}
+	s.wireServices()
 	s.registerRoutes()
 	return s
+}
+
+// wireServices constructs all domain services. Called from New/NewReadOnly
+// and test helpers that construct Server directly.
+func (s *Server) wireServices() {
+	s.Beads = &beadService{s: s}
+	s.Mail = &mailService{s: s}
+	s.Events = &eventService{s: s}
+	s.Agents = &agentService{s: s}
+	s.Rigs = &rigService{s: s}
+	s.Sessions = &sessionService{s: s}
+	s.Convoys = &convoyService{s: s}
+	s.Providers = &providerService{s: s}
+	s.Formulas = &formulaService{s: s}
+	s.Orders = &orderService{s: s}
 }
 
 // ServeHTTP implements http.Handler for testing with httptest.

@@ -13,7 +13,7 @@ func init() {
 		RequiresCityScope: true,
 		SupportsWatch:     true,
 	}, func(_ context.Context, s *Server) (listResponse, error) {
-		items := s.listConvoys()
+		items := s.Convoys.List()
 		return listResponse{Items: items, Total: len(items)}, nil
 	})
 
@@ -21,7 +21,7 @@ func init() {
 		Description:       "Get convoy details",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketIDPayload) (map[string]any, error) {
-		return s.getConvoySnapshot(payload.ID)
+		return s.Convoys.Get(payload.ID)
 	})
 
 	RegisterAction("convoy.create", ActionDef{
@@ -29,7 +29,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload convoyCreateRequest) (any, error) {
-		return s.createConvoy(payload)
+		return s.Convoys.Create(payload)
 	})
 
 	RegisterAction("convoy.add", ActionDef{
@@ -37,7 +37,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketConvoyItemsPayload) (map[string]string, error) {
-		if err := s.convoyAddItems(payload.ID, payload.Items); err != nil {
+		if err := s.Convoys.AddItems(payload.ID, payload.Items); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "updated"}, nil
@@ -48,7 +48,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketConvoyItemsPayload) (map[string]string, error) {
-		if err := s.convoyRemoveItems(payload.ID, payload.Items); err != nil {
+		if err := s.Convoys.RemoveItems(payload.ID, payload.Items); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "updated"}, nil
@@ -58,7 +58,7 @@ func init() {
 		Description:       "Check convoy completion",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketIDPayload) (any, error) {
-		return s.convoyCheck(payload.ID)
+		return s.Convoys.Check(payload.ID)
 	})
 
 	RegisterAction("convoy.close", ActionDef{
@@ -66,7 +66,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketIDPayload) (map[string]string, error) {
-		if err := s.convoyClose(payload.ID); err != nil {
+		if err := s.Convoys.Close(payload.ID); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "closed"}, nil
@@ -77,7 +77,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketIDPayload) (map[string]string, error) {
-		if err := s.convoyDelete(payload.ID); err != nil {
+		if err := s.Convoys.Delete(payload.ID); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "deleted"}, nil

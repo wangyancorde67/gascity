@@ -26,7 +26,7 @@ func init() {
 		RequiresCityScope: true,
 		SupportsWatch:     true,
 	}, func(_ context.Context, s *Server, payload socketAgentsListPayload) (listResponse, error) {
-		items := s.listAgentResponses(payload.Pool, payload.Rig, payload.Running, payload.Peek)
+		items := s.Agents.List(payload.Pool, payload.Rig, payload.Running, payload.Peek)
 		return listResponse{Items: items, Total: len(items)}, nil
 	})
 
@@ -39,7 +39,7 @@ func init() {
 		if !ok {
 			return nil, httpError{status: 404, code: "not_found", message: "agent " + payload.Name + " not found"}
 		}
-		resp, _ := s.buildExpandedAgentResponse(agentCfg, expandedAgent{
+		resp, _ := s.Agents.BuildExpandedResponse(agentCfg, expandedAgent{
 			qualifiedName: payload.Name,
 			rig:           agentCfg.Dir,
 			suspended:     agentCfg.Suspended,
@@ -54,7 +54,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketNamePayload) (map[string]string, error) {
-		if err := s.applyAgentAction(payload.Name, "suspend"); err != nil {
+		if err := s.Agents.ApplyAction(payload.Name,"suspend"); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "ok"}, nil
@@ -65,7 +65,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketNamePayload) (map[string]string, error) {
-		if err := s.applyAgentAction(payload.Name, "resume"); err != nil {
+		if err := s.Agents.ApplyAction(payload.Name,"resume"); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "ok"}, nil

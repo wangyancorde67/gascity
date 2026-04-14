@@ -68,7 +68,7 @@ func init() {
 		RequiresCityScope: true,
 		SupportsWatch:     true,
 	}, func(_ context.Context, s *Server, payload socketSessionsListPayload) (listResponse, error) {
-		items, err := s.listSessionResponses(payload.State, payload.Template, payload.Peek)
+		items, err := s.Sessions.List(payload.State, payload.Template, payload.Peek)
 		if err != nil {
 			return listResponse{}, err
 		}
@@ -90,7 +90,7 @@ func init() {
 		Description:       "Get session details",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionTargetPayload) (sessionResponse, error) {
-		return s.getSessionResponse(payload.ID, payload.Peek)
+		return s.Sessions.Get(payload.ID, payload.Peek)
 	})
 
 	RegisterAction("session.create", ActionDef{
@@ -98,7 +98,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(ctx context.Context, s *Server, p sessionCreateRequest) (any, error) {
-		result, _, err := s.createSessionInternal(ctx, p, "")
+		result, _, err := s.Sessions.Create(ctx, p, "")
 		return result, err
 	})
 
@@ -107,7 +107,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionTargetPayload) (map[string]string, error) {
-		if err := s.suspendSessionTarget(payload.ID); err != nil {
+		if err := s.Sessions.Suspend(payload.ID); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "ok"}, nil
@@ -118,7 +118,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionTargetPayload) (map[string]string, error) {
-		if err := s.closeSessionTarget(payload.ID); err != nil {
+		if err := s.Sessions.Close(payload.ID); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "ok"}, nil
@@ -149,7 +149,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(ctx context.Context, s *Server, payload socketSessionTargetPayload) (map[string]string, error) {
-		return s.wakeSessionTarget(ctx, payload.ID)
+		return s.Sessions.Wake(ctx, payload.ID)
 	})
 
 	RegisterAction("session.rename", ActionDef{
@@ -157,7 +157,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionRenamePayload) (sessionResponse, error) {
-		return s.renameSessionTarget(payload.ID, payload.Title)
+		return s.Sessions.Rename(payload.ID, payload.Title)
 	})
 
 	RegisterAction("session.respond", ActionDef{
@@ -165,7 +165,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionRespondPayload) (map[string]string, error) {
-		return s.respondSessionTarget(payload.ID, sessionRespondRequest{
+		return s.Sessions.Respond(payload.ID, sessionRespondRequest{
 			RequestID: payload.RequestID,
 			Action:    payload.Action,
 			Text:      payload.Text,
@@ -178,14 +178,14 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionTargetPayload) (map[string]string, error) {
-		return s.killSessionTarget(payload.ID)
+		return s.Sessions.Kill(payload.ID)
 	})
 
 	RegisterAction("session.pending", ActionDef{
 		Description:       "Get pending session requests",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionTargetPayload) (sessionPendingResponse, error) {
-		return s.getSessionPending(payload.ID)
+		return s.Sessions.Pending(payload.ID)
 	})
 
 	RegisterAction("session.submit", ActionDef{
@@ -196,14 +196,14 @@ func init() {
 		if p.Intent == "" {
 			p.Intent = session.SubmitIntentDefault
 		}
-		return s.submitSessionTarget(ctx, p.ID, p.Message, p.Intent)
+		return s.Sessions.Submit(ctx, p.ID, p.Message, p.Intent)
 	})
 
 	RegisterAction("session.transcript", ActionDef{
 		Description:       "Get session transcript",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionTranscriptPayload) (any, error) {
-		return s.getSessionTranscript(payload.ID, sessionTranscriptQuery{
+		return s.Sessions.Transcript(payload.ID, sessionTranscriptQuery{
 			Tail:   payload.Turns,
 			Before: payload.Before,
 			Raw:    payload.Format == "raw",
@@ -215,7 +215,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionPatchPayload) (any, error) {
-		return s.patchSession(payload.ID, payload.Title, payload.Alias)
+		return s.Sessions.Patch(payload.ID, payload.Title, payload.Alias)
 	})
 
 	RegisterAction("session.messages", ActionDef{
@@ -244,13 +244,13 @@ func init() {
 		Description:       "List agents in a session",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionTargetPayload) (any, error) {
-		return s.listSessionAgents(payload.ID)
+		return s.Sessions.ListAgents(payload.ID)
 	})
 
 	RegisterAction("session.agent.get", ActionDef{
 		Description:       "Get agent details in a session",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketSessionAgentGetPayload) (any, error) {
-		return s.getSessionAgent(payload.ID, payload.AgentID)
+		return s.Sessions.GetAgent(payload.ID, payload.AgentID)
 	})
 }

@@ -29,7 +29,7 @@ func init() {
 			}
 			filter.Since = time.Now().Add(-d)
 		}
-		items, err := s.listEvents(filter)
+		items, err := s.Events.List(filter)
 		if err != nil {
 			return listResponse{}, err
 		}

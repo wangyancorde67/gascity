@@ -32,21 +32,21 @@ func init() {
 		Description:       "Check order gate conditions",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server) (map[string]any, error) {
-		return s.checkOrders(), nil
+		return s.Orders.Check(), nil
 	})
 
 	RegisterAction("orders.history", ActionDef{
 		Description:       "Get order execution history",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketOrdersHistoryPayload) (any, error) {
-		return s.getOrderHistory(payload.ScopedName, payload.Limit, payload.Before)
+		return s.Orders.History(payload.ScopedName, payload.Limit, payload.Before)
 	})
 
 	RegisterAction("orders.feed", ActionDef{
 		Description:       "Get order activity feed",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketOrdersFeedPayload) (any, error) {
-		return s.getOrdersFeed(payload.ScopeKind, payload.ScopeRef, payload.Limit)
+		return s.Orders.Feed(payload.ScopeKind, payload.ScopeRef, payload.Limit)
 	})
 
 	RegisterAction("order.get", ActionDef{

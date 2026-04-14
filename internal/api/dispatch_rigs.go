@@ -24,7 +24,7 @@ func init() {
 		RequiresCityScope: true,
 		SupportsWatch:     true,
 	}, func(_ context.Context, s *Server) (listResponse, error) {
-		items := s.listRigResponses(false)
+		items := s.Rigs.List(false)
 		return listResponse{Items: items, Total: len(items)}, nil
 	})
 
@@ -32,7 +32,7 @@ func init() {
 		Description:       "Get rig details",
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketNamePayload) (any, error) {
-		resp, ok := s.getRigResponse(payload.Name, false)
+		resp, ok := s.Rigs.Get(payload.Name, false)
 		if !ok {
 			return nil, httpError{status: 404, code: "not_found", message: "rig " + payload.Name + " not found"}
 		}
@@ -44,7 +44,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketNamePayload) (any, error) {
-		result, err := s.applyRigAction(payload.Name, "suspend")
+		result, err := s.Rigs.ApplyAction(payload.Name,"suspend")
 		if err != nil {
 			return nil, err
 		}
@@ -56,7 +56,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketNamePayload) (any, error) {
-		result, err := s.applyRigAction(payload.Name, "resume")
+		result, err := s.Rigs.ApplyAction(payload.Name,"resume")
 		if err != nil {
 			return nil, err
 		}
@@ -68,7 +68,7 @@ func init() {
 		IsMutation:        true,
 		RequiresCityScope: true,
 	}, func(_ context.Context, s *Server, payload socketNamePayload) (any, error) {
-		result, err := s.applyRigAction(payload.Name, "restart")
+		result, err := s.Rigs.ApplyAction(payload.Name,"restart")
 		if err != nil {
 			return nil, err
 		}
