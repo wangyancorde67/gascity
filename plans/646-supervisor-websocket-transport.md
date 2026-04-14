@@ -266,7 +266,7 @@ Every former HTTP route is classified as **WS-only** (migrated), **HTTP-only** (
 ### Phase 1: Protocol foundation and shared execution layer
 
 - Write failing protocol tests first for handshake, correlation, close/error behavior, and the first migrated request/response actions
-- Add AsyncAPI spec for the WebSocket protocol and use Modelina for shared envelope/payload DTOs
+- Add AsyncAPI spec for the WebSocket protocol using swaggest/go-asyncapi for spec generation from Go types
 - Introduce the transport-neutral execution layer incrementally, not as a full up-front rewrite of all HTTP handlers
   - start with shared query/command functions for the first migrated domains
   - continue extracting typed inputs/outputs and shared error mapping as each domain moves

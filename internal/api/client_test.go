@@ -965,3 +965,26 @@ func TestClientCloseDoesNotDeadlock(t *testing.T) {
 		t.Fatal("Close() deadlocked")
 	}
 }
+
+func TestClientBackoffSchedule(t *testing.T) {
+	// wsBackoffDuration should produce: 1s, 2s, 4s, 8s, 16s, 30s, 30s
+	expected := []time.Duration{
+		1 * time.Second,
+		2 * time.Second,
+		4 * time.Second,
+		8 * time.Second,
+		16 * time.Second,
+		30 * time.Second,
+		30 * time.Second,
+	}
+	for i, want := range expected {
+		got := wsBackoffDuration(i + 1)
+		if got != want {
+			t.Errorf("wsBackoffDuration(%d) = %s, want %s", i+1, got, want)
+		}
+	}
+	// Zero failures should produce minimum backoff.
+	if got := wsBackoffDuration(0); got != 1*time.Second {
+		t.Errorf("wsBackoffDuration(0) = %s, want 1s", got)
+	}
+}

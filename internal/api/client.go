@@ -469,8 +469,8 @@ func (c *Client) doSocketRequest(action string, scope *socketScope, payload any)
 func (c *Client) wsReadLoop(conn *websocket.Conn) {
 	defer close(c.wsReaderDone)
 	for {
-		var raw map[string]json.RawMessage
-		if err := conn.ReadJSON(&raw); err != nil {
+		_, rawBytes, err := conn.ReadMessage()
+		if err != nil {
 			// Connection died — notify all pending requests.
 			connErr := &connError{err: fmt.Errorf("websocket read failed: %w", err)}
 			c.pending.Range(func(key, val any) bool {
@@ -489,15 +489,18 @@ func (c *Client) wsReadLoop(conn *websocket.Conn) {
 			return
 		}
 
-		var msgType string
-		if t, ok := raw["type"]; ok {
-			_ = json.Unmarshal(t, &msgType)
+		// Extract the message type with a minimal partial unmarshal.
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(rawBytes, &envelope); err != nil {
+			continue
 		}
 
-		switch msgType {
+		switch envelope.Type {
 		case "response":
 			var resp socketClientResponseEnvelope
-			if err := decodeRawMessage(raw, &resp); err != nil {
+			if err := json.Unmarshal(rawBytes, &resp); err != nil {
 				continue
 			}
 			if val, ok := c.pending.LoadAndDelete(resp.ID); ok {
@@ -505,7 +508,7 @@ func (c *Client) wsReadLoop(conn *websocket.Conn) {
 			}
 		case "error":
 			var resp socketErrorEnvelope
-			if err := decodeRawMessage(raw, &resp); err != nil {
+			if err := json.Unmarshal(rawBytes, &resp); err != nil {
 				continue
 			}
 			goErr := wsSocketErrorToGoError(resp)
@@ -514,7 +517,7 @@ func (c *Client) wsReadLoop(conn *websocket.Conn) {
 			}
 		case "event":
 			var evt SubscriptionEvent
-			if err := decodeRawMessage(raw, &evt); err != nil {
+			if err := json.Unmarshal(rawBytes, &evt); err != nil {
 				continue
 			}
 			c.subMu.Lock()
@@ -603,16 +606,6 @@ func websocketURLForBase(baseURL string) (string, error) {
 	return u.String(), nil
 }
 
-func decodeRawMessage(raw map[string]json.RawMessage, out any) error {
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return fmt.Errorf("marshal websocket envelope: %w", err)
-	}
-	if err := json.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("decode websocket envelope: %w", err)
-	}
-	return nil
-}
 
 func (c *Client) urlForPath(path string) string {
 	if c.scopePrefix != "" && strings.HasPrefix(path, "/v0/") {

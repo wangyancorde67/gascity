@@ -2225,3 +2225,46 @@ func TestWSCloseCodeNormalShutdown(t *testing.T) {
 		t.Fatalf("close code = %d, want %d (normal closure)", closeErr.Code, websocket.CloseNormalClosure)
 	}
 }
+
+func TestWSPingPongKeepalive(t *testing.T) {
+	state := newFakeState(t)
+	srv := New(state)
+	ts := httptest.NewServer(srv.handler())
+	defer ts.Close()
+
+	// Dial manually so we can set the ping handler before any reads.
+	wsURL := strings.Replace(ts.URL, "http://", "ws://", 1) + "/v0/ws"
+	header := http.Header{}
+	header.Set("Origin", "http://localhost")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	pingReceived := make(chan struct{}, 1)
+	conn.SetPingHandler(func(msg string) error {
+		select {
+		case pingReceived <- struct{}{}:
+		default:
+		}
+		return conn.WriteControl(websocket.PongMessage, []byte(msg), time.Now().Add(time.Second))
+	})
+
+	// Read in a goroutine so control frame handlers fire.
+	go func() {
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Server pings every 15s. Wait up to 20s.
+	select {
+	case <-pingReceived:
+		// Server is sending pings — keepalive is working.
+	case <-time.After(20 * time.Second):
+		t.Fatal("timeout waiting for server ping frame")
+	}
+}
