@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"net/http"
 	"os"
 	"time"
 
@@ -12,6 +11,9 @@ import (
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/sessionlog"
 )
+
+// sseKeepalive is the interval for stream keepalive ticks.
+const sseKeepalive = 15 * time.Second
 
 type sessionStreamEmitter struct {
 	event     func(eventType string, id uint64, data []byte) error
@@ -30,17 +32,6 @@ func (e sessionStreamEmitter) comment() error {
 		return nil
 	}
 	return e.keepalive()
-}
-
-func newSSESessionStreamEmitter(w http.ResponseWriter) sessionStreamEmitter {
-	return sessionStreamEmitter{
-		event: func(eventType string, id uint64, data []byte) error {
-			return writeSSEEvent(w, eventType, id, data)
-		},
-		keepalive: func() error {
-			return writeSSECommentLine(w)
-		},
-	}
 }
 
 func newSocketSessionStreamEmitter(sess *socketSession, subscriptionID string) sessionStreamEmitter {
