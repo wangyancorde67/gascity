@@ -817,7 +817,11 @@ func (sm *SupervisorMux) socketHello() socketHelloEnvelope {
 	}
 }
 
-func (s *Server) handleSocketRequest(req *socketRequestEnvelope) (result socketActionResult, apiErr *socketErrorEnvelope) {
+func (s *Server) handleSocketRequest(req *socketRequestEnvelope) (socketActionResult, *socketErrorEnvelope) {
+	return s.dispatchAction(req)
+}
+
+func (s *Server) handleSocketRequestLegacy(req *socketRequestEnvelope) (result socketActionResult, apiErr *socketErrorEnvelope) {
 	// Apply blocking watch semantics after the handler returns.
 	defer func() {
 		if apiErr == nil && req.Watch != nil && socketActionSupportsWatch(req.Action) {
