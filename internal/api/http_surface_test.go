@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -28,13 +29,10 @@ func assertRouteStatuses(t *testing.T, h http.Handler, routes []routeExpectation
 	}
 }
 
-func TestCityLegacyHTTPRoutesUnavailable(t *testing.T) {
-	state := newFakeState(t)
-	srv := New(state)
-
+func legacyCityRoutes() []routeExpectation {
 	// Inventory derived from the merge-base HTTP/SSE city surface. Non-survivor
 	// operations should stay unavailable after the WS cutover.
-	routes := []routeExpectation{
+	return []routeExpectation{
 		{name: "status", method: http.MethodGet, path: "/v0/status", wantStatus: http.StatusNotFound},
 		{name: "city get", method: http.MethodGet, path: "/v0/city", wantStatus: http.StatusMethodNotAllowed},
 		{name: "city patch", method: http.MethodPatch, path: "/v0/city", wantStatus: http.StatusForbidden},
@@ -144,29 +142,77 @@ func TestCityLegacyHTTPRoutesUnavailable(t *testing.T) {
 		{name: "service get", method: http.MethodGet, path: "/v0/service/review-intake", wantStatus: http.StatusNotFound},
 		{name: "service restart", method: http.MethodPost, path: "/v0/service/review-intake/restart", wantStatus: http.StatusForbidden},
 	}
+}
 
-	assertRouteStatuses(t, srv, routes)
+func prefixedLegacyRoutes(prefix string, routes []routeExpectation, mapPath func(path string) (string, bool)) []routeExpectation {
+	var out []routeExpectation
+	for _, route := range routes {
+		mapped, ok := mapPath(route.path)
+		if !ok {
+			continue
+		}
+		out = append(out, routeExpectation{
+			name:       prefix + route.name,
+			method:     route.method,
+			path:       mapped,
+			wantStatus: route.wantStatus,
+		})
+	}
+	return out
+}
+
+func bareCompatRoutes(routes []routeExpectation) []routeExpectation {
+	out := prefixedLegacyRoutes("bare compat ", routes, func(path string) (string, bool) {
+		return path, true
+	})
+	for i := range out {
+		if out[i].path == "/v0/city" && out[i].method == http.MethodGet {
+			out[i].wantStatus = http.StatusNotFound
+		}
+	}
+	return out
+}
+
+func namespacedCompatRoutes(city string, routes []routeExpectation) []routeExpectation {
+	out := prefixedLegacyRoutes("namespaced ", routes, func(path string) (string, bool) {
+		switch path {
+		case "/v0/status":
+			return "/v0/city/" + city, true
+		case "/v0/city":
+			return "", false
+		default:
+			if !strings.HasPrefix(path, "/v0/") {
+				return "", false
+			}
+			return "/v0/city/" + city + strings.TrimPrefix(path, "/v0"), true
+		}
+	})
+	for i := range out {
+		if out[i].path == "/v0/city/"+city && out[i].method == http.MethodGet {
+			out[i].wantStatus = http.StatusBadRequest
+		}
+	}
+	return out
+}
+
+func TestCityLegacyHTTPRoutesUnavailable(t *testing.T) {
+	state := newFakeState(t)
+	srv := New(state)
+
+	assertRouteStatuses(t, srv, legacyCityRoutes())
 }
 
 func TestSupervisorLegacyHTTPRoutesUnavailable(t *testing.T) {
 	s1 := newFakeState(t)
 	s1.cityName = "alpha"
 	sm := newTestSupervisorMux(t, map[string]*fakeState{"alpha": s1})
+	handler := sm.Handler()
 
 	routes := []routeExpectation{
 		{name: "cities list", method: http.MethodGet, path: "/v0/cities", wantStatus: http.StatusNotFound},
-		{name: "city get", method: http.MethodGet, path: "/v0/city", wantStatus: http.StatusNotFound},
-		{name: "city patch", method: http.MethodPatch, path: "/v0/city", wantStatus: http.StatusNotFound},
-		{name: "global events list", method: http.MethodGet, path: "/v0/events", wantStatus: http.StatusNotFound},
-		{name: "global events stream", method: http.MethodGet, path: "/v0/events/stream", wantStatus: http.StatusNotFound},
-		{name: "bare status compat", method: http.MethodGet, path: "/v0/status", wantStatus: http.StatusNotFound},
-		{name: "bare agents compat", method: http.MethodGet, path: "/v0/agents", wantStatus: http.StatusNotFound},
-		{name: "bare session stream compat", method: http.MethodGet, path: "/v0/session/s-1/stream", wantStatus: http.StatusNotFound},
-		{name: "namespaced city detail", method: http.MethodGet, path: "/v0/city/alpha", wantStatus: http.StatusBadRequest},
-		{name: "namespaced agents", method: http.MethodGet, path: "/v0/city/alpha/agents", wantStatus: http.StatusNotFound},
-		{name: "namespaced agent output", method: http.MethodGet, path: "/v0/city/alpha/agent/coder/output", wantStatus: http.StatusNotFound},
-		{name: "namespaced session get", method: http.MethodGet, path: "/v0/city/alpha/session/s-1", wantStatus: http.StatusNotFound},
 	}
+	routes = append(routes, bareCompatRoutes(legacyCityRoutes())...)
+	routes = append(routes, namespacedCompatRoutes("alpha", legacyCityRoutes())...)
 
-	assertRouteStatuses(t, sm, routes)
+	assertRouteStatuses(t, handler, routes)
 }
