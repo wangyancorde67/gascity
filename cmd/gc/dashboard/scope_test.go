@@ -165,11 +165,13 @@ func TestNewDashboardMuxDoesNotProxyAPIPaths(t *testing.T) {
 		t.Fatalf("NewDashboardMux: %v", err)
 	}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v0/ws", nil)
-	mux.ServeHTTP(rec, req)
+	for _, path := range []string{"/v0/ws", "/api/options"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", rec.Code)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want 404", path, rec.Code)
+		}
 	}
 }

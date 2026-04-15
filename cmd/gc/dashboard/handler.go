@@ -57,7 +57,9 @@ func NewDashboardMux(apiURL, initialCityScope string) (http.Handler, error) {
 		_, _ = w.Write(body)
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/static/") || strings.HasPrefix(r.URL.Path, "/v0/") {
+		if strings.HasPrefix(r.URL.Path, "/static/") ||
+			strings.HasPrefix(r.URL.Path, "/v0/") ||
+			strings.HasPrefix(r.URL.Path, "/api/") {
 			http.NotFound(w, r)
 			return
 		}
