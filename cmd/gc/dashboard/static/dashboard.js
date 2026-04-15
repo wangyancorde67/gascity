@@ -42,6 +42,14 @@ import { createDashboardTransport } from './dashboard_transport.js';
 
     window.wsConnected = false;
     window.pauseRefresh = false;
+    window.__GC_LAST_ERROR__ = null;
+    window.__GC_ERROR_HISTORY__ = [];
+    window.gcGetLastError = function() {
+        return window.__GC_LAST_ERROR__;
+    };
+    window.gcGetErrorHistory = function() {
+        return (window.__GC_ERROR_HISTORY__ || []).slice();
+    };
 
     function wsRequest(action, payload) {
         return transport.wsRequest(action, payload);
@@ -111,6 +119,40 @@ import { createDashboardTransport } from './dashboard_transport.js';
         return String(err);
     }
 
+    function serializeError(err) {
+        if (!err) {
+            return null;
+        }
+        if (typeof err === 'string') {
+            return {message: err};
+        }
+        if (err instanceof Error) {
+            return {
+                name: err.name || 'Error',
+                message: err.message || String(err),
+                stack: err.stack || ''
+            };
+        }
+        if (typeof err === 'object') {
+            var out = {};
+            Object.keys(err).forEach(function(key) {
+                var value = err[key];
+                if (value === undefined) {
+                    return;
+                }
+                if (typeof value === 'function') {
+                    return;
+                }
+                out[key] = value;
+            });
+            if (!out.message) {
+                out.message = formatErrorMessage(err);
+            }
+            return out;
+        }
+        return {message: String(err)};
+    }
+
     function showErrorBanner(title, message) {
         var banner = document.getElementById('dashboard-error-banner');
         var titleEl = document.getElementById('dashboard-error-title');
@@ -132,7 +174,27 @@ import { createDashboardTransport } from './dashboard_transport.js';
         var details = context + ': ' + message;
         var now = Date.now();
         var key = context + '|' + message;
-        console.error('dashboard [' + context + ']:', err);
+        var errorRecord = {
+            context: context,
+            message: message,
+            details: details,
+            at: new Date(now).toISOString(),
+            selectedCity: state.selectedCity || '',
+            wsUrl: state.wsUrl || '',
+            wsConnected: !!window.wsConnected,
+            error: serializeError(err)
+        };
+        window.__GC_LAST_ERROR__ = errorRecord;
+        window.__GC_ERROR_HISTORY__.push(errorRecord);
+        if (window.__GC_ERROR_HISTORY__.length > 25) {
+            window.__GC_ERROR_HISTORY__.shift();
+        }
+
+        console.groupCollapsed('dashboard error: ' + details);
+        console.error(err);
+        console.info('dashboard error details', errorRecord);
+        console.info('window.__GC_LAST_ERROR__ and window.__GC_ERROR_HISTORY__ updated');
+        console.groupEnd();
         showErrorBanner('Dashboard degraded', details);
         if (key !== _lastErrorKey || now-_lastErrorAt > 10000) {
             showToast('error', 'Dashboard degraded', details);
