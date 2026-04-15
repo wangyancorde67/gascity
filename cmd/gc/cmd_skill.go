@@ -85,17 +85,55 @@ func newSkillListCmd(stdout, stderr io.Writer) *cobra.Command {
 }
 
 func listVisibleSkillEntries(cityPath string, cfg *config.City, store beads.Store, agentName, sessionID string) ([]visibilityEntry, error) {
-	entries := discoverSkillEntries(cityPath, "city")
+	cityEntries := discoverSkillEntries(cityPath, "city")
 	if strings.TrimSpace(agentName) == "" && strings.TrimSpace(sessionID) == "" {
-		return entries, nil
+		return cityEntries, nil
 	}
 	agent, err := resolveVisibilityAgent(cityPath, cfg, store, agentName, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	entries = append(entries, discoverAgentSkillEntries(agentAssetRoot(cityPath, agent), agent.Name, "agent")...)
-	sortVisibilityEntries(entries)
-	return entries, nil
+	// When the agent has an explicit attachment config (skills or shared_skills),
+	// filter the city catalog to the attached set. Empty config means the agent
+	// inherits no restriction and the full city catalog remains visible — this
+	// preserves the "catalog discovery" view for unconfigured agents.
+	attached := attachmentSet(agent.Skills, agent.SharedSkills)
+	if len(attached) > 0 {
+		cityEntries = filterEntriesByName(cityEntries, attached)
+	}
+	cityEntries = append(cityEntries, discoverAgentSkillEntries(agentAssetRoot(cityPath, agent), agent.Name, "agent")...)
+	sortVisibilityEntries(cityEntries)
+	return cityEntries, nil
+}
+
+func attachmentSet(lists ...[]string) map[string]struct{} {
+	var total int
+	for _, l := range lists {
+		total += len(l)
+	}
+	if total == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, total)
+	for _, l := range lists {
+		for _, name := range l {
+			name = strings.TrimSpace(name)
+			if name != "" {
+				set[name] = struct{}{}
+			}
+		}
+	}
+	return set
+}
+
+func filterEntriesByName(entries []visibilityEntry, allowed map[string]struct{}) []visibilityEntry {
+	out := entries[:0:0]
+	for _, e := range entries {
+		if _, ok := allowed[e.Name]; ok {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 type visibilityEntry struct {

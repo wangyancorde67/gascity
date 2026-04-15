@@ -39,6 +39,7 @@ gc [flags]
 | [gc import](#gc-import) | Manage pack imports |
 | [gc init](#gc-init) | Initialize a new city |
 | [gc mail](#gc-mail) | Send and receive messages between agents and humans |
+| [gc mcp](#gc-mcp) | List MCP catalog visibility |
 | [gc nudge](#gc-nudge) | Inspect and deliver deferred nudges |
 | [gc order](#gc-order) | Manage orders (scheduled and event-driven dispatch) |
 | [gc pack](#gc-pack) | Manage remote pack sources |
@@ -50,9 +51,8 @@ gc [flags]
 | [gc runtime](#gc-runtime) | Process-intrinsic runtime operations |
 | [gc service](#gc-service) | Inspect workspace services |
 | [gc session](#gc-session) | Manage interactive chat sessions |
-| [gc skill](#gc-skill) | List Pack/City skills |
-| [gc skills](#gc-skills) | Legacy topic reference/help surface |
-| [gc mcp](#gc-mcp) | List MCP catalog visibility (first slice) |
+| [gc skill](#gc-skill) | List visible skills |
+| [gc skills](#gc-skills) | Show command reference for a topic |
 | [gc sling](#gc-sling) | Route work to an agent or pool |
 | [gc start](#gc-start) | Start the city under the machine-wide supervisor |
 | [gc status](#gc-status) | Show city-wide status overview |
@@ -1204,6 +1204,34 @@ Show all messages sharing a thread ID, ordered by time.
 gc mail thread <thread-id>
 ```
 
+## gc mcp
+
+List MCP catalog visibility for the current city pack.
+
+The first MCP slice is list-only. Provider projection and reconciliation
+are later work.
+
+```
+gc mcp
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| [gc mcp list](#gc-mcp-list) | List visible MCP definitions |
+
+## gc mcp list
+
+List the current city pack's visible MCP definitions, optionally scoped to an agent or session.
+
+```
+gc mcp list [flags]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--agent` | string |  | show the effective MCP view for this agent |
+| `--session` | string |  | show the effective MCP view for this session |
+
 ## gc nudge
 
 Inspect and deliver deferred nudges.
@@ -1990,33 +2018,36 @@ gc session wake gc-42
 
 ## gc skill
 
-List Pack/City skills.
+List visible Pack/City skills for the current city pack.
 
-The first-slice skills surface is list-only. Use this command to inspect
-the current city pack's skills catalog and retained skills.
-
-```
-gc skill list
-gc skill list --agent <name>
-gc skill list --session <id>
-```
-
-**Example:**
+Use "gc skill list" to show discovered skills, optionally scoped to an
+agent or session. The built-in topic/reference viewer now lives under
+"gc skills".
 
 ```
-gc skill list
-  gc skill list --agent mayor
-  gc skill list --session gc-42
+gc skill
 ```
 
-The list-only surface is the first skills implementation slice;
-promotion and retention remain later.
+| Subcommand | Description |
+|------------|-------------|
+| [gc skill list](#gc-skill-list) | List visible skills |
 
-The old topic-reference/help surface lives under `gc skills`.
+## gc skill list
+
+List the current city pack's visible skills, optionally scoped to an agent or session.
+
+```
+gc skill list [flags]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--agent` | string |  | show the effective skill view for this agent |
+| `--session` | string |  | show the effective skill view for this session |
 
 ## gc skills
 
-Show the legacy curated command reference for a Gas City topic.
+Show curated command reference for a Gas City topic.
 
 Without arguments, lists available topics. With a topic name,
 prints the full command reference for that topic.
@@ -2031,19 +2062,6 @@ gc skills [topic]
 gc skills work       # beads command reference
   gc skills dispatch   # sling and formula reference
   gc skills            # list all topics
-```
-
-## gc mcp
-
-List MCP catalog visibility for the current city pack.
-
-The first MCP slice is list-only. Provider projection and reconciliation
-remain later.
-
-```
-gc mcp list
-gc mcp list --agent <name>
-gc mcp list --session <id>
 ```
 
 ## gc sling
@@ -2447,3 +2465,4 @@ Manually mark a wait ready
 ```
 gc wait ready <wait-id>
 ```
+

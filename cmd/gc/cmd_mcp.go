@@ -79,15 +79,21 @@ func newMcpListCmd(stdout, stderr io.Writer) *cobra.Command {
 }
 
 func listVisibleMcpEntries(cityPath string, cfg *config.City, store beads.Store, agentName, sessionID string) ([]visibilityEntry, error) {
-	entries := discoverMcpEntries(cityPath, "city")
+	cityEntries := discoverMcpEntries(cityPath, "city")
 	if strings.TrimSpace(agentName) == "" && strings.TrimSpace(sessionID) == "" {
-		return entries, nil
+		return cityEntries, nil
 	}
 	agent, err := resolveVisibilityAgent(cityPath, cfg, store, agentName, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	entries = append(entries, discoverAgentMcpEntries(agentAssetRoot(cityPath, agent), agent.Name, "agent")...)
-	sortVisibilityEntries(entries)
-	return entries, nil
+	// When the agent has an explicit attachment config (mcp or shared_mcp),
+	// filter the city catalog to the attached set. See listVisibleSkillEntries.
+	attached := attachmentSet(agent.MCP, agent.SharedMCP)
+	if len(attached) > 0 {
+		cityEntries = filterEntriesByName(cityEntries, attached)
+	}
+	cityEntries = append(cityEntries, discoverAgentMcpEntries(agentAssetRoot(cityPath, agent), agent.Name, "agent")...)
+	sortVisibilityEntries(cityEntries)
+	return cityEntries, nil
 }

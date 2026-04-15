@@ -395,6 +395,10 @@ type AgentOverride struct {
 	SleepAfterIdle *string `toml:"sleep_after_idle,omitempty"`
 	// InstallAgentHooks overrides the agent's install_agent_hooks list.
 	InstallAgentHooks []string `toml:"install_agent_hooks,omitempty"`
+	// Skills overrides the agent's attached shared skills list.
+	Skills []string `toml:"skills,omitempty"`
+	// MCP overrides the agent's attached shared MCP list.
+	MCP []string `toml:"mcp,omitempty"`
 	// HooksInstalled overrides automatic hook detection.
 	HooksInstalled *bool `toml:"hooks_installed,omitempty"`
 	// SessionSetup overrides the agent's session_setup commands.
@@ -421,6 +425,10 @@ type AgentOverride struct {
 	SessionLiveAppend []string `toml:"session_live_append,omitempty"`
 	// InstallAgentHooksAppend appends to the agent's install_agent_hooks list.
 	InstallAgentHooksAppend []string `toml:"install_agent_hooks_append,omitempty"`
+	// SkillsAppend appends to the agent's attached shared skills list.
+	SkillsAppend []string `toml:"skills_append,omitempty"`
+	// MCPAppend appends to the agent's attached shared MCP list.
+	MCPAppend []string `toml:"mcp_append,omitempty"`
 	// Attach overrides the agent's attach setting.
 	Attach *bool `toml:"attach,omitempty"`
 	// DependsOn overrides the agent's dependency list.

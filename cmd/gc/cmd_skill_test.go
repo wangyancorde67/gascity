@@ -159,6 +159,57 @@ func TestSkillListSessionCatalog(t *testing.T) {
 	}
 }
 
+// TestSkillListAgentAttachmentFilter verifies that when an agent declares an
+// explicit skills attachment list, the city catalog is filtered to those
+// names. Agent-local entries remain visible regardless of attachment config.
+func TestSkillListAgentAttachmentFilter(t *testing.T) {
+	clearGCEnv(t)
+	cityDir := t.TempDir()
+	t.Setenv("GC_CITY", cityDir)
+	if err := os.MkdirAll(filepath.Join(cityDir, ".gc"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.gc): %v", err)
+	}
+	// mayor attaches only "attached-skill" from the city catalog; "other-skill"
+	// must be filtered out.
+	toml := `[workspace]
+name = "test-city"
+
+[beads]
+provider = "file"
+
+[[agent]]
+name = "mayor"
+provider = "codex"
+start_command = "echo"
+skills = ["attached-skill"]
+
+[[named_session]]
+template = "mayor"
+`
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
+	writeCatalogFile(t, cityDir, "skills/attached-skill/SKILL.md", "attached")
+	writeCatalogFile(t, cityDir, "skills/other-skill/SKILL.md", "other")
+	writeCatalogFile(t, cityDir, "agents/mayor/skills/private-workflow/SKILL.md", "agent-local")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"skill", "list", "--agent", "mayor"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("gc skill list --agent mayor exited %d: %s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "attached-skill") {
+		t.Errorf("attached-skill missing from output:\n%s", out)
+	}
+	if !strings.Contains(out, "private-workflow") {
+		t.Errorf("agent-local private-workflow missing from output:\n%s", out)
+	}
+	if strings.Contains(out, "other-skill") {
+		t.Errorf("other-skill should be filtered out (not attached):\n%s", out)
+	}
+}
+
 func writeCatalogFile(t *testing.T, dir, rel, content string) {
 	t.Helper()
 	path := filepath.Join(dir, rel)
