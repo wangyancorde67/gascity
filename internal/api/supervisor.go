@@ -39,15 +39,8 @@ type cachedCityServer struct {
 	srv   *Server
 }
 
-// SupervisorMux routes API requests to per-city handlers with
-// city-namespaced URL paths. It handles:
-//   - GET /v0/cities — list managed cities
-//   - GET /v0/city/{name} — city detail (status)
-//   - /v0/city/{name}/... — route to a specific city's API
-//   - /v0/city/{name}/svc/... — route to a specific city's service mount
-//   - GET /health — supervisor health
-//   - /v0/... (bare) — backward compat, routes to first running city
-//   - /svc/... (bare) — route to the sole running city's service mount
+// SupervisorMux serves the supervisor HTTP survivor endpoints and resolves
+// city-scoped workspace service proxy requests.
 type SupervisorMux struct {
 	resolver  CityResolver
 	readOnly  bool
