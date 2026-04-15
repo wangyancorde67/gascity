@@ -90,6 +90,9 @@ func TestServerWebSocketHello(t *testing.T) {
 	if len(hello.Capabilities) == 0 {
 		t.Fatal("hello capabilities empty")
 	}
+	if wsCapabilitiesContain(hello.Capabilities, "cities.list") {
+		t.Fatal("city hello advertised supervisor-only action cities.list")
+	}
 }
 
 func TestServerWebSocketHealthGet(t *testing.T) {
@@ -362,6 +365,9 @@ func TestSupervisorWebSocketHelloAndCitiesList(t *testing.T) {
 	if hello.ServerRole != "supervisor" {
 		t.Fatalf("hello server_role = %q, want supervisor", hello.ServerRole)
 	}
+	if !wsCapabilitiesContain(hello.Capabilities, "cities.list") {
+		t.Fatalf("supervisor hello capabilities = %v, want cities.list", hello.Capabilities)
+	}
 
 	writeWSJSON(t, conn, wsRequestEnvelope{
 		Type:   "request",
@@ -390,6 +396,38 @@ func TestSupervisorWebSocketHelloAndCitiesList(t *testing.T) {
 	}
 	if len(body.Items) != 2 || body.Items[0].Name != "alpha" || body.Items[1].Name != "beta" {
 		t.Fatalf("items = %#v, want alpha then beta", body.Items)
+	}
+}
+
+func TestServerWebSocketRejectsSupervisorOnlyAction(t *testing.T) {
+	state := newFakeState(t)
+	srv := New(state)
+	ts := httptest.NewServer(srv.handler())
+	defer ts.Close()
+
+	conn := dialWebSocket(t, ts.URL+"/v0/ws")
+	defer conn.Close()
+	drainWSHello(t, conn)
+
+	writeWSJSON(t, conn, wsRequestEnvelope{
+		Type:   "request",
+		ID:     "req-cities-city",
+		Action: "cities.list",
+	})
+
+	var errResp wsErrorEnvelope
+	readWSJSON(t, conn, &errResp)
+	if errResp.Type != "error" {
+		t.Fatalf("response type = %q, want error", errResp.Type)
+	}
+	if errResp.ID != "req-cities-city" {
+		t.Fatalf("response id = %q, want req-cities-city", errResp.ID)
+	}
+	if errResp.Code != "unsupported_on_server_role" {
+		t.Fatalf("code = %q, want unsupported_on_server_role", errResp.Code)
+	}
+	if !strings.Contains(errResp.Message, "cities.list") || !strings.Contains(errResp.Message, "city") {
+		t.Fatalf("message = %q, want city-role rejection", errResp.Message)
 	}
 }
 
@@ -1932,6 +1970,15 @@ func readWSJSON(t *testing.T, conn *websocket.Conn, v interface{}) {
 	if err := conn.ReadJSON(v); err != nil {
 		t.Fatalf("read ws json: %v", err)
 	}
+}
+
+func wsCapabilitiesContain(caps []string, want string) bool {
+	for _, cap := range caps {
+		if cap == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------- Protocol parity test suite ----------

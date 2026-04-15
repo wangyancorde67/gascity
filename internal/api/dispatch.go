@@ -18,6 +18,7 @@ type ActionDef struct {
 	IsMutation        bool
 	RequiresCityScope bool
 	SupportsWatch     bool
+	ServerRoles       actionServerRoles
 }
 
 // actionHandler is the raw dispatch signature used internally by the framework.
@@ -32,9 +33,29 @@ type actionEntry struct {
 	IsMutation        bool
 	RequiresCityScope bool
 	SupportsWatch     bool
+	ServerRoles       actionServerRoles
 	RequestType       reflect.Type // nil for void actions
 	ResponseType      reflect.Type
 	Handler           actionHandler // nil = legacy fallback during migration
+}
+
+type actionServerRoles uint8
+
+const (
+	actionServerRoleCity actionServerRoles = 1 << iota
+	actionServerRoleSupervisor
+	actionServerRoleAny = actionServerRoleCity | actionServerRoleSupervisor
+)
+
+func normalizeActionServerRoles(roles actionServerRoles) actionServerRoles {
+	if roles == 0 {
+		return actionServerRoleAny
+	}
+	return roles
+}
+
+func (e *actionEntry) supportsRole(role actionServerRoles) bool {
+	return normalizeActionServerRoles(e.ServerRoles)&role != 0
 }
 
 var (
@@ -55,6 +76,7 @@ func RegisterAction[In, Out any](name string, def ActionDef, handler func(contex
 		IsMutation:        def.IsMutation,
 		RequiresCityScope: def.RequiresCityScope,
 		SupportsWatch:     def.SupportsWatch,
+		ServerRoles:       normalizeActionServerRoles(def.ServerRoles),
 		RequestType:       reflect.TypeOf((*In)(nil)).Elem(),
 		ResponseType:      reflect.TypeOf((*Out)(nil)).Elem(),
 		Handler: func(s *Server, req *socketRequestEnvelope) (socketActionResult, *socketErrorEnvelope) {
@@ -83,6 +105,7 @@ func RegisterVoidAction[Out any](name string, def ActionDef, handler func(contex
 		IsMutation:        def.IsMutation,
 		RequiresCityScope: def.RequiresCityScope,
 		SupportsWatch:     def.SupportsWatch,
+		ServerRoles:       normalizeActionServerRoles(def.ServerRoles),
 		ResponseType:      reflect.TypeOf((*Out)(nil)).Elem(),
 		Handler: func(s *Server, req *socketRequestEnvelope) (socketActionResult, *socketErrorEnvelope) {
 			result, err := handler(req.dispatchCtx, s)
@@ -106,6 +129,7 @@ func registerRawAction(name string, def ActionDef, handler actionHandler) {
 		IsMutation:        def.IsMutation,
 		RequiresCityScope: def.RequiresCityScope,
 		SupportsWatch:     def.SupportsWatch,
+		ServerRoles:       normalizeActionServerRoles(def.ServerRoles),
 		Handler:           handler,
 	}
 }
@@ -122,6 +146,7 @@ func RegisterMeta(name string, def ActionDef) {
 		IsMutation:        def.IsMutation,
 		RequiresCityScope: def.RequiresCityScope,
 		SupportsWatch:     def.SupportsWatch,
+		ServerRoles:       normalizeActionServerRoles(def.ServerRoles),
 	}
 }
 
@@ -129,7 +154,13 @@ func RegisterMeta(name string, def ActionDef) {
 // scope validation → read-only guard → idempotency → handler → idempotency store → watch
 func (s *Server) dispatchAction(req *socketRequestEnvelope) (socketActionResult, *socketErrorEnvelope) {
 	entry, ok := actionTable[req.Action]
-	if !ok || entry.Handler == nil {
+	if !ok {
+		return socketActionResult{}, newSocketError(req.ID, "not_found", "unknown action: "+req.Action)
+	}
+	if !entry.supportsRole(actionServerRoleCity) {
+		return socketActionResult{}, unsupportedSocketActionForRole(req.ID, req.Action, "city")
+	}
+	if entry.Handler == nil {
 		return socketActionResult{}, newSocketError(req.ID, "not_found", "unknown action: "+req.Action)
 	}
 
@@ -230,13 +261,20 @@ func EnvelopeTypes() specgen.EnvelopeTypes {
 }
 
 // actionTableCapabilities returns sorted action names for the hello envelope.
-func actionTableCapabilities() []string {
+func actionTableCapabilities(role actionServerRoles) []string {
 	caps := make([]string, 0, len(actionTable))
-	for name := range actionTable {
-		caps = append(caps, name)
+	for name, entry := range actionTable {
+		if entry.supportsRole(role) {
+			caps = append(caps, name)
+		}
 	}
 	sort.Strings(caps)
 	return caps
+}
+
+func actionTableSupportsRole(action string, role actionServerRoles) bool {
+	entry, ok := actionTable[action]
+	return ok && entry.supportsRole(role)
 }
 
 // actionTableRequiresCityScope checks whether an action requires city scope.

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"sort"
 	"sync"
 	"time"
 
@@ -342,31 +341,18 @@ func (s *Server) socketHello() socketHelloEnvelope {
 		Protocol:          wsProtocolVersion,
 		ServerRole:        "city",
 		ReadOnly:          s.readOnly,
-		Capabilities:      actionTableCapabilities(),
+		Capabilities:      actionTableCapabilities(actionServerRoleCity),
 		SubscriptionKinds: []string{"events", "session.stream"},
 	}
 }
 
 func (sm *SupervisorMux) socketHello() socketHelloEnvelope {
-	caps := actionTableCapabilities()
-	// Supervisor also supports cities.list (not a per-city action).
-	hasCities := false
-	for _, c := range caps {
-		if c == "cities.list" {
-			hasCities = true
-			break
-		}
-	}
-	if !hasCities {
-		caps = append(caps, "cities.list")
-		sort.Strings(caps)
-	}
 	return socketHelloEnvelope{
 		Type:              "hello",
 		Protocol:          wsProtocolVersion,
 		ServerRole:        "supervisor",
 		ReadOnly:          sm.readOnly,
-		Capabilities:      caps,
+		Capabilities:      actionTableCapabilities(actionServerRoleSupervisor),
 		SubscriptionKinds: []string{"events", "session.stream"},
 	}
 }
@@ -408,6 +394,10 @@ func (sm *SupervisorMux) handleSocketRequest(req *socketRequestEnvelope) (socket
 		cityReq.Scope = nil
 		srv := sm.getCityServer(cityName, state)
 		return srv.handleSocketRequest(&cityReq)
+	}
+
+	if actionTableSupportsRole(req.Action, actionServerRoleAny) && !actionTableSupportsRole(req.Action, actionServerRoleSupervisor) {
+		return socketActionResult{}, unsupportedSocketActionForRole(req.ID, req.Action, "supervisor")
 	}
 
 	return socketActionResult{}, unknownSocketAction(req.ID, req.Action)
@@ -528,4 +518,8 @@ func newSocketErrorWithDetails(id, code, message string, details []FieldError) *
 
 func unknownSocketAction(id, action string) *socketErrorEnvelope {
 	return newSocketError(id, "not_found", "unknown action: "+action)
+}
+
+func unsupportedSocketActionForRole(id, action, role string) *socketErrorEnvelope {
+	return newSocketError(id, "unsupported_on_server_role", "action "+action+" is not supported on "+role+" server connections")
 }

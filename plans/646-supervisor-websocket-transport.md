@@ -31,7 +31,7 @@ Every endpoint is **WS-only** or **HTTP-only**, never both. When migration is co
 
 - CLI and other Go clients use a persistent WebSocket client with auto-reconnect and exponential backoff. No HTTP fallback.
 - The browser connects directly to the supervisor's `/v0/ws` endpoint. No SSE proxy.
-- The dashboard server is reduced to serving static files only — zero API endpoints. All data fetching, mutations, and streaming go directly from browser to supervisor via WS.
+- The dashboard server serves static assets plus, if needed, a tiny startup bootstrap/config injection only. After page load, all data fetching, mutations, and streaming go directly from browser to supervisor via WS.
 - External third-party clients connect via WS and use the same protocol.
 
 ### Protocol contract
@@ -39,6 +39,10 @@ Every endpoint is **WS-only** or **HTTP-only**, never both. When migration is co
 - AsyncAPI (WS) and OpenAPI (HTTP) specs auto-generated from annotated Go types as a single source of truth
 - Specs served at well-known endpoints for client discovery
 - Go types are the source of truth; specs are derived, not hand-written
+- DTOs are generated from the checked-in specs, not hand-written independently
+- Checked-in contract artifacts in `contracts/http/openapi.yaml`, `contracts/supervisor-ws/asyncapi.yaml`, and `contracts/supervisor-ws/generated/*` are part of the reviewed deliverable
+- CI must fail when generated specs are stale relative to Go types or generated DTOs are stale relative to specs
+- OpenAPI covers the public HTTP survivor surface; `/debug/pprof/*` remains supported HTTP-only but outside the generated public OpenAPI contract
 
 ## Implementation Guardrails
 
@@ -76,14 +80,15 @@ This preserves current client behavior, because today callers can hit either:
 
 ### Dashboard architecture
 
-The dashboard browser connects directly to the supervisor’s `/v0/ws` endpoint. The dashboard server is reduced to a static file server with zero API endpoints.
+The dashboard browser connects directly to the supervisor’s `/v0/ws` endpoint. The dashboard server is reduced to a static file server plus, if needed, a tiny startup bootstrap/config injection with zero runtime API proxying.
 
 - Browser opens WS connection to supervisor and uses the same protocol as Go clients
+- The dashboard `city` URL parameter is a client-side convenience only; the browser translates it into explicit `scope.city` on relevant requests and subscriptions
 - All 17 existing `/api/*` dashboard proxy endpoints are eliminated
 - `/api/run` (subprocess command execution) is eliminated — browser calls supervisor WS actions directly
-- Server-side HTML template rendering is eliminated — browser renders from JSON
+- Server-side HTML template rendering is eliminated for data-bearing UI — browser renders from JSON
 - SSE (`EventSource`) is eliminated — browser uses WS subscriptions
-- The dashboard server serves only static files (JS, CSS, HTML)
+- The dashboard server serves only static files (JS, CSS, HTML) plus optional startup bootstrap/config data
 
 ### Protocol framing
 
@@ -129,6 +134,8 @@ Server hello envelope:
 - read-only / mutation capability
 - supported actions and subscription kinds
 
+`hello.capabilities` must be truthful for the exact connection role. It includes ordinary request actions plus protocol operations such as `subscription.start` and `subscription.stop`. Supervisor-only actions such as `cities.list` are not advertised on city sockets, and wrong-role calls return a structured `unsupported_on_server_role` error rather than `not_found`.
+
 ### Connection and concurrency model
 
 The protocol should assume concurrent in-flight requests on a single socket:
@@ -165,7 +172,7 @@ Initial subscription families should match existing streaming surfaces and block
 - session stream
 - one-shot blocking query equivalents for existing `index` + `wait` patterns
 
-There is no distinct WebSocket "agent output stream" subscription kind in v1. The canonical streaming surface is session-scoped. If legacy HTTP compatibility keeps an agent-output stream alias during coexistence, it should map internally onto the session stream model rather than introducing a second protocol concept.
+There is no first-class WebSocket "agent output" request or subscription concept in v1. Former agent-output behavior is preserved by resolving agent name to canonical session id via `agent.get`, then using session-scoped transcript/stream operations.
 
 Blocking HTTP reads such as `?index=...&wait=...` should map to one of:
 
@@ -188,11 +195,11 @@ Session stream subscriptions need explicit parameters and completion rules:
 
 ### Client-facing API domains that must be accounted for
 
-The plan must treat the supervisor client surface as the current full set of client-used domains, not a narrow subset. At minimum, the migration inventory needs to cover:
+The authoritative migration inventory is the merge-base working HTTP/SSE surface, including hidden public subresources, not the branch’s current partial WS action table. The plan must treat the supervisor client surface as the current full set of client-used domains, not a narrow subset. At minimum, the WS migration inventory needs to cover:
 
-- supervisor/global: cities, readiness, provider readiness, health, global events
+- supervisor/global client API: cities, global events
 - city status/config: status, config, config explain/validate
-- agents: list/get, actions, output surfaces
+- agents: list/get, actions, and agent-to-session resolution via `agent.get`
 - rigs: list/get, CRUD/actions where client-facing
 - sessions: list/get, transcript, pending, stream, messages/submit/respond/wake/kill/close/rename/agents
 - beads: list/get/graph/ready/update/assign/close/reopen/delete/create
@@ -207,7 +214,9 @@ The plan must treat the supervisor client surface as the current full set of cli
 - extmsg
 - events list/emit/stream
 
-The implementation can migrate these in phases, but the plan must inventory them up front so “full cutover” has a concrete meaning.
+Operational HTTP-only survivors such as `GET /health`, `GET /v0/readiness`, and `GET /v0/provider-readiness` remain outside the WS migration inventory and are governed by the HTTP survivor table.
+
+The implementation can migrate these in phases, but the plan must inventory them up front so “full cutover” has a concrete meaning. `cities.list` is mandatory as the WS replacement for merge-base `GET /v0/cities`.
 
 ### Out of scope for #646
 
@@ -215,9 +224,9 @@ The implementation can migrate these in phases, but the plan must inventory them
 
 ### Route disposition matrix
 
-Every former HTTP route is classified as **WS-only** (migrated), **HTTP-only** (justified survivor), or **Removed** (dead).
+Every former merge-base HTTP route and public subresource is classified as **WS-only** (migrated), **HTTP-only** (justified survivor), or **Removed** (dead). The route matrix is authoritative for parity. Multiple old routes may collapse to one canonical WS operation when their semantics are truly identical, but every old route still appears explicitly in the matrix and has explicit parity coverage.
 
-#### HTTP-only survivors (8 routes)
+#### HTTP-only survivors (9 routes)
 
 | Route                        | Justification                                                           |
 | ---------------------------- | ----------------------------------------------------------------------- |
@@ -227,14 +236,15 @@ Every former HTTP route is classified as **WS-only** (migrated), **HTTP-only** (
 | `GET /v0/provider-readiness` | Operational probe                                                       |
 | `POST /v0/city`              | Process manager registration, not client API                            |
 | `/svc/*`                     | TCP/HTTP proxy passthrough to workspace services                        |
+| `/debug/pprof/*`             | Go runtime profiling, developer tool                                    |
 | `GET /v0/asyncapi.yaml`      | Auto-generated spec discovery — clients need contract before WS connect |
 | `GET /v0/openapi.yaml`       | Auto-generated spec discovery — clients need contract before WS connect |
 
-#### WS-only actions (119 actions)
+#### WS protocol domains (derived summary, non-authoritative)
 
 | Domain        | WS Actions                                                                                                                                                                                                                                                                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Health/Status | `health.get`, `status.get`                                                                                                                                                                                                                                                                                                                 |
+| Status        | `status.get`                                                                                                                                                                                                                                                                                                                               |
 | City/Config   | `city.get`, `city.patch`, `config.get`, `config.explain`, `config.validate`, `cities.list`                                                                                                                                                                                                                                                 |
 | Agents        | `agents.list`, `agent.get`, `agent.create`, `agent.update`, `agent.delete`, `agent.suspend`, `agent.resume`                                                                                                                                                                                                                                |
 | Rigs          | `rigs.list`, `rig.get`, `rig.create`, `rig.update`, `rig.delete`, `rig.suspend`, `rig.resume`, `rig.restart`                                                                                                                                                                                                                               |
@@ -254,6 +264,15 @@ Every former HTTP route is classified as **WS-only** (migrated), **HTTP-only** (
 | ExtMsg        | `extmsg.inbound`, `extmsg.outbound`, `extmsg.bindings.list`, `extmsg.bind`, `extmsg.unbind`, `extmsg.groups.lookup`, `extmsg.groups.ensure`, `extmsg.participant.upsert`, `extmsg.participant.remove`, `extmsg.transcript.list`, `extmsg.transcript.ack`, `extmsg.adapters.list`, `extmsg.adapters.register`, `extmsg.adapters.unregister` |
 | Subscriptions | `subscription.start` (events, session.stream), `subscription.stop`                                                                                                                                                                                                                                                                         |
 
+The exact WS action inventory is derived from the merge-base route matrix and role-filtered action registry. It is not maintained in this plan as a fixed count. `agent.get` must expose the canonical `session.id` whenever the agent has an addressable session. `cities.list` is supervisor-only. `subscription.start` and `subscription.stop` are first-class public protocol operations and must appear in capabilities and AsyncAPI generation like other actions.
+
+#### Explicit compatibility mappings
+
+| Former Route                          | Canonical WS Replacement                                                                                               |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `GET /v0/agent/{name}/output`         | `agent.get` to obtain canonical `session.id`, then `session.transcript`                                               |
+| `GET /v0/agent/{name}/output/stream`  | `agent.get` to obtain canonical `session.id`, then `subscription.start {kind: "session.stream", target: session.id}` |
+
 #### Removed (SSE endpoints)
 
 | Former Route                  | Replacement                                   |
@@ -267,12 +286,17 @@ Every former HTTP route is classified as **WS-only** (migrated), **HTTP-only** (
 
 - Write failing protocol tests first for handshake, correlation, close/error behavior, and the first migrated request/response actions
 - Add AsyncAPI spec for the WebSocket protocol using swaggest/go-asyncapi for spec generation from Go types
+- Keep checked-in contract artifacts fresh from the start:
+  - Go types generate `contracts/http/openapi.yaml` and `contracts/supervisor-ws/asyncapi.yaml`
+  - specs generate `contracts/supervisor-ws/generated/*`
 - Introduce the transport-neutral execution layer incrementally, not as a full up-front rewrite of all HTTP handlers
   - start with shared query/command functions for the first migrated domains
   - continue extracting typed inputs/outputs and shared error mapping as each domain moves
   - avoid duplicating business logic between HTTP and WebSocket, but do not block phase 1 on extracting the entire API surface at once
 - Add `GET /v0/ws` to both `internal/api.Server` and `internal/api.SupervisorMux`
 - Implement handshake, request dispatch, error envelopes, and subscription lifecycle
+- Make the role-filtered action registry authoritative for dispatch, `hello.capabilities`, and AsyncAPI generation
+- Ensure `hello.capabilities` is truthful per connection role and includes protocol operations such as `subscription.start` and `subscription.stop`
 - Preserve current read-only semantics in the WebSocket layer
 - Keep HTTP/SSE endpoints live during this phase
 
@@ -283,17 +307,22 @@ Every former HTTP route is classified as **WS-only** (migrated), **HTTP-only** (
   - per-city events
   - supervisor global events
   - session stream
+- Preserve former agent-output semantics through `agent.get` session-id resolution plus session transcript/stream behavior rather than a separate WS agent-output concept
 - Migrate blocking query semantics that depend on `X-GC-Index`, `index`, and `wait`
 - Add reconnect/cursor parity tests for event and session flows
+- Add `turns` and format parity tests so `session.transcript` and `subscription.start kind=session.stream` behave consistently
 - Keep old SSE endpoints live until all internal clients have switched
 
 ### Phase 3: Go client migration
 
-- Write failing client parity tests first for all migrated `internal/api.Client` methods
+- Write failing client parity tests first for all in-repo `internal/api.Client` call sites that move to WS
 - Replace `internal/api.Client` HTTP transport with a persistent WebSocket client with auto-reconnect and exponential backoff (1s, 2s, 4s, 8s, 16s, 30s max)
 - **No HTTP fallback** — every method goes through WS or returns an error
 - Add subscription API to Go client: `SubscribeEvents`, `SubscribeSessionStream`, `Unsubscribe`
 - Add `Close()` method for clean connection shutdown
+- Distinguish protocol completeness from client wrapper completeness:
+  - the route matrix defines public protocol completeness
+  - `internal/api.Client` only needs typed coverage for in-repo call sites and explicitly promised helpers
 - Preserve current routing behavior:
   - standalone city-local client path
   - supervisor client path
@@ -312,10 +341,11 @@ Every former HTTP route is classified as **WS-only** (migrated), **HTTP-only** (
 - Replace `EventSource` SSE with WS subscriptions
 - Render all data client-side from JSON (eliminate server-side HTML templates)
 - Add WS reconnect with exponential backoff in browser JS
-- Strip the dashboard server to static file serving only — zero API endpoints
+- Strip the dashboard server to static file serving plus optional startup bootstrap/config injection only — zero runtime API endpoints
 - Eliminate `/api/run` — browser calls supervisor WS actions directly
 - Eliminate all 17 `/api/*` proxy endpoints
 - Eliminate server-rendered CSRF tokens — browser uses Origin-based WS auth
+- Keep the `city` URL parameter as client-side routing state only; translate it into explicit `scope.city` on relevant WS requests and subscriptions
 
 ### Phase 5: Remove legacy HTTP/SSE endpoints
 
@@ -336,7 +366,7 @@ Every former HTTP route is classified as **WS-only** (migrated), **HTTP-only** (
 - The current HTTP `X-GC-Request` CSRF mechanism does not apply to WebSocket frames; mutation authorization is established at handshake time and enforced for the lifetime of the connection
 - Browser-direct WS connections use the same Origin validation as Go clients — localhost enforcement at handshake time
 - Server-rendered CSRF tokens (`<meta name="dashboard-token">`) are eliminated along with the dashboard server API
-- The dashboard server no longer mediates browser access — the browser connects directly to the supervisor/city WS endpoint
+- The dashboard server no longer mediates browser access after page load — the browser connects directly to the supervisor WS endpoint and uses explicit `scope.city` when needed
 
 ## Operational Semantics
 
@@ -388,6 +418,9 @@ The WebSocket transport should emit enough telemetry to debug production failure
 - malformed envelope rejection
 - read-only mutation rejection
 - city scope required vs auto-resolved behavior
+- role-truthful `hello.capabilities`
+- wrong-role errors use structured `unsupported_on_server_role`
+- `subscription.start` and `subscription.stop` appear in capabilities/spec generation like other public actions
 - request/response concurrency and out-of-order response correlation
 - ping/pong keepalive behavior and dead-connection detection
 - idempotency-key replay protection for create operations
@@ -398,19 +431,25 @@ The WebSocket transport should emit enough telemetry to debug production failure
 - per-city event subscription
 - global event subscription with composite cursor parity
 - session stream parity
+- `turns` and format parity between `session.transcript` and `session.stream`
 - unsubscribe behavior
 - reconnect/resume behavior
 - city-unavailable termination behavior on supervisor-scoped city subscriptions
 
 ### Client migration tests
 
-- `internal/api.Client` parity tests for all WS-migrated methods
+- `internal/api.Client` parity tests for all in-repo WS-migrated methods
 - CLI command tests covering WS-only API routing paths
 - client reconnect with backoff tests
 - client subscription API tests (events, session stream)
 
 ### Migration safety tests
 
+- route-by-route parity tests derived from the merge-base route matrix before deleting each non-survivor HTTP/SSE path
+- checked-in contract artifact freshness tests for:
+  - Go types -> AsyncAPI/OpenAPI
+  - specs -> generated DTOs
+- `agent.get` exposes canonical `session.id` for addressable agent sessions
 - blocking query (watch) behavior preserves semantics over WS
 - standalone city-local server and supervisor mux both serve the same WS protocol correctly
 - service proxy routes remain HTTP and unaffected
@@ -419,10 +458,12 @@ The WebSocket transport should emit enough telemetry to debug production failure
 ## Assumptions and Defaults
 
 - All 5 phases complete in this branch before merge
+- The merge-base HTTP/SSE surface is the parity source of truth, not the branch’s current WS action inventory
 - The dashboard browser connects directly to the supervisor WebSocket endpoint
-- The dashboard server is a static file server only — zero API endpoints
+- The dashboard server is static plus optional startup bootstrap/config injection only — zero runtime API endpoints
 - WebSocket is the exclusive client transport; HTTP remains only for justified operational endpoints
 - AsyncAPI + OpenAPI specs are auto-generated from annotated Go types (single source of truth)
+- DTOs are generated from the checked-in specs and freshness is CI-gated
 - The Go client auto-reconnects with exponential backoff; no HTTP fallback
 - Browser auth uses Origin-based WS validation (localhost enforcement); server-rendered CSRF tokens are eliminated
 - Fern is out of scope

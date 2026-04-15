@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="/static/dashboard.css">
     <title>Gas City Control Center</title>
+    <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
     <div class="dashboard" id="dashboard-main">
@@ -23,95 +23,661 @@
             </div>
         </header>
 
-        <!-- City tabs (supervisor mode) -->
-        <nav class="city-tabs" id="city-tabs-nav" style="display:none;"></nav>
+        <!-- City Tabs (populated by JS in supervisor mode) -->
+        <nav class="city-tabs" id="city-tabs-nav" style="display: none;"></nav>
 
         <!-- Mayor Status Banner -->
-        <div id="mayor-status-banner"></div>
-
-        <!-- Summary Bar -->
-        <div id="summary-bar"></div>
-
-        <!-- Main Grid -->
-        <div class="main-grid">
-            <div class="left-column">
-                <!-- Convoys Panel -->
-                <div class="panel" id="convoys-panel">
-                    <div class="panel-header">
-                        <h2>Convoys</h2>
-                    </div>
-                    <div class="panel-body" id="convoys-body">
-                        <div class="loading">Loading...</div>
-                    </div>
+        <div class="mayor-banner detached" id="mayor-banner">
+            <div class="mayor-info">
+                <span class="mayor-icon">&#127913;</span>
+                <span class="mayor-title">The Mayor</span>
+                <span class="badge badge-muted">Unknown</span>
+            </div>
+            <div class="mayor-status" style="display: none;">
+                <div class="mayor-stat">
+                    <span class="mayor-stat-label">Activity</span>
+                    <span class="mayor-stat-value"></span>
                 </div>
-
-                <!-- Crew Panel -->
-                <div class="panel" id="crew-panel">
-                    <div class="panel-header">
-                        <h2>Crew</h2>
-                    </div>
-                    <div class="panel-body" id="crew-body">
-                        <div class="loading">Loading...</div>
-                    </div>
+                <div class="mayor-stat">
+                    <span class="mayor-stat-label">Runtime</span>
+                    <span class="mayor-stat-value"></span>
                 </div>
+            </div>
+        </div>
 
-                <!-- Mail Panel -->
-                <div class="panel" id="mail-panel">
-                    <div class="panel-header">
-                        <h2>Mail</h2>
+        <!-- Summary & Alerts Banner -->
+        <div class="summary-banner" id="summary-banner" style="display: none;">
+            <div class="summary-stats">
+                <div class="stat health-stat" id="summary-health-stat" style="display: none;">
+                    <span class="stat-value"></span>
+                    <span class="stat-label"></span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="summary-polecat-count">0</span>
+                    <span class="stat-label">&#129448; Polecats</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="summary-assigned-count">0</span>
+                    <span class="stat-label">&#128100; Assigned</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="summary-issue-count">0</span>
+                    <span class="stat-label">&#128203; Beads</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="summary-convoy-count">0</span>
+                    <span class="stat-label">&#128666; Convoys</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="summary-escalation-count">0</span>
+                    <span class="stat-label">&#9888;&#65039; Escalations</span>
+                </div>
+            </div>
+            <div class="summary-alerts" id="summary-alerts">
+                <span class="alert-item alert-green">&#10003; All clear</span>
+            </div>
+        </div>
+
+        <div class="panels">
+            <!-- Row 1: Convoys, Polecats -->
+
+            <!-- Convoys Panel -->
+            <div class="panel" id="convoy-panel">
+                <div class="panel-header">
+                    <h2>&#128666; Convoys</h2>
+                    <span class="count">0</span>
+                    <button class="new-convoy-btn" id="new-convoy-btn">+ New Convoy</button>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <!-- Convoy List View -->
+                    <div id="convoy-list">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Convoy</th>
+                                    <th>Progress</th>
+                                    <th>Work</th>
+                                    <th>Activity</th>
+                                </tr>
+                            </thead>
+                            <tbody id="convoy-tbody"></tbody>
+                        </table>
+                        <div class="empty-state" id="convoy-empty" style="display: none;">
+                            <p>No active convoys</p>
+                        </div>
                     </div>
-                    <div class="panel-body" id="mail-body">
-                        <div class="loading">Loading...</div>
+                    <!-- Convoy Detail View (hidden by default) -->
+                    <div id="convoy-detail" style="display: none;">
+                        <div class="detail-header">
+                            <button id="convoy-back-btn" class="btn-back">&larr; Back</button>
+                            <span id="convoy-detail-title" class="convoy-detail-title"></span>
+                        </div>
+                        <div class="convoy-detail-content">
+                            <div class="convoy-detail-meta">
+                                <span id="convoy-detail-id" class="convoy-id"></span>
+                                <span id="convoy-detail-status" class="badge"></span>
+                                <span id="convoy-detail-progress"></span>
+                            </div>
+                            <div class="convoy-detail-section">
+                                <div class="convoy-issues-header">
+                                    <h4>Tracked Issues</h4>
+                                    <button class="convoy-add-issue-btn" id="convoy-add-issue-btn">+ Add Issue</button>
+                                </div>
+                                <div id="convoy-add-issue-form" class="convoy-add-issue-form" style="display: none;">
+                                    <input type="text" id="convoy-add-issue-input" class="convoy-add-issue-input" placeholder="Enter issue ID...">
+                                    <button class="btn-primary convoy-add-issue-submit" id="convoy-add-issue-submit">Add</button>
+                                    <button class="btn-secondary convoy-add-issue-cancel" id="convoy-add-issue-cancel">Cancel</button>
+                                </div>
+                                <div id="convoy-issues-loading" class="loading-state">Loading issues...</div>
+                                <table id="convoy-issues-table" style="display: none;">
+                                    <thead>
+                                        <tr>
+                                            <th>Status</th>
+                                            <th>ID</th>
+                                            <th>Title</th>
+                                            <th>Assignee</th>
+                                            <th>Progress</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="convoy-issues-tbody"></tbody>
+                                </table>
+                                <div id="convoy-issues-empty" class="empty-state" style="display: none;">
+                                    <p>No issues in this convoy</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- New Convoy Form (hidden by default) -->
+                    <div id="convoy-create-form" class="convoy-create-form" style="display: none;">
+                        <div class="detail-header">
+                            <button id="convoy-create-back-btn" class="btn-back">&larr; Back</button>
+                            <span class="convoy-detail-title">New Convoy</span>
+                        </div>
+                        <div class="convoy-create-fields">
+                            <div class="command-field">
+                                <label class="command-field-label" for="convoy-create-name">Name</label>
+                                <input type="text" id="convoy-create-name" class="command-field-input" placeholder="Enter convoy name...">
+                            </div>
+                            <div class="command-field">
+                                <label class="command-field-label" for="convoy-create-issues">Issue IDs (space-separated)</label>
+                                <input type="text" id="convoy-create-issues" class="command-field-input" placeholder="e.g. gc-1kp gc-2ab">
+                            </div>
+                            <div class="form-actions">
+                                <button class="btn-secondary" id="convoy-create-cancel-btn">Cancel</button>
+                                <button class="btn-primary" id="convoy-create-submit-btn">Create Convoy</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="right-column">
-                <!-- Issues Panel -->
-                <div class="panel" id="issues-panel">
-                    <div class="panel-header">
-                        <h2>Issues</h2>
-                    </div>
-                    <div class="panel-body" id="issues-body">
-                        <div class="loading">Loading...</div>
+            <!-- Crew Panel (named, long-lived workers) -->
+            <div class="panel" id="crew-panel">
+                <div class="panel-header">
+                    <h2>&#128104;&#8205;&#128188; Crew</h2>
+                    <span class="count" id="crew-count">0</span>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <div class="loading-state" id="crew-loading">Loading crew...</div>
+                    <table id="crew-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Rig</th>
+                                <th>State</th>
+                                <th>Bead</th>
+                                <th>Activity</th>
+                                <th>Session</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="crew-tbody"></tbody>
+                    </table>
+                    <div class="empty-state" id="crew-empty" style="display: none;">
+                        <p>No crew configured</p>
                     </div>
                 </div>
+            </div>
 
-                <!-- Escalations Panel -->
-                <div class="panel" id="escalations-panel">
-                    <div class="panel-header">
-                        <h2>Escalations</h2>
-                    </div>
-                    <div class="panel-body" id="escalations-body">
-                        <div class="loading">Loading...</div>
+            <!-- Agent Log Drawer (shared, hidden by default) -->
+            <div class="panel panel-full" id="agent-log-drawer" style="display: none;">
+                <div class="panel-header">
+                    <h2>&#128203; <span id="log-drawer-agent-name">&mdash;</span> &mdash; Logs</h2>
+                    <span class="count" id="log-drawer-count">0</span>
+                    <span class="log-drawer-status" id="log-drawer-status"></span>
+                    <button class="log-drawer-btn" id="log-drawer-older-btn" style="display: none;">Load older</button>
+                    <button class="log-drawer-close-btn" id="log-drawer-close-btn">&#10005; Close</button>
+                </div>
+                <div class="panel-body log-drawer-body" id="log-drawer-body">
+                    <div class="log-drawer-messages" id="log-drawer-messages">
+                        <div class="loading-state" id="log-drawer-loading">Loading logs...</div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Activity Panel -->
-                <div class="panel" id="activity-panel">
-                    <div class="panel-header">
-                        <h2>Activity</h2>
+            <!-- Polecats Panel -->
+            <div class="panel" id="polecats-panel">
+                <div class="panel-header">
+                    <h2>&#129448; Polecats</h2>
+                    <span class="count">0</span>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <table id="polecats-table">
+                        <thead>
+                            <tr>
+                                <th>Worker</th>
+                                <th>Type</th>
+                                <th>Rig</th>
+                                <th>Working On</th>
+                                <th>Status</th>
+                                <th>Activity</th>
+                            </tr>
+                        </thead>
+                        <tbody id="polecats-tbody"></tbody>
+                    </table>
+                    <div class="empty-state" id="polecats-empty" style="display: none;">
+                        <p>No polecats</p>
                     </div>
-                    <div class="panel-body" id="activity-body">
-                        <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Activity Timeline Panel -->
+            <div class="panel" id="activity-panel">
+                <div class="panel-header">
+                    <h2>&#128220; Activity</h2>
+                    <span class="count">0</span>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="tl-filters" id="activity-filters" style="display: none;">
+                    <div class="tl-filter-group">
+                        <label>Category:</label>
+                        <button class="tl-filter-btn active" data-filter="category" data-value="all">All</button>
+                        <button class="tl-filter-btn" data-filter="category" data-value="agent">Agent</button>
+                        <button class="tl-filter-btn" data-filter="category" data-value="work">Work</button>
+                        <button class="tl-filter-btn" data-filter="category" data-value="comms">Comms</button>
+                        <button class="tl-filter-btn" data-filter="category" data-value="system">System</button>
+                    </div>
+                    <div class="tl-filter-group">
+                        <label>Rig:</label>
+                        <select class="tl-filter-select" id="tl-rig-filter">
+                            <option value="all">All rigs</option>
+                        </select>
+                    </div>
+                    <div class="tl-filter-group">
+                        <label>Agent:</label>
+                        <select class="tl-filter-select" id="tl-agent-filter">
+                            <option value="all">All agents</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="panel-body activity-feed">
+                    <div class="tl-timeline" id="activity-timeline"></div>
+                    <div class="tl-empty-filtered" id="tl-empty-filtered" style="display: none;">
+                        <p>No events match current filters</p>
+                    </div>
+                    <div class="empty-state" id="activity-empty">
+                        <p>No recent activity</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 2: Mail, Escalations -->
+
+            <!-- Mail Panel -->
+            <div class="panel" id="mail-panel">
+                <div class="panel-header">
+                    <h2>&#9993;&#65039; Mail</h2>
+                    <span class="count" id="mail-count">0</span>
+                    <div class="mail-tabs">
+                        <button class="mail-tab active" data-tab="inbox">Inbox</button>
+                        <button class="mail-tab" data-tab="all">All Traffic</button>
+                    </div>
+                    <button class="compose-btn" id="compose-mail-btn" title="Compose new message">&#9998;</button>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <!-- Inbox view (threaded conversations via API) -->
+                    <div id="mail-list">
+                        <div class="loading-state" id="mail-loading">Loading inbox...</div>
+                        <div id="mail-threads" style="display: none;"></div>
+                        <div class="empty-state" id="mail-empty" style="display: none;">
+                            <p>No mail in inbox</p>
+                        </div>
+                    </div>
+                    <!-- All Mail view (all traffic from beads) -->
+                    <div id="mail-all" style="display: none;">
+                        <table class="mail-all-table">
+                            <thead>
+                                <tr>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th>Subject</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mail-all-tbody"></tbody>
+                        </table>
+                        <div class="empty-state" id="mail-all-empty" style="display: none;">
+                            <p>No mail traffic</p>
+                        </div>
+                    </div>
+                    <!-- Message detail view (hidden by default) -->
+                    <div id="mail-detail" class="mail-detail" style="display: none;">
+                        <div class="mail-detail-header">
+                            <button class="mail-back-btn" id="mail-back-btn">&larr; Back</button>
+                            <span class="mail-detail-subject" id="mail-detail-subject"></span>
+                        </div>
+                        <div class="mail-detail-meta">
+                            <span class="mail-detail-from">From: <strong id="mail-detail-from"></strong></span>
+                            <span class="mail-detail-time" id="mail-detail-time"></span>
+                        </div>
+                        <div class="mail-detail-body" id="mail-detail-body"></div>
+                        <div class="mail-detail-actions">
+                            <button class="mail-reply-btn" id="mail-reply-btn">&#8617; Reply</button>
+                        </div>
+                    </div>
+                    <!-- Compose form (hidden by default) -->
+                    <div id="mail-compose" class="mail-compose" style="display: none;">
+                        <div class="mail-compose-header">
+                            <button class="mail-back-btn" id="compose-back-btn">&larr; Back</button>
+                            <span class="mail-compose-title" id="mail-compose-title">New Message</span>
+                        </div>
+                        <div class="mail-compose-form">
+                            <div class="mail-compose-field">
+                                <label for="compose-to">To:</label>
+                                <select id="compose-to" class="mail-compose-input"></select>
+                            </div>
+                            <div class="mail-compose-field">
+                                <label for="compose-subject">Subject:</label>
+                                <input type="text" id="compose-subject" class="mail-compose-input" placeholder="Enter subject...">
+                            </div>
+                            <div class="mail-compose-field">
+                                <label for="compose-body">Message:</label>
+                                <textarea id="compose-body" class="mail-compose-textarea" placeholder="Enter message..." rows="4"></textarea>
+                            </div>
+                            <input type="hidden" id="compose-reply-to" value="">
+                            <div class="mail-compose-actions">
+                                <button class="mail-send-btn" id="mail-send-btn">Send</button>
+                                <button class="mail-cancel-btn" id="compose-cancel-btn">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Escalations Panel -->
+            <div class="panel" id="escalations-panel">
+                <div class="panel-header">
+                    <h2>&#128680; Escalations</h2>
+                    <span class="count">0</span>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <table id="escalations-table">
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Issue</th>
+                                <th>From</th>
+                                <th>Age</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="escalations-tbody"></tbody>
+                    </table>
+                    <div class="empty-state" id="escalations-empty" style="display: none;">
+                        <p>No escalations</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 3: Services, Rigs, Dogs, Health -->
+
+            <!-- Services Panel -->
+            <div class="panel" id="services-panel">
+                <div class="panel-header">
+                    <h2>&#128752;&#65039; Services</h2>
+                    <span class="count">0</span>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <table id="services-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Kind</th>
+                                <th>Service</th>
+                                <th>Local</th>
+                            </tr>
+                        </thead>
+                        <tbody id="services-tbody"></tbody>
+                    </table>
+                    <div class="empty-state" id="services-empty">
+                        <p>No workspace services</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rigs Panel -->
+            <div class="panel" id="rigs-panel">
+                <div class="panel-header">
+                    <h2>&#127959;&#65039; Rigs</h2>
+                    <span class="count">0</span>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <table id="rigs-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Polecats</th>
+                                <th>Crew</th>
+                                <th>Agents</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rigs-tbody"></tbody>
+                    </table>
+                    <div class="empty-state" id="rigs-empty" style="display: none;">
+                        <p>No rigs configured</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dogs Panel -->
+            <div class="panel" id="dogs-panel">
+                <div class="panel-header">
+                    <h2>&#128021; Dogs</h2>
+                    <span class="count">0</span>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <table id="dogs-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>State</th>
+                                <th>Work</th>
+                                <th>Activity</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dogs-tbody"></tbody>
+                    </table>
+                    <div class="empty-state" id="dogs-empty" style="display: none;">
+                        <p>No dogs in kennel</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Queues Panel (optional, included with empty state) -->
+            <div class="panel" id="queues-panel" style="display: none;">
+                <div class="panel-header">
+                    <h2>&#128203; Queues</h2>
+                    <span class="count">0</span>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <table id="queues-table">
+                        <thead>
+                            <tr>
+                                <th>Queue</th>
+                                <th>Status</th>
+                                <th>Avail</th>
+                                <th>Proc</th>
+                                <th>Done</th>
+                                <th>Fail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queues-tbody"></tbody>
+                    </table>
+                    <div class="empty-state" id="queues-empty" style="display: none;">
+                        <p>No queues</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Beads Panel -->
+            <div class="panel" id="beads-panel">
+                <div class="panel-header">
+                    <h2>&#128203; Beads</h2>
+                    <span class="count">0</span>
+                    <button class="new-issue-btn" onclick="openIssueModal()">+ New</button>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-tabs">
+                    <button class="tab-btn active" data-tab="ready" onclick="switchWorkTab('ready')">Ready</button>
+                    <button class="tab-btn" data-tab="progress" onclick="switchWorkTab('progress')">In Progress</button>
+                    <button class="tab-btn" data-tab="all" onclick="switchWorkTab('all')">All</button>
+                </div>
+                <div class="panel-tabs rig-filter-tabs" id="rig-filter-tabs">
+                    <button class="rig-btn active" data-rig="all" onclick="switchRigFilter('all')">All</button>
+                </div>
+                <div class="panel-body">
+                    <!-- Issues List View -->
+                    <div id="issues-list">
+                        <table id="work-table">
+                            <thead>
+                                <tr>
+                                    <th>Pri</th>
+                                    <th>ID</th>
+                                    <th>Title</th>
+                                    <th>Rig</th>
+                                    <th>Status</th>
+                                    <th>Age</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="issues-tbody"></tbody>
+                        </table>
+                        <div class="empty-state" id="issues-empty" style="display: none;">
+                            <p>No beads</p>
+                        </div>
+                    </div>
+                    <!-- Issue Detail View (hidden by default) -->
+                    <div id="issue-detail" style="display: none;">
+                        <div class="detail-header">
+                            <button id="issue-back-btn" class="btn-back">&larr; Back</button>
+                        </div>
+                        <div class="issue-detail-content">
+                            <div class="issue-detail-title">
+                                <span id="issue-detail-priority" class="badge"></span>
+                                <span id="issue-detail-id" class="issue-id"></span>
+                                <span id="issue-detail-status" class="issue-status"></span>
+                            </div>
+                            <h3 id="issue-detail-title-text"></h3>
+                            <div class="issue-detail-meta">
+                                <span id="issue-detail-type"></span>
+                                <span id="issue-detail-owner"></span>
+                                <span id="issue-detail-created"></span>
+                            </div>
+                            <div id="issue-detail-actions" class="issue-detail-actions"></div>
+                            <div class="issue-detail-section">
+                                <h4>Description</h4>
+                                <pre id="issue-detail-description"></pre>
+                            </div>
+                            <div id="issue-detail-deps" class="issue-detail-section" style="display: none;">
+                                <h4>Dependencies</h4>
+                                <div id="issue-detail-depends-on"></div>
+                            </div>
+                            <div id="issue-detail-blocks-section" class="issue-detail-section" style="display: none;">
+                                <h4>Blocks</h4>
+                                <div id="issue-detail-blocks"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Assigned Panel -->
+            <div class="panel" id="assigned-panel">
+                <div class="panel-header">
+                    <h2>&#128100; Assigned</h2>
+                    <span class="count">0</span>
+                    <button class="assign-btn" onclick="openAssignForm()">+ Assign</button>
+                    <button class="assign-clear-all-btn" id="assign-clear-all-btn" style="display: none;" onclick="clearAllAssigned()">Clear All</button>
+                    <button class="collapse-btn" aria-label="Toggle panel">&#9660;</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    <!-- Assign Form (hidden by default) -->
+                    <div id="assign-form" class="assign-form" style="display: none;">
+                        <div class="assign-form-row">
+                            <input type="text" id="assign-bead" class="assign-input" placeholder="Bead ID (e.g. gc-abc)">
+                            <button class="assign-submit" onclick="submitAssign()">Assign</button>
+                            <button class="assign-cancel" onclick="closeAssignForm()">Cancel</button>
+                        </div>
+                    </div>
+                    <table id="assigned-table">
+                        <thead>
+                            <tr>
+                                <th>Bead</th>
+                                <th>Title</th>
+                                <th>Agent</th>
+                                <th>Since</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="assigned-tbody"></tbody>
+                    </table>
+                    <div class="empty-state" id="assigned-empty" style="display: none;">
+                        <p>No assigned work</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Command Palette -->
-    <div id="command-palette" class="palette-overlay" style="display:none;">
-        <div class="palette-container">
-            <input type="text" id="cmd-input" class="palette-input" placeholder="Type a command..." autocomplete="off" />
-            <div id="cmd-results" class="palette-results"></div>
+    <!-- Command Palette (outside refreshed area) -->
+    <div id="command-palette-overlay" class="command-palette-overlay">
+        <div class="command-palette">
+            <input type="text" id="command-palette-input" class="command-palette-input" placeholder="Type to search commands..." autocomplete="off">
+            <div id="command-palette-results" class="command-palette-results"></div>
+            <div class="command-palette-footer">
+                <span><kbd>&uarr;&darr;</kbd> navigate</span>
+                <span><kbd>&#8629;</kbd> execute</span>
+                <span><kbd>esc</kbd> close</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Issue Creation Modal -->
+    <div id="issue-modal" class="modal" style="display: none;">
+        <div class="modal-backdrop" onclick="closeIssueModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>&#128255; Create New Issue</h3>
+                <button class="modal-close" onclick="closeIssueModal()">&#10005;</button>
+            </div>
+            <form id="issue-form" onsubmit="submitIssue(event)">
+                <div class="form-group">
+                    <label for="issue-title">Title *</label>
+                    <input type="text" id="issue-title" placeholder="What needs to be done?" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="issue-priority">Priority</label>
+                    <select id="issue-priority">
+                        <option value="1">&#128308; P1 - Critical</option>
+                        <option value="2" selected>&#128992; P2 - High (default)</option>
+                        <option value="3">&#128993; P3 - Medium</option>
+                        <option value="4">&#9898; P4 - Low</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="issue-description">Description (optional)</label>
+                    <textarea id="issue-description" rows="3" placeholder="Additional context or details..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeIssueModal()">Cancel</button>
+                    <button type="submit" class="btn-primary" id="issue-submit-btn">Create Issue</button>
+                </div>
+            </form>
         </div>
     </div>
 
     <!-- Output Panel -->
-    <div id="output-panel" class="output-panel" style="display: none;">
+    <div id="output-panel" class="output-panel">
         <div class="output-panel-header">
-            <span id="output-panel-cmd">Command Output</span>
+            <span class="output-panel-title">
+                <span>&#128203;</span>
+                <span id="output-panel-cmd">Command Output</span>
+            </span>
             <div class="output-panel-actions">
                 <button id="output-copy-btn" class="output-panel-btn">Copy</button>
                 <button id="output-close-btn" class="output-panel-btn">Close</button>
