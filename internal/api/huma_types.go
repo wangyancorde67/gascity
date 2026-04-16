@@ -367,7 +367,7 @@ type RigPatchGetInput struct {
 // RigPatchSetInput is the Huma input for PUT /v0/patches/rigs.
 type RigPatchSetInput struct {
 	Body struct {
-		Name      string `json:"name,omitempty" doc:"Rig name."`
+		Name      string  `json:"name,omitempty" doc:"Rig name."`
 		Path      *string `json:"path,omitempty" doc:"Override filesystem path."`
 		Prefix    *string `json:"prefix,omitempty" doc:"Override bead ID prefix."`
 		Suspended *bool   `json:"suspended,omitempty" doc:"Override suspended state."`
@@ -503,6 +503,7 @@ type SlingInput struct {
 		Vars           map[string]string `json:"vars,omitempty" doc:"Formula variables."`
 		ScopeKind      string            `json:"scope_kind,omitempty" doc:"Scope kind (city or rig)."`
 		ScopeRef       string            `json:"scope_ref,omitempty" doc:"Scope reference."`
+		Force          bool              `json:"force,omitempty" doc:"Override source workflow conflict checks."`
 	}
 }
 
