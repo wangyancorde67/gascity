@@ -14,34 +14,40 @@ import (
 // runStage1SkillMaterialization performs stage-1 skill materialization
 // for every eligible agent in cfg. Stage 1 materialises at each
 // agent's scope root (city or rig path). Session-worktree
-// materialisation (stage 2) is a separate PreStart-based path wired in
-// by template_resolve.go via skill_integration.go.
+// materialisation (stage 2) is a separate PreStart-based path wired
+// in by template_resolve.go via skill_integration.go.
 //
-// Per engdocs/proposals/skill-materialization.md § "Stage 2 runtime
-// gate", only runtimes that execute host-side PreStart participate.
-// Stage-1 runs in the supervisor process on the host and populates
-// the scope root regardless of where the agent ultimately runs, but
-// we gate on the same eligibility check so k8s/acp agents (which
-// cannot see the host scope root anyway) don't produce wasted I/O
-// or confusing symlink state. Agents whose provider has no vendor
-// sink (copilot/cursor/pi/omp in v0.15.1) are skipped.
+// Stage-1 runs in the gc controller process on the host filesystem,
+// so eligibility is "can the agent read from this host scope root?"
+// — broader than the stage-2 "runtime executes host-side PreStart"
+// gate. tmux and subprocess are both eligible (both read files from
+// the host). k8s and acp are not (k8s pods don't share the scope
+// root; acp runs in-process and doesn't read from it). Hybrid is
+// per-session-routed; conservatively ineligible until v0.15.2.
 //
-// Per-agent errors are logged to stderr and do not abort the pass —
-// the supervisor should continue reconciling every other agent.
-// Catalog-load errors are returned so the caller can surface a single
-// top-level diagnostic.
+// Catalog load happens once per call and feeds every agent's
+// materialisation in this tick. Per-agent errors (LoadAgentCatalog,
+// MaterializeAgent) are logged to stderr and do not abort the pass
+// — the supervisor should continue reconciling every other agent.
+// Catalog-level failures cause the whole pass to exit early with
+// the error logged inline so the caller doesn't double-log.
 func runStage1SkillMaterialization(cityPath string, cfg *config.City, stderr io.Writer) error {
 	if cfg == nil {
 		return nil
 	}
 	cityCat, err := materialize.LoadCityCatalog(cfg.PackSkillsDir)
 	if err != nil {
-		return fmt.Errorf("load city skill catalog: %w", err)
+		// Log inline and return nil so the supervisor tick's
+		// runStep wrapper doesn't double-log the same message.
+		if stderr != nil {
+			fmt.Fprintf(stderr, "gc: stage-1 materialize-skills: load city skill catalog: %v\n", err) //nolint:errcheck // best-effort stderr
+		}
+		return nil
 	}
 
 	for i := range cfg.Agents {
 		agent := &cfg.Agents[i]
-		if !isStage2EligibleSession(cfg.Session.Provider, agent) {
+		if !canStage1Materialize(cfg.Session.Provider, agent) {
 			continue
 		}
 		provider := effectiveAgentProvider(agent, cfg.Workspace.Provider)

@@ -99,7 +99,9 @@ func TestRunStage1SkipsIneligibleRuntimes(t *testing.T) {
 		{"k8s city session", "k8s", ""},
 		{"tmux city + acp agent", "tmux", "acp"},
 		{"hybrid city session", "hybrid", ""},
-		{"subprocess (no PreStart)", "subprocess", ""},
+		// Note: subprocess is STAGE-1 eligible (host scope root is
+		// reachable) even though it's not stage-2 eligible (no
+		// PreStart execution). See TestRunStage1SubprocessEligible.
 	}
 	for _, c := range cases {
 		c := c
@@ -264,6 +266,104 @@ func TestRunStage1IdempotentConverges(t *testing.T) {
 	link := filepath.Join(cityPath, ".claude", "skills", "plan")
 	if _, err := os.Lstat(link); err != nil {
 		t.Errorf("symlink lost after idempotent passes: %v", err)
+	}
+}
+
+// TestRunStage1MaterializesBootstrapPackSkills is the regression for
+// Phase 4 pass-1 Claude finding: stage-1 materialization must
+// surface bootstrap implicit-import pack skills (e.g. `core`) into
+// the agent sink, not just city-pack skills. LoadCityCatalog already
+// folds bootstrap entries into its return, but a test pins the
+// wiring so a future refactor can't silently drop it.
+func TestRunStage1MaterializesBootstrapPackSkills(t *testing.T) {
+	clearGCEnv(t)
+	cityPath := t.TempDir()
+
+	// Stand up a fake GC_HOME with a bootstrap-named implicit
+	// import that resolves to a cache dir containing one skill.
+	gcHome := t.TempDir()
+	t.Setenv("GC_HOME", gcHome)
+
+	// Use the first real bootstrap pack name so the materializer's
+	// bootstrap-name filter lets the entry through.
+	bootstrapName := bootstrapPackNameForTest(t)
+	source := "github.com/example/" + bootstrapName
+	commit := bootstrapName + "-commit"
+	cacheDir := globalRepoCachePathForTest(gcHome, source, commit)
+	if err := os.MkdirAll(filepath.Join(cacheDir, "skills", bootstrapName+"-sample"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(cacheDir, "skills", bootstrapName+"-sample", "SKILL.md"),
+		[]byte("---\nname: "+bootstrapName+"-sample\ndescription: test\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Pack.toml at the cache root so LoadCityCatalog's discovery
+	// path doesn't reject the pack as malformed.
+	if err := os.WriteFile(
+		filepath.Join(cacheDir, "pack.toml"),
+		[]byte("[pack]\nname = \""+bootstrapName+"\"\nversion = \"0.1.0\"\nschema = 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// implicit-import.toml pointing at the cache.
+	if err := os.WriteFile(
+		filepath.Join(gcHome, "implicit-import.toml"),
+		[]byte("schema = 1\n\n[imports.\""+bootstrapName+"\"]\nsource = \""+source+"\"\nversion = \"0.1.0\"\ncommit = \""+commit+"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.City{
+		// No city pack skills — bootstrap-only case.
+		Session: config.SessionConfig{Provider: "tmux"},
+		Agents: []config.Agent{
+			{Name: "mayor", Scope: "city", Provider: "claude"},
+		},
+	}
+
+	var stderr bytes.Buffer
+	if err := runStage1SkillMaterialization(cityPath, cfg, &stderr); err != nil {
+		t.Fatalf("runStage1SkillMaterialization: %v", err)
+	}
+
+	// Bootstrap skill symlink lands in the claude sink.
+	link := filepath.Join(cityPath, ".claude", "skills", bootstrapName+"-sample")
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("bootstrap skill symlink missing at %q: %v", link, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("%q is not a symlink", link)
+	}
+}
+
+// TestRunStage1SubprocessEligible confirms that Phase 4 split the
+// stage-1 / stage-2 eligibility predicates correctly: a subprocess
+// city session receives stage-1 materialization at its scope root
+// (host-reachable filesystem) even though stage-2 PreStart isn't
+// executed by the subprocess runtime. Regression for the Phase 4
+// pass-1 Claude finding that over-gating was leaving subprocess
+// agents with no skills.
+func TestRunStage1SubprocessEligible(t *testing.T) {
+	clearGCEnv(t)
+	cityPath := t.TempDir()
+	t.Setenv("GC_HOME", t.TempDir())
+	writeSkillSource(t, filepath.Join(cityPath, "skills", "plan"))
+
+	cfg := &config.City{
+		PackSkillsDir: filepath.Join(cityPath, "skills"),
+		Session:       config.SessionConfig{Provider: "subprocess"},
+		Agents: []config.Agent{
+			{Name: "mayor", Scope: "city", Provider: "claude"},
+		},
+	}
+
+	var stderr bytes.Buffer
+	if err := runStage1SkillMaterialization(cityPath, cfg, &stderr); err != nil {
+		t.Fatalf("runStage1SkillMaterialization: %v", err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(cityPath, ".claude", "skills", "plan")); err != nil {
+		t.Errorf("subprocess session should receive stage-1 materialization: %v", err)
 	}
 }
 

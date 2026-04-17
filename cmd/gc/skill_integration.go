@@ -12,6 +12,44 @@ import (
 	"github.com/gastownhall/gascity/internal/shellquote"
 )
 
+// canStage1Materialize reports whether stage-1 skill materialization
+// (supervisor-tick-level writes into the agent's scope root) should
+// run for this agent. Stage 1 happens in the gc controller process on
+// the host filesystem, so it requires only that the agent's runtime
+// be able to SEE that filesystem path — not that it execute
+// PreStart.
+//
+//	tmux, subprocess → eligible. Scope root on the host; agent reads
+//	                   files from that host filesystem.
+//	""               → eligible (workspace default is tmux).
+//	acp              → ineligible. In-process agent; scope-root files
+//	                   aren't what it reads from.
+//	k8s              → ineligible. Agent runs in a pod that doesn't
+//	                   share the host scope root.
+//	hybrid           → ineligible in v0.15.1 (per-session routing
+//	                   decides at spawn time whether the session
+//	                   goes local-tmux or remote-k8s; can't predict
+//	                   at supervisor tick without the session name).
+//
+// Separate from isStage2EligibleSession (which gates PreStart
+// injection and has a stricter "runtime actually executes PreStart"
+// requirement). A PR to add PreStart support to the subprocess
+// runtime will collapse the two predicates in a future release.
+func canStage1Materialize(citySessionProvider string, agent *config.Agent) bool {
+	if agent == nil {
+		return false
+	}
+	if agent.Session == "acp" {
+		return false
+	}
+	switch strings.TrimSpace(citySessionProvider) {
+	case "", "tmux", "subprocess":
+		return true
+	default:
+		return false
+	}
+}
+
 // isStage2EligibleSession reports whether skill materialization should
 // run for the given agent's session runtime. Per the skill-
 // materialization spec (§ "Stage 2 runtime gate") and the runtime

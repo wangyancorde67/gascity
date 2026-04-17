@@ -1452,14 +1452,11 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 	// Stage-1 skill materialisation. Runs on every tick so
 	// catalogue edits land without requiring a supervisor restart.
 	// Idempotent — converged passes create nothing new.
-	if err := runStep("materializing_skills", func() error {
+	// runStage1SkillMaterialization logs all errors inline and
+	// returns nil; this step cannot fail the tick.
+	_ = runStep("materializing_skills", func() error {
 		return runStage1SkillMaterialization(cityPath, cfg, stderr)
-	}); err != nil {
-		fmt.Fprintf(stderr, "gc supervisor: city '%s': materialize-skills: %v\n", cityName, err) //nolint:errcheck
-		// Non-fatal — catalogue-load failures shouldn't stop the tick
-		// entirely; per-agent materialisation errors were already
-		// logged inline by runStage1SkillMaterialization.
-	}
+	})
 
 	// Validate install_agent_hooks (workspace + all agents).
 	if err := runStep("validating_hooks", func() error {

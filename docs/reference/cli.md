@@ -2540,12 +2540,19 @@ gc session wake gc-42
 
 ## gc skill
 
-List visible Pack/City skills for the current city pack.
+List skills visible to the current city.
 
-Use "gc skill list" to show discovered skills, optionally scoped to an
-agent or session. Output includes bootstrap implicit-import pack skills
-(e.g. core) alongside the current city pack's catalog — the same set
-the materializer delivers into each agent's provider sink.
+Output includes:
+  - City pack skills (skills/&lt;name&gt;/SKILL.md under the city root)
+  - Bootstrap implicit-import pack skills (e.g. core)
+  - With --agent/--session: that agent's agents/&lt;name&gt;/skills/ catalog
+
+The listing is a diagnostic view of what's *available*. It does not
+collapse precedence, filter to agents whose provider has a vendor
+sink, or predict exactly which entries the materializer will pick on
+name collision. For the materialized set, inspect the
+&lt;scope-root&gt;/.&lt;vendor&gt;/skills/ sink after "gc start" or run
+"gc doctor" to surface collisions.
 
 ```
 gc skill

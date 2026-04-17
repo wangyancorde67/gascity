@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/gastownhall/gascity/internal/config"
 )
@@ -88,7 +89,10 @@ func ValidateSkillCollisions(cfg *config.City) []SkillCollision {
 		// used throughout the binary. Without this fallback,
 		// workspace-level "provider = claude" configs with
 		// non-overriding agents would bypass collision detection.
-		vendor := a.Provider
+		// TrimSpace mirrors cmd/gc/skill_integration.go's
+		// effectiveAgentProvider so whitespace-only overrides don't
+		// bypass either the materializer or this gate.
+		vendor := strings.TrimSpace(a.Provider)
 		if vendor == "" {
 			vendor = cfg.Workspace.Provider
 		}

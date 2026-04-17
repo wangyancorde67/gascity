@@ -514,12 +514,9 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 
 	// Stage-1 skill materialization — runs for every eligible agent
 	// at its scope root before sessions spawn. Non-fatal: per-agent
-	// errors log but don't block start, because catalogue edits
-	// during an active city are the common case.
-	if err := runStage1SkillMaterialization(cityPath, cfg, stderr); err != nil {
-		fmt.Fprintf(stderr, "gc start: stage-1 materialize-skills: %v\n", err) //nolint:errcheck // best-effort stderr
-		// Non-fatal.
-	}
+	// errors are logged inline by runStage1SkillMaterialization
+	// itself; it never returns a non-nil error to its caller.
+	_ = runStage1SkillMaterialization(cityPath, cfg, stderr)
 
 	// Validate install_agent_hooks (workspace + all agents).
 	if ih := cfg.Workspace.InstallAgentHooks; len(ih) > 0 {
