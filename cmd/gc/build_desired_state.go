@@ -46,10 +46,10 @@ type poolEvalWork struct {
 	agentIdx int
 	sp       scaleParams
 	poolDir  string
+	env      map[string]string
 }
 
 func evaluatePendingPools(
-	cityPath string,
 	cfg *config.City,
 	pendingPools []poolEvalWork,
 	stderr io.Writer,
@@ -69,7 +69,8 @@ func evaluatePendingPools(
 	for j, pw := range pendingPools {
 		wg.Add(1)
 		sp := pw.sp
-		sp.Check = prefixControllerQueryEnv(cityPath, cfg, &cfg.Agents[pw.agentIdx], sp.Check)
+		probeEnv := pw.env
+		sp.Check = prefixShellEnv(controllerQueryPrefixEnv(probeEnv), sp.Check)
 		template := cfg.Agents[pw.agentIdx].QualifiedName()
 		agentName := cfg.Agents[pw.agentIdx].Name
 		agentIndex := pw.agentIdx
@@ -78,7 +79,7 @@ func evaluatePendingPools(
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			started := time.Now()
-			d, err := evaluatePool(agentName, sp, dir, shellScaleCheck)
+			d, err := evaluatePool(agentName, sp, dir, probeEnv, shellScaleCheck)
 			evalResults[idx] = poolEvalResult{desired: d, err: err}
 			if trace != nil {
 				outcome := "success"
@@ -114,13 +115,12 @@ func evaluatePendingPools(
 // from agent qualified name → desired count. Used to feed scale_check
 // results into ComputePoolDesiredStates.
 func evaluatePendingPoolsMap(
-	cityPath string,
 	cfg *config.City,
 	pendingPools []poolEvalWork,
 	stderr io.Writer,
 	trace *sessionReconcilerTraceCycle,
 ) map[string]int {
-	counts := evaluatePendingPools(cityPath, cfg, pendingPools, stderr, trace)
+	counts := evaluatePendingPools(cfg, pendingPools, stderr, trace)
 	m := make(map[string]int, len(counts))
 	for j, pw := range pendingPools {
 		m[cfg.Agents[pw.agentIdx].QualifiedName()] = counts[j]
@@ -222,12 +222,12 @@ func buildDesiredStateWithSessionBeads(
 		// them directly; bead-backed mode falls back to them when work-bead
 		// listing fails so transient store errors do not collapse demand to 0.
 		poolDir := agentCommandDir(cityPath, &cfg.Agents[i], cfg.Rigs)
-		pendingPools = append(pendingPools, poolEvalWork{agentIdx: i, sp: sp, poolDir: poolDir})
+		pendingPools = append(pendingPools, poolEvalWork{agentIdx: i, sp: sp, poolDir: poolDir, env: controllerQueryRuntimeEnv(cityPath, cfg, &cfg.Agents[i])})
 	}
 
 	// scale_check runs in parallel for all pool agents — the authoritative
 	// demand signal for new sessions. Computed once, returned in result.
-	scaleCheckCounts := evaluatePendingPoolsMap(cityPath, cfg, pendingPools, stderr, trace)
+	scaleCheckCounts := evaluatePendingPoolsMap(cfg, pendingPools, stderr, trace)
 
 	// Collect work beads with assignees — used for both pool demand and
 	// named session on_demand wake. Hoisted out of the store block so
@@ -328,6 +328,29 @@ func buildDesiredStateWithSessionBeads(
 	}
 	if len(assignedWorkBeads) > 0 {
 		fmt.Fprintf(stderr, "namedWorkReady: %d assigned beads, %d named specs, ready=%v\n", len(assignedWorkBeads), len(namedSpecs), namedWorkReady) //nolint:errcheck
+	}
+	for identity, spec := range namedSpecs {
+		if spec.Mode == "always" || namedWorkReady[identity] || !namedSessionAllowsControllerWorkQuery(cityPath, cfg, spec) {
+			continue
+		}
+		// Controller-side work_query demand stays intentionally narrow.
+		// Generic city-scoped named sessions materialize from direct continuity
+		// (canonical bead or explicit assignee demand), while rig-scoped named
+		// sessions still probe here so the controller validates rig-local query
+		// env such as scoped Dolt credentials.
+		wq := spec.Agent.EffectiveWorkQuery()
+		if wq == "" {
+			continue
+		}
+		dir := agentCommandDir(cityPath, spec.Agent, cfg.Rigs)
+		probeEnv := controllerQueryRuntimeEnv(cityPath, cfg, spec.Agent)
+		out, err := shellScaleCheck(prefixShellEnv(controllerQueryPrefixEnv(probeEnv), wq), dir, probeEnv)
+		if err != nil {
+			continue
+		}
+		if workQueryHasReadyWork(strings.TrimSpace(out)) {
+			namedWorkReady[identity] = true
+		}
 	}
 	for identity, spec := range namedSpecs {
 		canonicalBead, hasCanonical := findCanonicalNamedSessionBead(bp.sessionBeads, spec)
@@ -805,6 +828,17 @@ func desiredHasTemplate(desired map[string]TemplateParams, template string) bool
 	return false
 }
 
+func isMultiSessionCfgAgent(a *config.Agent) bool {
+	if a == nil {
+		return false
+	}
+	if strings.TrimSpace(a.Namepool) != "" || len(a.NamepoolNames) > 0 {
+		return true
+	}
+	maxSess := a.EffectiveMaxActiveSessions()
+	return maxSess == nil || *maxSess != 1
+}
+
 func realizePoolDesiredSessions(
 	bp *agentBuildParams,
 	cfgAgent *config.Agent,
@@ -1007,6 +1041,16 @@ func agentInSuspendedRig(
 		return false
 	}
 	return suspendedRigPaths[filepath.Clean(rigRootForName(rigName, rigs))]
+}
+
+func namedSessionAllowsControllerWorkQuery(cityPath string, cfg *config.City, spec namedSessionSpec) bool {
+	if cfg == nil || spec.Agent == nil {
+		return false
+	}
+	if spec.Named != nil && strings.TrimSpace(spec.Named.Dir) != "" {
+		return true
+	}
+	return configuredRigName(cityPath, spec.Agent, cfg.Rigs) != ""
 }
 
 // installAgentSideEffects performs idempotent side effects for a resolved

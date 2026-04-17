@@ -330,21 +330,28 @@ func TestResolveTemplatePreservesLogicalAgentNameWhenSessionBeadExists(t *testin
 	}
 }
 
-func TestResolveTemplateUsesRigManagedDoltPortAndPinsHome(t *testing.T) {
+func TestResolveTemplateUsesCanonicalRigTargetAndPinsHome(t *testing.T) {
 	cityPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	rigRoot := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(rigRoot, ".beads"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
+	wantPort := strconv.Itoa(writeReachableManagedDoltState(t, cityPath))
+	if err := os.WriteFile(filepath.Join(rigRoot, ".beads", "config.yaml"), []byte(`issue_prefix: repo
+gc.endpoint_origin: inherited_city
+gc.endpoint_status: verified
+dolt.auto-start: false
+`), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	defer ln.Close() //nolint:errcheck // test cleanup
-
-	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
-	if err := os.WriteFile(filepath.Join(rigRoot, ".beads", "dolt-server.port"), []byte(port), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(rigRoot, ".beads", "dolt-server.port"), []byte("31364"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -371,11 +378,14 @@ func TestResolveTemplateUsesRigManagedDoltPortAndPinsHome(t *testing.T) {
 		t.Fatalf("resolveTemplate: %v", err)
 	}
 
-	if got := tp.Env["GC_DOLT_PORT"]; got != port {
-		t.Fatalf("GC_DOLT_PORT = %q, want %q", got, port)
+	if got := tp.Env["GC_DOLT_PORT"]; got != wantPort {
+		t.Fatalf("GC_DOLT_PORT = %q, want %q", got, wantPort)
 	}
-	if got := tp.Env["BEADS_DOLT_SERVER_PORT"]; got != port {
-		t.Fatalf("BEADS_DOLT_SERVER_PORT = %q, want %q", got, port)
+	if got := tp.Env["BEADS_DOLT_SERVER_PORT"]; got != wantPort {
+		t.Fatalf("BEADS_DOLT_SERVER_PORT = %q, want %q", got, wantPort)
+	}
+	if got := tp.Env["GC_DOLT_HOST"]; got != "" {
+		t.Fatalf("GC_DOLT_HOST = %q, want empty for managed target", got)
 	}
 	// HOME is intentionally passed through to agents (PR #272:
 	// HOME/USER/XDG env passthrough for macOS Keychain and config access).
