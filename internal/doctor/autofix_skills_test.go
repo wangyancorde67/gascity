@@ -56,6 +56,16 @@ func TestArrayLineSpanSingleAndMultiLine(t *testing.T) {
 		{"string contains escape", `skills = ["a\"b]"]`, 1},
 		{"unclosed array fallback", "skills = [\n  \"a\",", 1},
 		{"comment after open bracket", "skills = [ # comment\n  \"a\"\n]", 3},
+		// Regression for Phase 2 review pass 2: array containing a TOML
+		// literal multi-line string whose body holds a `]` character.
+		// Without literal-multiline tracking, scanBrackets would close
+		// the array at the body bracket and miscount the span.
+		{"literal multiline in array", "skills = [\n  '''line\n  with ] bracket''',\n  \"ok\"\n]", 5},
+		// Single-quote literal strings inside arrays.
+		{"literal single in array", `skills = ['weird]name', "ok"]`, 1},
+		// Multi-line basic string assigned directly (invalid schema for
+		// our tombstones but the scanner must still measure it correctly).
+		{"basic multiline as value", "skills = \"\"\"\nbody\n\"\"\"", 3},
 	}
 	for _, c := range cases {
 		c := c
@@ -300,6 +310,43 @@ func TestDeprecatedAttachmentFieldsCheckNoCityPath(t *testing.T) {
 // a TOML multi-line string. Without triple-quote tracking,
 // `gc doctor --fix` would corrupt an illustrative example embedded
 // in a description or prompt field.
+// TestRewriteWithLiteralMultilineInArray is the regression for the
+// pass-2 Codex finding: a deprecated array can validly contain a
+// `'''..'''` body whose text includes `]`. Without literal-multiline
+// tracking the rewrite would close the array early, leave the
+// remaining body content as orphan lines, and corrupt the file.
+func TestRewriteWithLiteralMultilineInArray(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "city.toml")
+	src := `[[agent]]
+name = "x"
+skills = [
+  '''multi-line skill
+  with ] bracket''',
+  "other"
+]
+nudge = "hi"
+`
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteWithoutDeprecatedAttachmentFields(path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `[[agent]]
+name = "x"
+nudge = "hi"
+`
+	if string(got) != want {
+		t.Fatalf("rewrite over-consumed or under-consumed.\nGot:\n%s\nWant:\n%s", string(got), want)
+	}
+}
+
 func TestRewritePreservesMultilineStringContent(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -394,6 +394,15 @@ func MaterializeAgent(req MaterializeRequest) (MaterializeResult, error) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("readlink %q: %v", path, rerr))
 			continue
 		}
+		// MaterializeAgent always writes absolute targets, so a
+		// relative-target symlink is by definition not ours. Skip
+		// canonicalisation entirely; otherwise filepath.Abs would
+		// resolve the relative path against the process working
+		// directory (a misleading base) and may misclassify a
+		// user-placed link as gc-owned.
+		if !filepath.IsAbs(target) {
+			continue
+		}
 		canonTarget, terr := canonicalizePath(target)
 		if terr != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("canonicalize target %q: %v", target, terr))

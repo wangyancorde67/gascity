@@ -649,6 +649,53 @@ func TestMaterializeAgentAliasedOwnedRoot(t *testing.T) {
 	}
 }
 
+// TestMaterializeAgentRelativeSymlinkLeftAlone is the regression for
+// the pass-2 Codex finding: a sink entry that is a relative-target
+// symlink (which the materializer never writes — it always uses
+// absolute targets) must be treated as user-placed and left alone.
+// Without the IsAbs short-circuit, filepath.Abs would resolve the
+// relative path against the process cwd and may falsely classify
+// the link as gc-owned, leading to incorrect cleanup.
+func TestMaterializeAgentRelativeSymlinkLeftAlone(t *testing.T) {
+	t.Parallel()
+	src := t.TempDir()
+	mkSkill(t, src, "alpha")
+	sink := filepath.Join(t.TempDir(), "skills")
+	if err := os.MkdirAll(sink, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// User-placed relative symlink at the sink, pointing somewhere
+	// arbitrary by relative path.
+	if err := os.Symlink("../../elsewhere", filepath.Join(sink, "user-rel")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	res, err := MaterializeAgent(MaterializeRequest{
+		SinkDir:    sink,
+		Desired:    []SkillEntry{{Name: "alpha", Source: filepath.Join(src, "alpha"), Origin: "city"}},
+		OwnedRoots: []string{src},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The relative symlink must remain untouched.
+	tgt, err := os.Readlink(filepath.Join(sink, "user-rel"))
+	if err != nil {
+		t.Fatalf("user-rel removed: %v", err)
+	}
+	if tgt != "../../elsewhere" {
+		t.Errorf("user-rel target rewritten: %q", tgt)
+	}
+	if !reflect.DeepEqual(res.Materialized, []string{"alpha"}) {
+		t.Errorf("alpha not materialised alongside user-rel: %v", res.Materialized)
+	}
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "user-rel") || strings.Contains(w, "elsewhere") {
+			t.Errorf("relative symlink produced warning: %q", w)
+		}
+	}
+}
+
 func TestCanonicalizePath(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

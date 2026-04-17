@@ -324,14 +324,14 @@ func matchedDeprecatedKey(line string) (string, bool) {
 
 // arrayLineSpan returns the number of source lines occupied by the
 // assignment starting at lines[start]. Returns 1 for a single-line
-// value (whether the value is an array or anything else, the
-// assignment occupies one line). Returns >1 when the value is a
-// multi-line bracketed array, in which case the span ends at the
-// line containing the closing `]`.
+// value. Returns >1 when the value spans multiple lines via either a
+// bracketed array or a multi-line TOML string (`"""..."""` or
+// `'''..'''`); the span ends at the line where bracket depth returns
+// to 0 and no multi-line string is open.
 //
-// String values may contain `[` or `]`; the scanner respects double-
-// quoted strings (with `\"` escapes) so a name like "weird]name" does
-// not falsely close an array.
+// The scanner tracks all four TOML string flavours so values like
+// `skills = ['''contains ] bracket''']` are not prematurely closed
+// by a literal `]` inside a string body.
 func arrayLineSpan(lines []string, start int) int {
 	if start < 0 || start >= len(lines) {
 		return 1
@@ -341,98 +341,148 @@ func arrayLineSpan(lines []string, start int) int {
 	if eqIdx < 0 {
 		return 1
 	}
-	value := first[eqIdx+1:]
-	bracketStart := indexOutsideString(value, '[')
-	if bracketStart < 0 {
-		// No array bracket on the assignment line — single-line scalar
-		// or string assignment. Span = 1.
+	state := scanBrackets(first[eqIdx+1:], scanState{})
+	if state.settled() {
 		return 1
 	}
-	depth, _ := scanBrackets(value[bracketStart:], 0, false)
-	if depth == 0 {
-		return 1 // array opens and closes on the same line
-	}
-	inString := false
 	for i := start + 1; i < len(lines); i++ {
-		var newDepth int
-		newDepth, inString = scanBrackets(lines[i], depth, inString)
-		depth = newDepth
-		if depth == 0 {
+		state = scanBrackets(lines[i], state)
+		if state.settled() {
 			return i - start + 1
 		}
 	}
-	// Unclosed array — give up and treat as single-line so we don't
+	// Unclosed value — give up and treat as single-line so we don't
 	// mass-delete the rest of the file. The TOML parser would reject
 	// this file anyway.
 	return 1
 }
 
-// scanBrackets walks segment one rune at a time, tracking string state
-// and bracket depth. Returns the new depth and the new inString state.
-func scanBrackets(segment string, depth int, inString bool) (int, bool) {
-	escape := false
-	for _, r := range segment {
-		if escape {
-			escape = false
-			continue
-		}
-		if inString {
-			if r == '\\' {
-				escape = true
-				continue
-			}
-			if r == '"' {
-				inString = false
-			}
-			continue
-		}
-		switch r {
-		case '"':
-			inString = true
-		case '[':
-			depth++
-		case ']':
-			if depth > 0 {
-				depth--
-			}
-		case '#':
-			// Rest of line is a comment — bail out without changing depth.
-			return depth, inString
-		}
-	}
-	return depth, inString
+// scanState carries the bracket-depth and TOML-string state across a
+// scanBrackets call. settled() reports the natural stopping point
+// (no open brackets, no open multi-line string).
+type scanState struct {
+	depth           int
+	inBasicSingle   bool // "..."  (single-line basic string, escapes apply)
+	inBasicMulti    bool // """..."""  (multi-line basic string, escapes apply)
+	inLiteralSingle bool // '...' (single-line literal string, raw)
+	inLiteralMulti  bool // '''..'''  (multi-line literal string, raw)
+	escape          bool // last byte was `\` inside a basic string
 }
 
-// indexOutsideString returns the index of the first occurrence of want
-// in s that is not inside a double-quoted string. Returns -1 if not
-// found. Used to locate the array-opening `[` on an assignment line.
-func indexOutsideString(s string, want rune) int {
-	inString := false
-	escape := false
-	for i, r := range s {
-		if escape {
-			escape = false
-			continue
-		}
-		if inString {
-			if r == '\\' {
-				escape = true
+// settled reports whether the state represents a closed value: bracket
+// depth is zero and no multi-line string is currently open. Single-line
+// strings are not allowed to span lines per TOML spec, so they don't
+// keep the value open across lines.
+func (s scanState) settled() bool {
+	return s.depth == 0 && !s.inBasicMulti && !s.inLiteralMulti
+}
+
+// scanBrackets walks segment byte-by-byte, updating bracket depth and
+// TOML-string state. Triple-quote tokens (`"""`, `'''`) take precedence
+// over single-quote tokens — a literal `'''` opens a multi-line literal
+// string even though `'` would otherwise open a single-line literal
+// string. Comments (`#` outside any string) terminate the line scan
+// without altering depth or string state.
+func scanBrackets(segment string, state scanState) scanState {
+	i := 0
+	for i < len(segment) {
+		b := segment[i]
+
+		switch {
+		case state.inBasicMulti:
+			if state.escape {
+				state.escape = false
+				i++
 				continue
 			}
-			if r == '"' {
-				inString = false
+			if isTripleQuote(segment, i, '"') {
+				state.inBasicMulti = false
+				i += 3
+				continue
 			}
-			continue
-		}
-		if r == '"' {
-			inString = true
-			continue
-		}
-		if r == want {
-			return i
+			if b == '\\' {
+				state.escape = true
+			}
+			i++
+
+		case state.inLiteralMulti:
+			if isTripleQuote(segment, i, '\'') {
+				state.inLiteralMulti = false
+				i += 3
+				continue
+			}
+			i++
+
+		case state.inBasicSingle:
+			if state.escape {
+				state.escape = false
+				i++
+				continue
+			}
+			if b == '\\' {
+				state.escape = true
+				i++
+				continue
+			}
+			if b == '"' {
+				state.inBasicSingle = false
+			}
+			i++
+
+		case state.inLiteralSingle:
+			if b == '\'' {
+				state.inLiteralSingle = false
+			}
+			i++
+
+		default:
+			// Not currently in a string. Triple-quote tokens checked
+			// first so the single-quote branch doesn't grab them.
+			switch {
+			case isTripleQuote(segment, i, '"'):
+				state.inBasicMulti = true
+				i += 3
+			case isTripleQuote(segment, i, '\''):
+				state.inLiteralMulti = true
+				i += 3
+			case b == '"':
+				state.inBasicSingle = true
+				i++
+			case b == '\'':
+				state.inLiteralSingle = true
+				i++
+			case b == '[':
+				state.depth++
+				i++
+			case b == ']':
+				if state.depth > 0 {
+					state.depth--
+				}
+				i++
+			case b == '#':
+				// Rest of line is a comment outside any string.
+				return state
+			default:
+				i++
+			}
 		}
 	}
-	return -1
+	// Single-line strings cannot span lines per TOML; reset their
+	// state at end-of-line so a malformed/unclosed `"foo` on one line
+	// does not poison the next.
+	state.inBasicSingle = false
+	state.inLiteralSingle = false
+	state.escape = false
+	return state
+}
+
+// isTripleQuote reports whether segment[i..i+3] is the triple-quote
+// token `quote` repeated three times.
+func isTripleQuote(segment string, i int, quote byte) bool {
+	if i+2 >= len(segment) {
+		return false
+	}
+	return segment[i] == quote && segment[i+1] == quote && segment[i+2] == quote
 }
 
 // splitLinesPreserving splits source into lines without consuming a
