@@ -273,7 +273,7 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 				return 1
 			}
 			fmt.Fprintln(stdout, "Attaching...") //nolint:errcheck // best-effort stdout
-			if err := sp.Attach(info.SessionName); err != nil {
+			if err := handle.Attach(context.Background()); err != nil {
 				fmt.Fprintf(stderr, "gc session new: attaching: %v\n", err) //nolint:errcheck // best-effort stderr
 				return 1
 			}
@@ -333,7 +333,7 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 	}
 
 	fmt.Fprintln(stdout, "Attaching...") //nolint:errcheck // best-effort stdout
-	if err := sp.Attach(info.SessionName); err != nil {
+	if err := handle.Attach(context.Background()); err != nil {
 		fmt.Fprintf(stderr, "gc session new: attaching: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
