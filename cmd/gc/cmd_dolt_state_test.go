@@ -1317,20 +1317,17 @@ func processHoldsDeletedPathViaLsof(pid int, targetPath string) bool {
 	if _, err := exec.LookPath("lsof"); err != nil {
 		return false
 	}
-	out, err := exec.Command("lsof", "-p", strconv.Itoa(pid), "+L1").Output()
-	if err != nil {
+	out, ok := lsofOutput("-a", "-p", strconv.Itoa(pid), "+L1")
+	if !ok {
 		return false
 	}
 	cleanTarget := filepath.Clean(targetPath)
-	for _, line := range strings.Split(string(out), "\n") {
-		if !strings.Contains(line, cleanTarget) {
-			continue
-		}
+	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 10 || fields[7] != "0" {
 			continue
 		}
-		if samePath(strings.Join(fields[9:], " "), cleanTarget) {
+		if samePossiblyDeletedPath(strings.Join(fields[9:], " "), cleanTarget) {
 			return true
 		}
 	}

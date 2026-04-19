@@ -2858,7 +2858,11 @@ case "${1:-}" in
       last="$arg"
     done
     if [ -d "$last/.beads" ]; then
-      stat -c %a "$last/.beads" > "$perm_file"
+      if stat -c %a "$last/.beads" > "$perm_file" 2>/dev/null; then
+        :
+      else
+        stat -f %Lp "$last/.beads" > "$perm_file"
+      fi
     else
       printf 'missing
 ' > "$perm_file"
