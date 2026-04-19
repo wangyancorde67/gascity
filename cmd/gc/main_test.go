@@ -2597,6 +2597,87 @@ func TestInitNameFlagWithFile(t *testing.T) {
 	}
 }
 
+func TestInitFromFileWarnsOnLegacyOrderOverrideGate(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
+
+	dir := t.TempDir()
+	tomlFile := filepath.Join(dir, "legacy-city.toml")
+	if err := os.WriteFile(tomlFile, []byte(`
+[workspace]
+name = "template"
+
+[orders]
+
+[[orders.overrides]]
+name = "digest"
+gate = "cooldown"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cityPath := filepath.Join(dir, "target-dir")
+
+	var stdout, stderr bytes.Buffer
+	code := cmdInitFromFileWithOptions(tomlFile, []string{cityPath}, "", &stdout, &stderr, true)
+	if code != 0 {
+		t.Fatalf("cmdInitFromFileWithOptions = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), tomlFile+`: field "orders.overrides.gate" is deprecated`) {
+		t.Fatalf("stderr = %q, want deprecation warning for %s", stderr.String(), tomlFile)
+	}
+
+	data, err := os.ReadFile(filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		t.Fatalf("reading city.toml: %v", err)
+	}
+	got := string(data)
+	if strings.Contains(got, `gate = "cooldown"`) {
+		t.Fatalf("city.toml still contains legacy gate alias:\n%s", got)
+	}
+	if !strings.Contains(got, `trigger = "cooldown"`) {
+		t.Fatalf("city.toml missing normalized trigger alias:\n%s", got)
+	}
+}
+
+func TestInitFromDirWarnsOnLegacyOrderOverrideGate(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "template")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "city.toml"), []byte(`
+[workspace]
+name = "template"
+
+[orders]
+
+[[orders.overrides]]
+name = "digest"
+gate = "cooldown"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cityPath := filepath.Join(dir, "target-dir")
+
+	var stdout, stderr bytes.Buffer
+	code := doInitFromDirWithOptions(srcDir, cityPath, "", &stdout, &stderr, true)
+	if code != 0 {
+		t.Fatalf("doInitFromDirWithOptions = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	copiedToml := filepath.Join(cityPath, "city.toml")
+	if !strings.Contains(stderr.String(), copiedToml+`: field "orders.overrides.gate" is deprecated`) {
+		t.Fatalf("stderr = %q, want deprecation warning for %s", stderr.String(), copiedToml)
+	}
+}
+
 func TestInitNameFlagWithBareInit(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")

@@ -441,7 +441,7 @@ func cmdInitFromTOMLFileWithOptions(fs fsys.FS, tomlSrc, cityPath, nameOverride 
 		fmt.Fprintf(stderr, "gc init: reading %q: %v\n", tomlSrc, err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	cfg, warnings, err := config.ParseWithWarnings(data)
+	cfg, warnings, err := config.ParseWithWarningsSource(data, tomlSrc)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -833,7 +833,7 @@ func doInitFromDirWithOptions(srcDir, cityPath, nameOverride string, stdout, std
 		fmt.Fprintf(stderr, "gc init: reading copied city.toml: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	cfg, warnings, err := config.ParseWithWarnings(data)
+	cfg, warnings, err := config.ParseWithWarningsSource(data, copiedToml)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1

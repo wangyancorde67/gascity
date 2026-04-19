@@ -42,7 +42,7 @@ func run() error {
 	}
 
 	// Generate schemas.
-	citySchema, err := docgen.GenerateCitySchema()
+	citySchema, err := runGenerateCitySchemaForTest()
 	if err != nil {
 		return fmt.Errorf("generating city schema: %w", err)
 	}
@@ -74,6 +74,10 @@ func run() error {
 		fmt.Printf("  %s\n", f)
 	}
 	return nil
+}
+
+func runGenerateCitySchemaForTest() (*jsonschema.Schema, error) {
+	return docgen.GenerateCitySchema()
 }
 
 // writeSchema writes a JSON Schema to a file using atomic write (temp + rename).

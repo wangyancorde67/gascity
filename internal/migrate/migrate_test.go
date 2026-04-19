@@ -119,6 +119,33 @@ prompt_template = "prompts/worker.md"
 	}
 }
 
+func TestApplyReportsLegacyOrderOverrideGateWarning(t *testing.T) {
+	t.Parallel()
+
+	cityDir := t.TempDir()
+	writeFile(t, cityDir, "city.toml", `
+[workspace]
+name = "legacy-city"
+
+[orders]
+
+[[orders.overrides]]
+name = "digest"
+gate = "cooldown"
+`)
+
+	report, err := Apply(cityDir, Options{})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if len(report.Warnings) == 0 {
+		t.Fatal("expected deprecation warning, got none")
+	}
+	if got := report.Warnings[0]; !strings.Contains(got, filepath.Join(cityDir, "city.toml")+`: field "orders.overrides.gate" is deprecated`) {
+		t.Fatalf("warning = %q, want path-qualified legacy gate warning", got)
+	}
+}
+
 func TestMigrateDryRunDoesNotWrite(t *testing.T) {
 	t.Parallel()
 

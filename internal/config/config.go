@@ -1019,9 +1019,9 @@ type OrderOverride struct {
 	Rig string `toml:"rig,omitempty"`
 	// Enabled overrides whether the order is active.
 	Enabled *bool `toml:"enabled,omitempty"`
-	// Gate is a deprecated read-only alias for Trigger.
+	// Gate is a deprecated compatibility alias for Trigger.
 	// It is normalized away after decode so config writes stay trigger-only.
-	Gate *string `toml:"gate,omitempty" jsonschema:"-"`
+	Gate *string `toml:"gate,omitempty" jsonschema_extras:"deprecated=true"`
 	// Trigger overrides the trigger type.
 	Trigger *string `toml:"trigger,omitempty"`
 	// Interval overrides the cooldown interval. Go duration string.
@@ -2615,14 +2615,20 @@ func parseCityWithWarnings(data []byte, source string) (*City, toml.MetaData, []
 	return &cfg, md, warnings, nil
 }
 
-// ParseWithWarnings decodes TOML data into a City config and returns
-// non-fatal warnings for deprecated or unknown keys.
-func ParseWithWarnings(data []byte) (*City, []string, error) {
-	cfg, _, warnings, err := parseCityWithWarnings(data, "city.toml")
+// ParseWithWarningsSource decodes TOML data into a City config and returns
+// non-fatal warnings for deprecated or unknown keys attributed to source.
+func ParseWithWarningsSource(data []byte, source string) (*City, []string, error) {
+	cfg, _, warnings, err := parseCityWithWarnings(data, source)
 	if err != nil {
 		return nil, nil, err
 	}
 	return cfg, warnings, nil
+}
+
+// ParseWithWarnings decodes TOML data into a City config and returns
+// non-fatal warnings for deprecated or unknown keys.
+func ParseWithWarnings(data []byte) (*City, []string, error) {
+	return ParseWithWarningsSource(data, "city.toml")
 }
 
 // Parse decodes TOML data into a City config.

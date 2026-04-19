@@ -351,7 +351,7 @@ func parseCityConfig(path string) (*config.City, bool) {
 	if err != nil {
 		return nil, false
 	}
-	cfg, warnings, err := config.ParseWithWarnings(data)
+	cfg, warnings, err := config.ParseWithWarningsSource(data, path)
 	if err != nil {
 		return nil, false
 	}

@@ -644,17 +644,33 @@ func (e *Editor) DeleteProviderPatch(name string) error {
 	})
 }
 
-// SetOrderOverride creates or updates an order override in
+// SetOrderOverride creates or replaces an order override in
 // [orders.overrides]. Matches by name and rig.
 func (e *Editor) SetOrderOverride(ov config.OrderOverride) error {
 	return e.Edit(func(cfg *config.City) error {
-		if ov.Name == "" {
-			return fmt.Errorf("order override: name is required")
+		ov, err := normalizeOrderOverride(ov)
+		if err != nil {
+			return err
 		}
-		if ov.Trigger == nil {
-			ov.Trigger = ov.Gate
+		for i := range cfg.Orders.Overrides {
+			if cfg.Orders.Overrides[i].Name == ov.Name && cfg.Orders.Overrides[i].Rig == ov.Rig {
+				cfg.Orders.Overrides[i] = ov
+				return nil
+			}
 		}
-		ov.Gate = nil
+		cfg.Orders.Overrides = append(cfg.Orders.Overrides, ov)
+		return nil
+	})
+}
+
+// PatchOrderOverride creates or updates an order override in
+// [orders.overrides], preserving unspecified fields on existing entries.
+func (e *Editor) PatchOrderOverride(ov config.OrderOverride) error {
+	return e.Edit(func(cfg *config.City) error {
+		ov, err := normalizeOrderOverride(ov)
+		if err != nil {
+			return err
+		}
 		for i := range cfg.Orders.Overrides {
 			if cfg.Orders.Overrides[i].Name == ov.Name && cfg.Orders.Overrides[i].Rig == ov.Rig {
 				mergeOrderOverride(&cfg.Orders.Overrides[i], ov)
@@ -664,6 +680,17 @@ func (e *Editor) SetOrderOverride(ov config.OrderOverride) error {
 		cfg.Orders.Overrides = append(cfg.Orders.Overrides, ov)
 		return nil
 	})
+}
+
+func normalizeOrderOverride(ov config.OrderOverride) (config.OrderOverride, error) {
+	if ov.Name == "" {
+		return config.OrderOverride{}, fmt.Errorf("order override: name is required")
+	}
+	if ov.Trigger == nil {
+		ov.Trigger = ov.Gate
+	}
+	ov.Gate = nil
+	return ov, nil
 }
 
 func mergeOrderOverride(dst *config.OrderOverride, patch config.OrderOverride) {

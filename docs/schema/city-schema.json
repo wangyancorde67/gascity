@@ -1270,6 +1270,11 @@
           "type": "boolean",
           "description": "Enabled overrides whether the order is active."
         },
+        "gate": {
+          "type": "string",
+          "description": "Gate is a deprecated compatibility alias for Trigger.\nIt is normalized away after decode so config writes stay trigger-only.",
+          "deprecated": true
+        },
         "trigger": {
           "type": "string",
           "description": "Trigger overrides the trigger type."

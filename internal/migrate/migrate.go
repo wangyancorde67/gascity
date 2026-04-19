@@ -209,7 +209,7 @@ func loadCityFile(path string) (*config.City, []string, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("migrate %q: %w", path, err)
 	}
-	cfg, warnings, err := config.ParseWithWarnings(data)
+	cfg, warnings, err := config.ParseWithWarningsSource(data, path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("migrate %q: %w", path, err)
 	}

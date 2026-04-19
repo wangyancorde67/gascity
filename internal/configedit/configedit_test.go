@@ -1060,7 +1060,7 @@ func TestDeleteOrderOverride_NotFound(t *testing.T) {
 	}
 }
 
-func TestSetOrderOverrideNormalizesLegacyGateToTriggerOnWrite(t *testing.T) {
+func TestPatchOrderOverrideNormalizesLegacyGateToTriggerOnWrite(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTOML(t, dir, minimalCity()+`
 [orders]
@@ -1072,12 +1072,12 @@ gate = "cooldown"
 	ed := configedit.NewEditor(fsys.OSFS{}, path)
 
 	enabled := true
-	err := ed.SetOrderOverride(config.OrderOverride{
+	err := ed.PatchOrderOverride(config.OrderOverride{
 		Name:    "health-check",
 		Enabled: &enabled,
 	})
 	if err != nil {
-		t.Fatalf("SetOrderOverride: %v", err)
+		t.Fatalf("PatchOrderOverride: %v", err)
 	}
 
 	raw, err := os.ReadFile(path)
@@ -1090,5 +1090,42 @@ gate = "cooldown"
 	}
 	if !strings.Contains(got, `trigger = "cooldown"`) {
 		t.Fatalf("city.toml did not preserve normalized trigger:\n%s", got)
+	}
+}
+
+func TestSetOrderOverrideReplacesExistingOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTOML(t, dir, minimalCity()+`
+[orders]
+
+[[orders.overrides]]
+name = "health-check"
+trigger = "cooldown"
+interval = "24h"
+`)
+	ed := configedit.NewEditor(fsys.OSFS{}, path)
+
+	enabled := true
+	err := ed.SetOrderOverride(config.OrderOverride{
+		Name:    "health-check",
+		Enabled: &enabled,
+	})
+	if err != nil {
+		t.Fatalf("SetOrderOverride: %v", err)
+	}
+
+	cfg := readTOML(t, path)
+	if len(cfg.Orders.Overrides) != 1 {
+		t.Fatalf("len(overrides) = %d, want 1", len(cfg.Orders.Overrides))
+	}
+	ov := cfg.Orders.Overrides[0]
+	if ov.Enabled == nil || !*ov.Enabled {
+		t.Fatalf("Enabled = %#v, want true", ov.Enabled)
+	}
+	if ov.Trigger != nil {
+		t.Fatalf("Trigger = %#v, want nil after replace", ov.Trigger)
+	}
+	if ov.Interval != nil {
+		t.Fatalf("Interval = %#v, want nil after replace", ov.Interval)
 	}
 }

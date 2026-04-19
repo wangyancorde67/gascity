@@ -109,6 +109,33 @@ schedule = "*/5 * * * *"
 	}
 }
 
+func TestDiscoverRootWarnsOnLegacyGateAlias(t *testing.T) {
+	fs := fsys.NewFake()
+	fs.Files["/pack/orders/health-check.toml"] = []byte(`
+[order]
+formula = "health-check"
+gate = "cooldown"
+interval = "24h"
+`)
+
+	logs := captureOrderLogs(t, func() {
+		orders, err := discoverRoot(fs, ScanRoot{
+			Dir:          "/pack/orders",
+			FormulaLayer: "/pack/formulas",
+		})
+		if err != nil {
+			t.Fatalf("discoverRoot: %v", err)
+		}
+		if len(orders) != 1 {
+			t.Fatalf("got %d orders, want 1", len(orders))
+		}
+	})
+
+	if !strings.Contains(logs, `/pack/orders/health-check.toml: field "order.gate" is deprecated`) {
+		t.Fatalf("logs = %q, want legacy gate warning", logs)
+	}
+}
+
 func TestDiscoverRootSkipsUnreadableFlatFile(t *testing.T) {
 	fs := fsys.NewFake()
 	fs.Files["/pack/orders/health-check.toml"] = []byte(`
