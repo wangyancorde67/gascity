@@ -117,6 +117,25 @@ schedule = "0 3 * * *"
 	}
 }
 
+func TestParseWithWarnings_TriggerAndLegacyGateMatchIsSilent(t *testing.T) {
+	a, warnings, err := ParseWithWarnings([]byte(`
+[order]
+formula = "mol-digest-generate"
+trigger = "cooldown"
+gate = "cooldown"
+interval = "24h"
+`))
+	if err != nil {
+		t.Fatalf("ParseWithWarnings: %v", err)
+	}
+	if a.Trigger != "cooldown" {
+		t.Fatalf("Trigger = %q, want %q", a.Trigger, "cooldown")
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for rollback-safe dual-write", warnings)
+	}
+}
+
 func TestValidateCooldown(t *testing.T) {
 	a := Order{Name: "digest", Formula: "mol-digest", Trigger: "cooldown", Interval: "24h"}
 	if err := Validate(a); err != nil {

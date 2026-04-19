@@ -1058,16 +1058,28 @@ func NormalizeLegacyOrderOverrideAlias(ov *OrderOverride) {
 	ov.Gate = nil
 }
 
-func orderOverrideConflictWarnings(cfg *City, source string) []string {
+func orderOverrideWarnings(cfg *City, source string) []string {
 	var warnings []string
 	for _, ov := range cfg.Orders.Overrides {
-		if ov.Trigger == nil || ov.Gate == nil || *ov.Trigger == *ov.Gate {
+		if ov.Gate == nil {
 			continue
 		}
 		scope := fmt.Sprintf("order override %q", ov.Name)
 		if ov.Rig != "" {
 			scope = fmt.Sprintf(`order override %q for rig %q`, ov.Name, ov.Rig)
 		}
+		deprecation := fmt.Sprintf(
+			`%s: %s field %q is deprecated; use %q`,
+			source, scope, "orders.overrides.gate", "orders.overrides.trigger",
+		)
+		if ov.Trigger == nil {
+			warnings = append(warnings, deprecation)
+			continue
+		}
+		if *ov.Trigger == *ov.Gate {
+			continue
+		}
+		warnings = append(warnings, deprecation)
 		warnings = append(warnings,
 			fmt.Sprintf(
 				`%s: %s sets both "trigger"=%q and deprecated "gate"=%q; using "trigger" and ignoring "gate"`,
@@ -2644,7 +2656,7 @@ func parseCityWithWarnings(data []byte, source string) (*City, toml.MetaData, []
 	if err != nil {
 		return nil, md, nil, fmt.Errorf("parsing config: %w", err)
 	}
-	warnings := append([]string(nil), orderOverrideConflictWarnings(&cfg, source)...)
+	warnings := append([]string(nil), orderOverrideWarnings(&cfg, source)...)
 	normalizeAgentDefaultsAlias(&cfg, md)
 	normalizeLegacyOrderOverrideAliases(&cfg)
 	NormalizeSessionSleepFields(&cfg)

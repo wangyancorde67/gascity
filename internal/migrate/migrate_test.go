@@ -141,7 +141,7 @@ gate = "cooldown"
 	if len(report.Warnings) == 0 {
 		t.Fatal("expected deprecation warning, got none")
 	}
-	if got := report.Warnings[0]; !strings.Contains(got, filepath.Join(cityDir, "city.toml")+`: field "orders.overrides.gate" is deprecated`) {
+	if got := report.Warnings[0]; !strings.Contains(got, filepath.Join(cityDir, "city.toml")+`: order override "digest" field "orders.overrides.gate" is deprecated`) {
 		t.Fatalf("warning = %q, want path-qualified legacy gate warning", got)
 	}
 

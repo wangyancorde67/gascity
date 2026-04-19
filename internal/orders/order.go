@@ -143,10 +143,11 @@ func ParseWithWarnings(data []byte) (Order, []string, error) {
 		return Order{}, nil, fmt.Errorf("parsing order: %w", err)
 	}
 	var warnings []string
-	if af.Order.Gate != "" {
+	if af.Order.Gate != "" && af.Order.Trigger == "" {
 		warnings = append(warnings, `field "order.gate" is deprecated; use "order.trigger"`)
 	}
 	if af.Order.Trigger != "" && af.Order.Gate != "" && af.Order.Trigger != af.Order.Gate {
+		warnings = append(warnings, `field "order.gate" is deprecated; use "order.trigger"`)
 		warnings = append(warnings,
 			fmt.Sprintf(
 				`fields "order.trigger"=%q and deprecated "order.gate"=%q are both set; using "order.trigger" and ignoring "order.gate"`,

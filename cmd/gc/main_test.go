@@ -2631,7 +2631,7 @@ gate = "cooldown"
 	if code != 0 {
 		t.Fatalf("cmdInitFromFileWithOptions = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), tomlFile+`: field "orders.overrides.gate" is deprecated`) {
+	if !strings.Contains(stderr.String(), tomlFile+`: order override "digest" field "orders.overrides.gate" is deprecated`) {
 		t.Fatalf("stderr = %q, want deprecation warning for %s", stderr.String(), tomlFile)
 	}
 
@@ -2680,7 +2680,7 @@ gate = "cooldown"
 	}
 
 	sourceToml := filepath.Join(srcDir, "city.toml")
-	if !strings.Contains(stderr.String(), sourceToml+`: field "orders.overrides.gate" is deprecated`) {
+	if !strings.Contains(stderr.String(), sourceToml+`: order override "digest" field "orders.overrides.gate" is deprecated`) {
 		t.Fatalf("stderr = %q, want deprecation warning for %s", stderr.String(), sourceToml)
 	}
 

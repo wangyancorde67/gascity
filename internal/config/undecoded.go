@@ -40,11 +40,6 @@ func deprecatedAliasWarnings(md toml.MetaData, source string) []string {
 			continue
 		}
 		seen[keyStr] = true
-		switch keyStr {
-		case "orders.overrides.gate":
-			warnings = append(warnings,
-				fmt.Sprintf("%s: field %q is deprecated; use %q", source, keyStr, "orders.overrides.trigger"))
-		}
 	}
 	return warnings
 }

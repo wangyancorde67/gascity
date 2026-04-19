@@ -174,6 +174,33 @@ schedule = "0 3 * * *"
 	}
 }
 
+func TestParseWithWarnings_OrderOverrideTriggerAndGateMatchIsSilent(t *testing.T) {
+	cfg, warnings, err := ParseWithWarnings([]byte(`
+[workspace]
+name = "test-city"
+
+[orders]
+
+[[orders.overrides]]
+name = "digest"
+trigger = "cooldown"
+gate = "cooldown"
+interval = "24h"
+`))
+	if err != nil {
+		t.Fatalf("ParseWithWarnings: %v", err)
+	}
+	if len(cfg.Orders.Overrides) != 1 {
+		t.Fatalf("len(overrides) = %d, want 1", len(cfg.Orders.Overrides))
+	}
+	if cfg.Orders.Overrides[0].Trigger == nil || *cfg.Orders.Overrides[0].Trigger != "cooldown" {
+		t.Fatalf("Trigger = %#v, want cooldown", cfg.Orders.Overrides[0].Trigger)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for rollback-safe dual-write", warnings)
+	}
+}
+
 func TestParseAgentsNoStartCommand(t *testing.T) {
 	data := []byte(`
 [workspace]
