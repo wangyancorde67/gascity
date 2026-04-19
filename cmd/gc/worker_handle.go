@@ -323,13 +323,17 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 		return nil
 	}
 
-	command := resolved.CommandString()
-	if defaultArgs := resolved.ResolveDefaultArgs(); len(defaultArgs) > 0 {
-		command = command + " " + shellquote.Join(defaultArgs)
+	command := strings.TrimSpace(info.Command)
+	if command == "" {
+		command = resolved.CommandString()
+		if defaultArgs := resolved.ResolveDefaultArgs(); len(defaultArgs) > 0 {
+			command = strings.TrimSpace(command + " " + shellquote.Join(defaultArgs))
+		}
+		if sa := settingsArgs(cityPath, resolved.Name); sa != "" {
+			command = strings.TrimSpace(command + " " + sa)
+		}
 	}
-	if sa := settingsArgs(cityPath, resolved.Name); sa != "" {
-		command = command + " " + sa
-	}
+	command = firstNonEmptyGCString(command, resolved.Name, info.Provider)
 
 	workDir := strings.TrimSpace(info.WorkDir)
 	if workDir == "" {
@@ -338,7 +342,7 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 	return &worker.ResolvedRuntime{
 		Command:    command,
 		WorkDir:    workDir,
-		Provider:   resolved.Name,
+		Provider:   firstNonEmptyGCString(info.Provider, resolved.Name),
 		SessionEnv: resolved.Env,
 		Hints: runtime.Config{
 			WorkDir:                workDir,
@@ -348,9 +352,9 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 			EmitsPermissionWarning: resolved.EmitsPermissionWarning,
 		},
 		Resume: session.ProviderResume{
-			ResumeFlag:    resolved.ResumeFlag,
-			ResumeStyle:   resolved.ResumeStyle,
-			ResumeCommand: resolved.ResumeCommand,
+			ResumeFlag:    firstNonEmptyGCString(info.ResumeFlag, resolved.ResumeFlag),
+			ResumeStyle:   firstNonEmptyGCString(info.ResumeStyle, resolved.ResumeStyle),
+			ResumeCommand: firstNonEmptyGCString(info.ResumeCommand, resolved.ResumeCommand),
 			SessionIDFlag: resolved.SessionIDFlag,
 		},
 	}
@@ -394,4 +398,13 @@ func workerNudgeDeliveryForMode(mode nudgeDeliveryMode) (worker.NudgeDelivery, b
 	default:
 		return "", false
 	}
+}
+
+func firstNonEmptyGCString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

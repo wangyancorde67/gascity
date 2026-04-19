@@ -11,6 +11,68 @@ import (
 	"github.com/gastownhall/gascity/internal/worker"
 )
 
+func TestResolveWorkerSessionRuntimePreservesPersistedRuntimeFieldsAndBackfillsSessionIDFlag(t *testing.T) {
+	fs := newSessionFakeState(t)
+	fs.cfg.Agents[0].Provider = "resolved-worker"
+	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
+		DisplayName:       "Resolved Worker",
+		Command:           "/bin/echo",
+		ReadyPromptPrefix: "resolved-ready>",
+		ReadyDelayMs:      321,
+		ResumeFlag:        "--resume-resolved",
+		ResumeStyle:       "flag",
+		ResumeCommand:     "resolved resume {{.SessionKey}}",
+		SessionIDFlag:     "--session-id-resolved",
+	}
+
+	srv := New(fs)
+	info := session.Info{
+		ID:            "sess-1",
+		Template:      "myrig/worker",
+		Command:       "persisted-worker --dangerously-skip-permissions",
+		Provider:      "persisted-provider",
+		WorkDir:       t.TempDir(),
+		ResumeFlag:    "--resume-persisted",
+		ResumeStyle:   "subcommand",
+		ResumeCommand: "persisted resume {{.SessionKey}}",
+	}
+
+	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info, "")
+	if err != nil {
+		t.Fatalf("resolveWorkerSessionRuntime: %v", err)
+	}
+	if runtimeCfg == nil {
+		t.Fatal("resolveWorkerSessionRuntime() = nil")
+	}
+	if got, want := runtimeCfg.Command, info.Command; got != want {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Provider, info.Provider; got != want {
+		t.Fatalf("Provider = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.WorkDir, info.WorkDir; got != want {
+		t.Fatalf("WorkDir = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Resume.ResumeFlag, info.ResumeFlag; got != want {
+		t.Fatalf("Resume.ResumeFlag = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Resume.ResumeStyle, info.ResumeStyle; got != want {
+		t.Fatalf("Resume.ResumeStyle = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Resume.ResumeCommand, info.ResumeCommand; got != want {
+		t.Fatalf("Resume.ResumeCommand = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Resume.SessionIDFlag, "--session-id-resolved"; got != want {
+		t.Fatalf("Resume.SessionIDFlag = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Hints.ReadyPromptPrefix, "resolved-ready>"; got != want {
+		t.Fatalf("Hints.ReadyPromptPrefix = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Hints.ReadyDelayMs, 321; got != want {
+		t.Fatalf("Hints.ReadyDelayMs = %d, want %d", got, want)
+	}
+}
+
 func TestWorkerFactorySessionByIDUsesResolvedTemplateRuntime(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Agents[0].Provider = "resolved-worker"

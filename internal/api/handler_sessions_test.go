@@ -3049,6 +3049,66 @@ func TestHandleSessionStreamRawStallEmitsPendingWithoutTranscriptGrowth(t *testi
 	}
 }
 
+func TestHandleSessionStreamRawStallEmitsPendingEventOnCityRoute(t *testing.T) {
+	fs := newSessionFakeState(t)
+	searchBase := t.TempDir()
+	srv := New(fs)
+	h := newTestCityHandlerWith(t, fs, srv)
+	srv.sessionLogSearchPaths = []string{searchBase}
+
+	prevStallTimeout := sessionStreamPendingStallTimeout
+	sessionStreamPendingStallTimeout = 50 * time.Millisecond
+	defer func() {
+		sessionStreamPendingStallTimeout = prevStallTimeout
+	}()
+
+	mgr := session.NewManager(fs.cityBeadStore, fs.sp)
+	resume := session.ProviderResume{
+		ResumeFlag:    "--resume",
+		ResumeStyle:   "flag",
+		SessionIDFlag: "--session-id",
+	}
+	workDir := t.TempDir()
+	info, err := mgr.Create(context.Background(), "myrig/worker", "Chat", "claude", workDir, "claude", nil, resume, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	writeNamedSessionJSONL(t, searchBase, workDir, info.SessionKey+".jsonl",
+		`{"uuid":"1","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"hello\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"world\"}","timestamp":"2025-01-01T00:00:01Z"}`,
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req := httptest.NewRequest("GET", cityURL(fs, "/session/")+info.ID+"/stream?format=raw", nil).WithContext(ctx)
+	rec := newSyncResponseRecorder()
+	done := make(chan struct{})
+	go func() {
+		h.ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	if body := waitForRecorderSubstring(t, rec, "hello", time.Second); !strings.Contains(body, "hello") {
+		t.Fatalf("raw stream body missing initial transcript: %s", body)
+	}
+
+	fs.sp.SetPendingInteraction(info.SessionName, &runtime.PendingInteraction{
+		RequestID: "req-1",
+		Kind:      "approval",
+		Prompt:    "Proceed?",
+	})
+
+	body := waitForRecorderSubstring(t, rec, "req-1", time.Second)
+
+	cancel()
+	<-done
+
+	if !strings.Contains(body, "event: pending") {
+		t.Fatalf("raw stream body missing pending SSE event name: %s", body)
+	}
+}
+
 func TestHandleSessionStreamTranscriptWriteWakesWithoutPolling(t *testing.T) {
 	fs := newSessionFakeState(t)
 	searchBase := t.TempDir()
