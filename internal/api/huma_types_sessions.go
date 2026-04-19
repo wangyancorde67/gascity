@@ -24,10 +24,10 @@ import (
 type SessionListInput struct {
 	CityScope
 	Cursor   OptionalParam[string] `query:"cursor" doc:"Pagination cursor from a previous response's next_cursor field. Omit to receive up to limit items with total=len(items); supply (possibly empty) to paginate from offset 0 with total=pre-pagination count."`
-	Limit    int                        `query:"limit" minimum:"0" doc:"Maximum number of results to return. 0 = server default."`
-	State    string                     `query:"state" required:"false" doc:"Filter by session state (e.g. active, closed)."`
-	Template string                     `query:"template" required:"false" doc:"Filter by session template (agent qualified name)."`
-	Peek     bool                       `query:"peek" required:"false" doc:"Include last output preview."`
+	Limit    int                   `query:"limit" minimum:"0" doc:"Maximum number of results to return. 0 = server default."`
+	State    string                `query:"state" required:"false" doc:"Filter by session state (e.g. active, closed)."`
+	Template string                `query:"template" required:"false" doc:"Filter by session template (agent qualified name)."`
+	Peek     bool                  `query:"peek" required:"false" doc:"Include last output preview."`
 }
 
 // SessionGetInput is the Huma input for GET /v0/city/{cityName}/session/{id}.

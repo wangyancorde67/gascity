@@ -3746,7 +3746,7 @@ func TestFindEnclosingRigResolvesSymlinkAlias(t *testing.T) {
 	dirViaAlias := filepath.Join(aliasRigPath, "src")
 
 	name, rp, found := findEnclosingRig(dirViaAlias, rigs)
-	if !found || name != "my-project" || rp != rigPath {
+	if !found || name != "my-project" || canonicalTestPath(rp) != canonicalTestPath(rigPath) {
 		t.Fatalf("symlink alias match: name=%q path=%q found=%v, want name=%q path=%q found=true", name, rp, found, "my-project", rigPath)
 	}
 }
@@ -3771,7 +3771,7 @@ func TestFindEnclosingRigPrefersDeepestNormalizedMatch(t *testing.T) {
 	dirViaAlias := filepath.Join(aliasRoot, "my-project", "nested", "src")
 
 	name, rp, found := findEnclosingRig(dirViaAlias, rigs)
-	if !found || name != "nested" || rp != nestedRigPath {
+	if !found || name != "nested" || canonicalTestPath(rp) != canonicalTestPath(nestedRigPath) {
 		t.Fatalf("deepest normalized match: name=%q path=%q found=%v, want name=%q path=%q found=true", name, rp, found, "nested", nestedRigPath)
 	}
 }

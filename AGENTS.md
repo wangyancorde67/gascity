@@ -218,6 +218,8 @@ Before considering any task complete:
 
 - `go test ./...` passes
 - `go vet ./...` clean
+- `.githooks/pre-commit` is active locally (`git config core.hooksPath`
+  prints `.githooks`) and has run for the staged change
 - `make dashboard-check` passes for any change touching `internal/api/`,
   `internal/api/openapi.json`, `docs/schema/openapi.*`,
   `cmd/gc/dashboard/`, or generated dashboard types

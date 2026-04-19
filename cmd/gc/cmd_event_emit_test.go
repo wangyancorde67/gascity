@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -176,22 +177,22 @@ func TestEventEmitViaCLI(t *testing.T) {
 		t.Fatalf("gc event emit = %d; stderr: %s", code, stderr.String())
 	}
 
-	// Verify via gc events.
-	stdout.Reset()
-	stderr.Reset()
-	code = run([]string{"--city", dir, "events"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("gc events = %d; stderr: %s", code, stderr.String())
+	evts, err := events.ReadAll(filepath.Join(dir, ".gc", "events.jsonl"))
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
 	}
-	out := stdout.String()
-	if !strings.Contains(out, "bead.created") {
-		t.Errorf("gc events output missing 'bead.created': %q", out)
+	if len(evts) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(evts))
 	}
-	if !strings.Contains(out, "gc-1") {
-		t.Errorf("gc events output missing 'gc-1': %q", out)
+	got := evts[0]
+	if got.Type != "bead.created" {
+		t.Errorf("Type = %q, want bead.created", got.Type)
 	}
-	if !strings.Contains(out, "Build Hanoi") {
-		t.Errorf("gc events output missing 'Build Hanoi': %q", out)
+	if got.Subject != "gc-1" {
+		t.Errorf("Subject = %q, want gc-1", got.Subject)
+	}
+	if got.Message != "Build Hanoi" {
+		t.Errorf("Message = %q, want Build Hanoi", got.Message)
 	}
 }
 

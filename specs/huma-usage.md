@@ -105,7 +105,7 @@ func addMutationCSRFParam(op *huma.Operation) {
     // idempotent append of the X-GC-Request header param
 }
 
-func cityPost[I, O any](sm *SupervisorMux, tail string,
+func cityPost[I, O any] (sm *SupervisorMux, tail string,
     fn func(*Server, context.Context, *I) (*O, error),
 ) {
     huma.Post(sm.humaAPI, cityScopePrefix+tail, bindCity(sm, fn),

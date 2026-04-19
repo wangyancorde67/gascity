@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	requestIDHeaderName   = "X-GC-Request-Id"
-	requestIDHeaderRef    = "#/components/headers/" + requestIDHeaderName
-	requestIDDescription  = "Opaque per-response identifier assigned by the server for log correlation. Every response carries this header."
+	requestIDHeaderName  = "X-GC-Request-Id"
+	requestIDHeaderRef   = "#/components/headers/" + requestIDHeaderName
+	requestIDDescription = "Opaque per-response identifier assigned by the server for log correlation. Every response carries this header."
 )
 
 // registerFrameworkHeaders registers reusable response headers in

@@ -15,6 +15,7 @@ Requires Node 20+ and npm.
 npm install          # one-time
 npm run gen          # regenerate src/generated/schema.d.ts from the spec
 npm run typecheck    # tsc --noEmit
+npm test             # Vitest/jsdom dashboard tests
 npm run build        # Vite production build → dist/
 npm run dev          # Vite dev server with HMR on :5173
 ```

@@ -24,6 +24,7 @@ func (e *SlingConflictResponse) Error() string {
 	return e.Message
 }
 
+// GetStatus tells Huma to serialize sling source-workflow conflicts as HTTP 409.
 func (e *SlingConflictResponse) GetStatus() int {
 	return http.StatusConflict
 }
