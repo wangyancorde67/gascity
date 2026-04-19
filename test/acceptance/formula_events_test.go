@@ -89,23 +89,15 @@ func TestEventCommands(t *testing.T) {
 	c.Init("claude")
 
 	t.Run("Emit_ThenList_ShowsEvent", func(t *testing.T) {
-		// Emit a custom event.
-		out, err := c.GC("event", "emit", "test.acceptance",
-			"--subject", "test-bead-123",
-			"--message", "acceptance test event",
-			"--actor", "quinn")
-		if err != nil {
-			t.Fatalf("gc event emit failed: %v\n%s", err, out)
-		}
-
-		// Query the event log.
-		out, err = c.GC("events")
-		if err != nil {
-			t.Fatalf("gc events failed: %v\n%s", err, out)
-		}
-		if !strings.Contains(out, "test.acceptance") {
-			t.Errorf("event log should contain emitted event type 'test.acceptance', got:\n%s", out)
-		}
+		// #877 made `gc events` API-only: it reads exclusively from the
+		// supervisor/controller API with no local events.jsonl fallback.
+		// `gc event emit` still writes to the local jsonl, so the emit
+		// and list channels are disconnected in this acceptance harness
+		// (which does not bootstrap a supervisor that ingests local
+		// emits). Skipped until either (a) gc event emit also publishes
+		// through the API, or (b) the acceptance harness launches a
+		// controller that tails local events.jsonl.
+		t.Skip("gc events is API-only post-#877; emit+list round-trip needs a live controller")
 	})
 
 	t.Run("Emit_AlwaysExitsZero", func(t *testing.T) {
@@ -116,21 +108,10 @@ func TestEventCommands(t *testing.T) {
 	})
 
 	t.Run("TypeFilter_FiltersResults", func(t *testing.T) {
-		// Emit two different event types.
-		c.GC("event", "emit", "test.alpha", "--message", "alpha event")
-		c.GC("event", "emit", "test.beta", "--message", "beta event")
-
-		// Filter to just alpha.
-		out, err := c.GC("events", "--type", "test.alpha")
-		if err != nil {
-			t.Fatalf("gc events --type filter failed: %v\n%s", err, out)
-		}
-		if !strings.Contains(out, "test.alpha") {
-			t.Errorf("filtered output should contain test.alpha, got:\n%s", out)
-		}
-		if strings.Contains(out, "test.beta") {
-			t.Errorf("filtered output should NOT contain test.beta, got:\n%s", out)
-		}
+		// Same root cause as Emit_ThenList_ShowsEvent: the emit channel
+		// writes local jsonl but `gc events` reads from the API only.
+		// See that test's comment for the skip rationale.
+		t.Skip("gc events is API-only post-#877; emit+list round-trip needs a live controller")
 	})
 
 	t.Run("Seq_PrintsNumber", func(t *testing.T) {
