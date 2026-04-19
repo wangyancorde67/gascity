@@ -116,6 +116,34 @@ start_command = "claude --dangerously-skip-permissions"
 	}
 }
 
+func TestParseWithWarnings_DeprecatedOrderOverrideGateAlias(t *testing.T) {
+	cfg, warnings, err := ParseWithWarnings([]byte(`
+[workspace]
+name = "test-city"
+
+[orders]
+
+[[orders.overrides]]
+name = "digest"
+gate = "cooldown"
+`))
+	if err != nil {
+		t.Fatalf("ParseWithWarnings: %v", err)
+	}
+	if len(cfg.Orders.Overrides) != 1 {
+		t.Fatalf("len(overrides) = %d, want 1", len(cfg.Orders.Overrides))
+	}
+	if cfg.Orders.Overrides[0].Trigger == nil || *cfg.Orders.Overrides[0].Trigger != "cooldown" {
+		t.Fatalf("Trigger = %#v, want cooldown", cfg.Orders.Overrides[0].Trigger)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want 1 deprecation warning", warnings)
+	}
+	if !strings.Contains(warnings[0], `"orders.overrides.gate" is deprecated`) {
+		t.Fatalf("warning = %q, want deprecation for orders.overrides.gate", warnings[0])
+	}
+}
+
 func TestParseAgentsNoStartCommand(t *testing.T) {
 	data := []byte(`
 [workspace]

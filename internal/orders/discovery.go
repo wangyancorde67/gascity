@@ -17,9 +17,12 @@ func discoverRoot(fs fsys.FS, root ScanRoot) ([]Order, error) {
 	var names []string
 
 	add := func(name, source string, data []byte) error {
-		a, err := Parse(data)
+		a, warnings, err := ParseWithWarnings(data)
 		if err != nil {
 			return fmt.Errorf("order %q in %s: %w", name, source, err)
+		}
+		for _, warning := range warnings {
+			log.Printf("warning: %s: %s", source, warning)
 		}
 		a.Name = name
 		a.Source = source

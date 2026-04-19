@@ -651,15 +651,46 @@ func (e *Editor) SetOrderOverride(ov config.OrderOverride) error {
 		if ov.Name == "" {
 			return fmt.Errorf("order override: name is required")
 		}
+		if ov.Trigger == nil {
+			ov.Trigger = ov.Gate
+		}
+		ov.Gate = nil
 		for i := range cfg.Orders.Overrides {
 			if cfg.Orders.Overrides[i].Name == ov.Name && cfg.Orders.Overrides[i].Rig == ov.Rig {
-				cfg.Orders.Overrides[i] = ov
+				mergeOrderOverride(&cfg.Orders.Overrides[i], ov)
 				return nil
 			}
 		}
 		cfg.Orders.Overrides = append(cfg.Orders.Overrides, ov)
 		return nil
 	})
+}
+
+func mergeOrderOverride(dst *config.OrderOverride, patch config.OrderOverride) {
+	if patch.Enabled != nil {
+		dst.Enabled = patch.Enabled
+	}
+	if patch.Trigger != nil {
+		dst.Trigger = patch.Trigger
+	}
+	if patch.Interval != nil {
+		dst.Interval = patch.Interval
+	}
+	if patch.Schedule != nil {
+		dst.Schedule = patch.Schedule
+	}
+	if patch.Check != nil {
+		dst.Check = patch.Check
+	}
+	if patch.On != nil {
+		dst.On = patch.On
+	}
+	if patch.Pool != nil {
+		dst.Pool = patch.Pool
+	}
+	if patch.Timeout != nil {
+		dst.Timeout = patch.Timeout
+	}
 }
 
 // DeleteOrderOverride removes an order override by name and rig.

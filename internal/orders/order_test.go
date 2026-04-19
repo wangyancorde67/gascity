@@ -1,6 +1,7 @@
 package orders
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,6 +71,27 @@ func TestParseInvalid(t *testing.T) {
 	_, err := Parse([]byte(`not valid toml {{{`))
 	if err == nil {
 		t.Fatal("Parse should fail on invalid TOML")
+	}
+}
+
+func TestParseWithWarnings_DeprecatedLegacyGateAlias(t *testing.T) {
+	a, warnings, err := ParseWithWarnings([]byte(`
+[order]
+formula = "mol-digest-generate"
+gate = "cooldown"
+interval = "24h"
+`))
+	if err != nil {
+		t.Fatalf("ParseWithWarnings: %v", err)
+	}
+	if a.Trigger != "cooldown" {
+		t.Fatalf("Trigger = %q, want %q", a.Trigger, "cooldown")
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want 1 deprecation warning", warnings)
+	}
+	if !strings.Contains(warnings[0], `"order.gate" is deprecated`) {
+		t.Fatalf("warning = %q, want deprecated order.gate warning", warnings[0])
 	}
 }
 

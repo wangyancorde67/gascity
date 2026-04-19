@@ -16,6 +16,7 @@ type orderResponse struct {
 	ScopedName    string `json:"scoped_name"`
 	Description   string `json:"description,omitempty"`
 	Type          string `json:"type"`
+	Gate          string `json:"gate,omitempty"`
 	Trigger       string `json:"trigger"`
 	Interval      string `json:"interval,omitempty"`
 	Schedule      string `json:"schedule,omitempty"`
@@ -148,6 +149,7 @@ func toOrderResponse(a orders.Order) orderResponse {
 		ScopedName:    a.ScopedName(),
 		Description:   a.Description,
 		Type:          typ,
+		Gate:          a.Trigger,
 		Trigger:       a.Trigger,
 		Interval:      a.Interval,
 		Schedule:      a.Schedule,

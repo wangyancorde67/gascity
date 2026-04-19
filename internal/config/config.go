@@ -2598,12 +2598,11 @@ func Load(fs fsys.FS, path string) (*City, error) {
 	return cfg, nil
 }
 
-// Parse decodes TOML data into a City config.
-func Parse(data []byte) (*City, error) {
+func parseCityWithWarnings(data []byte, source string) (*City, toml.MetaData, []string, error) {
 	cfg := City{}
 	md, err := toml.Decode(string(data), &cfg)
 	if err != nil {
-		return nil, fmt.Errorf("parsing config: %w", err)
+		return nil, md, nil, fmt.Errorf("parsing config: %w", err)
 	}
 	normalizeAgentDefaultsAlias(&cfg, md)
 	normalizeLegacyOrderOverrideAliases(&cfg)
@@ -2612,5 +2611,25 @@ func Parse(data []byte) (*City, error) {
 	if cfg.Daemon.GraphWorkflows && !cfg.Daemon.FormulaV2 {
 		cfg.Daemon.FormulaV2 = true
 	}
-	return &cfg, nil
+	warnings := CheckUndecodedKeys(md, source)
+	return &cfg, md, warnings, nil
+}
+
+// ParseWithWarnings decodes TOML data into a City config and returns
+// non-fatal warnings for deprecated or unknown keys.
+func ParseWithWarnings(data []byte) (*City, []string, error) {
+	cfg, _, warnings, err := parseCityWithWarnings(data, "city.toml")
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, warnings, nil
+}
+
+// Parse decodes TOML data into a City config.
+func Parse(data []byte) (*City, error) {
+	cfg, _, err := ParseWithWarnings(data)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }

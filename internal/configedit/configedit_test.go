@@ -1088,7 +1088,7 @@ gate = "cooldown"
 	if strings.Contains(got, "gate =") {
 		t.Fatalf("city.toml still contains legacy gate key:\n%s", got)
 	}
-	if strings.Contains(got, `trigger =`) {
-		t.Fatalf("city.toml unexpectedly wrote trigger for enabled-only override:\n%s", got)
+	if !strings.Contains(got, `trigger = "cooldown"`) {
+		t.Fatalf("city.toml did not preserve normalized trigger:\n%s", got)
 	}
 }

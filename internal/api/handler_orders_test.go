@@ -139,7 +139,7 @@ func TestHandleOrderGet(t *testing.T) {
 	}
 }
 
-func TestHandleOrderGet_UsesTriggerFieldOnly(t *testing.T) {
+func TestHandleOrderGet_EmitsTriggerAndLegacyGate(t *testing.T) {
 	fs := newFakeState(t)
 	fs.autos = []orders.Order{
 		{
@@ -166,8 +166,8 @@ func TestHandleOrderGet_UsesTriggerFieldOnly(t *testing.T) {
 	if resp["trigger"] != "cooldown" {
 		t.Fatalf("trigger = %#v, want %q", resp["trigger"], "cooldown")
 	}
-	if _, ok := resp["gate"]; ok {
-		t.Fatalf("response unexpectedly exposed legacy gate field: %s", w.Body.String())
+	if resp["gate"] != "cooldown" {
+		t.Fatalf("gate = %#v, want %q", resp["gate"], "cooldown")
 	}
 }
 

@@ -128,11 +128,25 @@ func (a *Order) TimeoutOrDefault() time.Duration {
 
 // Parse decodes TOML data into an Order.
 func Parse(data []byte) (Order, error) {
+	a, _, err := ParseWithWarnings(data)
+	if err != nil {
+		return Order{}, err
+	}
+	return a, nil
+}
+
+// ParseWithWarnings decodes TOML data into an Order and returns
+// non-fatal warnings for deprecated keys.
+func ParseWithWarnings(data []byte) (Order, []string, error) {
 	var af orderFile
 	if _, err := toml.Decode(string(data), &af); err != nil {
-		return Order{}, fmt.Errorf("parsing order: %w", err)
+		return Order{}, nil, fmt.Errorf("parsing order: %w", err)
 	}
-	return af.Order.normalized(), nil
+	var warnings []string
+	if af.Order.Gate != "" {
+		warnings = append(warnings, `field "order.gate" is deprecated; use "order.trigger"`)
+	}
+	return af.Order.normalized(), warnings, nil
 }
 
 // Validate checks an Order for structural correctness based on its trigger type.

@@ -122,10 +122,11 @@ func Apply(cityPath string, opts Options) (*Report, error) {
 	report := &Report{}
 	cityPath = filepath.Clean(cityPath)
 
-	cityCfg, err := loadCityFile(filepath.Join(cityPath, "city.toml"))
+	cityCfg, warnings, err := loadCityFile(filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		return nil, err
 	}
+	report.Warnings = append(report.Warnings, warnings...)
 
 	packPath := filepath.Join(cityPath, "pack.toml")
 	packCfg, packExists, err := loadPackFile(packPath)
@@ -203,16 +204,16 @@ func Apply(cityPath string, opts Options) (*Report, error) {
 	return report, nil
 }
 
-func loadCityFile(path string) (*config.City, error) {
+func loadCityFile(path string) (*config.City, []string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("migrate %q: %w", path, err)
+		return nil, nil, fmt.Errorf("migrate %q: %w", path, err)
 	}
-	cfg, err := config.Parse(data)
+	cfg, warnings, err := config.ParseWithWarnings(data)
 	if err != nil {
-		return nil, fmt.Errorf("migrate %q: %w", path, err)
+		return nil, nil, fmt.Errorf("migrate %q: %w", path, err)
 	}
-	return cfg, nil
+	return cfg, warnings, nil
 }
 
 func loadPackFile(path string) (packFile, bool, error) {

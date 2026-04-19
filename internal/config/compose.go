@@ -944,15 +944,11 @@ func adjustFragmentPath(p, fragDir, cityRoot string) string {
 // parseWithMeta parses TOML data into a City, preserving metadata for
 // field-level merge decisions. Also returns warnings for unknown keys.
 func parseWithMeta(data []byte, source string) (*City, toml.MetaData, []string, error) {
-	var cfg City
-	md, err := toml.Decode(string(data), &cfg)
+	cfg, md, warnings, err := parseCityWithWarnings(data, source)
 	if err != nil {
-		return nil, md, nil, fmt.Errorf("parsing config: %w", err)
+		return nil, md, nil, err
 	}
-	normalizeAgentDefaultsAlias(&cfg, md)
-	normalizeLegacyOrderOverrideAliases(&cfg)
-	warnings := CheckUndecodedKeys(md, source)
-	return &cfg, md, warnings, nil
+	return cfg, md, warnings, nil
 }
 
 func newProvenance(rootPath string) *Provenance {

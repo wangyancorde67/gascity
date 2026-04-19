@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -350,9 +351,12 @@ func parseCityConfig(path string) (*config.City, bool) {
 	if err != nil {
 		return nil, false
 	}
-	cfg, err := config.Parse(data)
+	cfg, warnings, err := config.ParseWithWarnings(data)
 	if err != nil {
 		return nil, false
+	}
+	for _, warning := range warnings {
+		log.Printf("warning: %s", warning)
 	}
 	return cfg, true
 }

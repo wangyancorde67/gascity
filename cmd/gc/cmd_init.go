@@ -441,10 +441,13 @@ func cmdInitFromTOMLFileWithOptions(fs fsys.FS, tomlSrc, cityPath, nameOverride 
 		fmt.Fprintf(stderr, "gc init: reading %q: %v\n", tomlSrc, err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	cfg, err := config.Parse(data)
+	cfg, warnings, err := config.ParseWithWarnings(data)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
+	}
+	for _, warning := range warnings {
+		fmt.Fprintln(stderr, warning) //nolint:errcheck // best-effort stderr
 	}
 
 	// --file creates a new city from a template; default to target dir name.
@@ -830,10 +833,13 @@ func doInitFromDirWithOptions(srcDir, cityPath, nameOverride string, stdout, std
 		fmt.Fprintf(stderr, "gc init: reading copied city.toml: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	cfg, err := config.Parse(data)
+	cfg, warnings, err := config.ParseWithWarnings(data)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
+	}
+	for _, warning := range warnings {
+		fmt.Fprintln(stderr, warning) //nolint:errcheck // best-effort stderr
 	}
 	cityName := resolveCityName(nameOverride, cityPath)
 	cfg.Workspace.Name = cityName
