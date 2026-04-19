@@ -55,6 +55,9 @@ func releaseOrphanedPoolAssignments(
 		if sb.Status == "closed" {
 			continue
 		}
+		if isDrainedSessionBead(sb) {
+			continue
+		}
 		if id := strings.TrimSpace(sb.ID); id != "" {
 			openIdentifiers[id] = struct{}{}
 		}
