@@ -1120,7 +1120,7 @@ gc init
 | `--bootstrap-profile` | string |  | bootstrap profile to apply for hosted/container defaults |
 | `--file` | string |  | path to a TOML file to use as city.toml |
 | `--from` | string |  | path to an example city directory to copy |
-| `--name` | string |  | workspace name (default: source template's workspace.name if set, else target directory basename) |
+| `--name` | string |  | machine-local city name (default: source template's workspace.name if set, else source pack.name if set, else target directory basename) |
 | `--provider` | string |  | built-in workspace provider to use for the default mayor config |
 | `--skip-provider-readiness` | bool |  | skip provider login/readiness checks during init and continue startup |
 
@@ -1530,8 +1530,9 @@ Register a city directory with the machine-wide supervisor.
 If no path is given, registers the current city (discovered from cwd).
 Use --name to set the machine-local registration alias. The alias is stored
 in the machine-local supervisor registry and never written back to city.toml.
-When --name is omitted, workspace.name is used if present, otherwise
-[pack].name is used — in either case city.toml is not modified.
+When --name is omitted, the current effective city identity is used
+(site-bound workspace name if present, otherwise legacy workspace.name,
+otherwise the directory basename) — in every case city.toml is not modified.
 Registration is idempotent — registering the same city twice is a no-op.
 The supervisor is started if needed and immediately reconciles the city.
 

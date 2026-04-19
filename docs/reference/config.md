@@ -556,7 +556,7 @@ SessionConfig holds session provider settings.
 | `debounce_ms` | integer |  | `500` | DebounceMs is the default debounce interval in milliseconds for send-keys. Defaults to 500. |
 | `display_ms` | integer |  | `5000` | DisplayMs is the default display duration in milliseconds for status messages. Defaults to 5000. |
 | `startup_timeout` | string |  | `60s` | StartupTimeout is how long to wait for each agent's Start() call before treating it as failed. Duration string (e.g., "60s", "2m"). Defaults to "60s". |
-| `socket` | string |  |  | Socket specifies the tmux socket name for per-city isolation. When set, all tmux commands use "tmux -L &lt;socket&gt;" to connect to a dedicated server. When empty, defaults to the city name (workspace.name) — giving every city its own tmux server automatically. Set explicitly to override. |
+| `socket` | string |  |  | Socket specifies the tmux socket name for per-city isolation. When set, all tmux commands use "tmux -L &lt;socket&gt;" to connect to a dedicated server. When empty, defaults to the effective city name (site binding, legacy config, or basename) — giving every city its own tmux server automatically. Set explicitly to override. |
 | `remote_match` | string |  |  | RemoteMatch is a substring pattern for the hybrid provider to route sessions to the remote (K8s) backend. Sessions whose names contain this pattern go to K8s; all others stay local (tmux). Overridden by the GC_HYBRID_REMOTE_MATCH env var if set. |
 
 ## SessionSleepConfig
@@ -575,7 +575,7 @@ Workspace holds city-level metadata and optional defaults that apply to all agen
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `name` | string | **yes** |  | Name is the human-readable name for this city. |
+| `name` | string |  |  | Name is the legacy checked-in city name. Runtime identity now resolves from site binding, legacy config, and basename precedence instead. |
 | `prefix` | string |  |  | Prefix overrides the auto-derived HQ bead ID prefix. When empty, the prefix is derived from the city Name via DeriveBeadsPrefix. |
 | `provider` | string |  |  | Provider is the default provider name used by agents that don't specify one. |
 | `start_command` | string |  |  | StartCommand overrides the provider's command for all agents. |

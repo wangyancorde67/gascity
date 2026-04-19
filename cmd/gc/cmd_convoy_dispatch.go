@@ -140,7 +140,7 @@ func runControlDispatcher(beadID string, stdout, stderr io.Writer) error {
 		case "check", "fanout":
 			opts.FormulaSearchPaths = workflowFormulaSearchPaths(cfg, bead)
 			opts.PrepareFragment = func(fragment *formula.FragmentRecipe, source beads.Bead) error {
-				return decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, cityPath, cfg)
+				return decorateDynamicFragmentRecipe(fragment, source, store, loadedCityName(cfg, cityPath), cityPath, cfg)
 			}
 		case "retry-eval":
 			sp := dispatchControlSessionProvider()
@@ -641,7 +641,7 @@ func resolveSourceWorkflowTarget(cfg *config.City, cityPath, sourceBeadID string
 	}
 	target.storeView = view
 	target.sourceBead = bead
-	target.storeRef = workflowStoreRefForDir(view.path, cityPath, cfg.Workspace.Name, cfg)
+	target.storeRef = workflowStoreRefForDir(view.path, cityPath, loadedCityName(cfg, cityPath), cfg)
 	return target, nil
 }
 
@@ -666,9 +666,9 @@ func openSourceWorkflowStoreRef(cfg *config.City, cityPath, storeRef string) (co
 		if err != nil {
 			return convoyStoreView{}, "", fmt.Errorf("opening city store: %w", err)
 		}
-		cityName := "city"
-		if cfg != nil && strings.TrimSpace(cfg.Workspace.Name) != "" {
-			cityName = cfg.Workspace.Name
+		cityName := loadedCityName(cfg, cityPath)
+		if cityName == "" {
+			cityName = "city"
 		}
 		return convoyStoreView{path: cityPath, store: store}, "city:" + cityName, nil
 	case strings.HasPrefix(storeRef, "city:"):
@@ -1051,7 +1051,7 @@ func collectSourceWorkflowMatches(cfg *config.City, cityPath, sourceBeadID, sour
 	}
 	matches := make([]sourceWorkflowStoreMatch, 0, len(stores))
 	for _, info := range stores {
-		rootStoreRef := workflowStoreRefForDir(info.path, cityPath, cfg.Workspace.Name, cfg)
+		rootStoreRef := workflowStoreRefForDir(info.path, cityPath, loadedCityName(cfg, cityPath), cfg)
 		roots, err := sourceworkflow.ListLiveRoots(info.store, sourceBeadID, sourceStoreRef, rootStoreRef)
 		if err != nil {
 			return nil, skips, err

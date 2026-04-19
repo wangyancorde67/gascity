@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
@@ -124,10 +123,7 @@ func cmdRigRestart(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 	sp := newSessionProvider()
 	rec := openCityRecorder(stderr)
 	store, _ := openCityStoreAt(cityPath)

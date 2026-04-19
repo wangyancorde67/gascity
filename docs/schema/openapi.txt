@@ -6719,7 +6719,16 @@
       "WorkspaceResponse": {
         "additionalProperties": false,
         "properties": {
+          "declared_name": {
+            "type": "string"
+          },
+          "declared_prefix": {
+            "type": "string"
+          },
           "name": {
+            "type": "string"
+          },
+          "prefix": {
             "type": "string"
           },
           "provider": {

@@ -134,10 +134,7 @@ func doPrimeWithHookFormat(args []string, stdout, stderr io.Writer, hookMode boo
 		return 0 // empty output; hooks call this
 	}
 
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 
 	// Look up agent in config. First try qualified identity resolution
 	// (handles "rig/agent" and rig-context matching), then fall back to

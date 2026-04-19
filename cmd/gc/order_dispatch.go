@@ -103,7 +103,7 @@ func buildOrderDispatcher(cityPath string, cfg *config.City, rec events.Recorder
 		stderr:     stderr,
 		maxTimeout: cfg.Orders.MaxTimeoutDuration(),
 		cfg:        cfg,
-		cityName:   cfg.Workspace.Name,
+		cityName:   loadedCityName(cfg, cityPath),
 	}
 }
 

@@ -624,10 +624,7 @@ func resolveNudgeTarget(identifier string, warningWriter ...io.Writer) (nudgeTar
 }
 
 func resolveNudgeTargetFromSessionBead(cityPath string, cfg *config.City, b beads.Bead) nudgeTarget {
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 	sessionName := strings.TrimSpace(b.Metadata["session_name"])
 	if sessionName == "" {
 		sessionName = sessionNameFromBeadID(b.ID)

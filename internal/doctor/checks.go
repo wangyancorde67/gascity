@@ -60,13 +60,14 @@ func (c *CityStructureCheck) CanFix() bool { return false }
 // Fix is a no-op.
 func (c *CityStructureCheck) Fix(_ *CheckContext) error { return nil }
 
-// CityConfigCheck verifies city.toml parses and workspace.name is set.
+// CityConfigCheck verifies city.toml parses and an effective workspace name can
+// be resolved.
 type CityConfigCheck struct{}
 
 // Name returns the check identifier.
 func (c *CityConfigCheck) Name() string { return "city-config" }
 
-// Run parses city.toml and checks workspace.name.
+// Run parses city.toml and checks effective workspace identity.
 func (c *CityConfigCheck) Run(ctx *CheckContext) *CheckResult {
 	r := &CheckResult{Name: c.Name()}
 	cfg, err := config.Load(fsys.OSFS{}, filepath.Join(ctx.CityPath, "city.toml"))
@@ -80,12 +81,7 @@ func (c *CityConfigCheck) Run(ctx *CheckContext) *CheckResult {
 		r.Message = "workspace.name not set (and could not derive from path)"
 		return r
 	}
-	summary := fmt.Sprintf("city.toml loaded (%d agents, %d rigs)", len(cfg.Agents), len(cfg.Rigs))
-	if cfg.Workspace.Name == "" {
-		r.Status = StatusWarning
-		r.Message = fmt.Sprintf("workspace.name not set (using derived name %q); %s", cfg.ResolvedWorkspaceName, summary)
-		return r
-	}
+	summary := fmt.Sprintf("city.toml loaded (%d agents, %d rigs); effective city name %q", len(cfg.Agents), len(cfg.Rigs), cfg.ResolvedWorkspaceName)
 	r.Status = StatusOK
 	r.Message = summary
 	return r

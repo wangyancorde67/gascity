@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -191,10 +190,7 @@ func resolveConfiguredSessionLogContext(cityPath string, cfg *config.City, ident
 	if identifier == "" {
 		return "", false
 	}
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 	if spec, ok, _ := findNamedSessionSpecForTarget(cfg, cityName, identifier); ok && spec.Agent != nil {
 		workDirQualifiedName := workdirutil.SessionQualifiedName(cityPath, *spec.Agent, cfg.Rigs, spec.Identity, "")
 		workDir, err := resolveWorkDirForQualifiedName(cityPath, cfg, spec.Agent, workDirQualifiedName)

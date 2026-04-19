@@ -169,10 +169,7 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	d.Register(doctor.NewControllerCheck(cityPath, controllerRunning))
 
 	if cfgErr == nil && !controllerRunning {
-		cityName := cfg.Workspace.Name
-		if cityName == "" {
-			cityName = filepath.Base(cityPath)
-		}
+		cityName := loadedCityName(cfg, cityPath)
 		st := cfg.Workspace.SessionTemplate
 		sp := newSessionProvider()
 

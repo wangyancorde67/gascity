@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -426,10 +425,7 @@ func configuredMailboxAddressWithConfig(cityPath string, cfg *config.City, ident
 	if identifier == "" || identifier == "human" || cfg == nil {
 		return "", false
 	}
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 	spec, ok, err := findNamedSessionSpecForTarget(cfg, cityName, identifier)
 	if err != nil || !ok {
 		return "", false

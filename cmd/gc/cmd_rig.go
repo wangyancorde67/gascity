@@ -657,10 +657,7 @@ func doRigList(fs fsys.FS, cityPath string, jsonOutput bool, stdout, stderr io.W
 
 	// HQ rig (the city itself).
 	hqBeads := rigBeadsStatus(fs, cityPath)
-	displayName := cfg.Workspace.Name
-	if displayName == "" {
-		displayName = filepath.Base(cityPath)
-	}
+	displayName := loadedCityName(cfg, cityPath)
 	w("")
 	w(fmt.Sprintf("  %s (HQ):", displayName))
 	w(fmt.Sprintf("    Prefix: %s", hqPrefix))
@@ -1052,10 +1049,7 @@ func cmdRigDefault(rigNameOrPath, cityNameOrPath string, stdout, stderr io.Write
 		fmt.Fprintf(stderr, "gc rig default: warning: writing routes: %v\n", err) //nolint:errcheck // best-effort stderr
 	}
 
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 	fmt.Fprintf(stdout, "Set default city for rig '%s' to '%s'\n", entry.Name, cityName) //nolint:errcheck // best-effort stdout
 	return 0
 }

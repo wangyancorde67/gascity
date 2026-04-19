@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -1487,10 +1486,7 @@ func resolveWorkDir(cityPath string, cfg *config.City, agent *config.Agent) (str
 }
 
 func resolveWorkDirForQualifiedName(cityPath string, cfg *config.City, agent *config.Agent, qualifiedName string) (string, error) {
-	cityName := filepath.Base(cityPath)
-	if cfg != nil && cfg.Workspace.Name != "" {
-		cityName = cfg.Workspace.Name
-	}
+	cityName := loadedCityName(cfg, cityPath)
 	var rigs []config.Rig
 	if cfg != nil {
 		rigs = cfg.Rigs

@@ -378,13 +378,7 @@ func resolvedManagedEventsCityName(cityPath, fallback string) string {
 }
 
 func resolvedEventsCityName(cityPath string, cfg *config.City) string {
-	if cfg != nil && strings.TrimSpace(cfg.Workspace.Name) != "" {
-		return strings.TrimSpace(cfg.Workspace.Name)
-	}
-	if strings.TrimSpace(cityPath) == "" {
-		return ""
-	}
-	return resolveCityName("", "", cityPath)
+	return loadedCityName(cfg, cityPath)
 }
 
 func validateEventsCursor(scope eventsAPIScope, afterSeq uint64, afterCursor string) error {

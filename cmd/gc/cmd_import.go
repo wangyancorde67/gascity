@@ -721,12 +721,7 @@ func normalizeCityPackManifestAgentDefaultsAlias(manifest *cityPackManifest, met
 func defaultCityPackName(fs fsys.FS, cityPath string) string {
 	cfg, err := config.Load(fs, filepath.Join(cityPath, "city.toml"))
 	if err == nil {
-		if cfg.Workspace.Name != "" {
-			return cfg.Workspace.Name
-		}
-		if cfg.ResolvedWorkspaceName != "" {
-			return cfg.ResolvedWorkspaceName
-		}
+		return config.EffectiveCityName(cfg, filepath.Base(cityPath))
 	}
 	return filepath.Base(cityPath)
 }

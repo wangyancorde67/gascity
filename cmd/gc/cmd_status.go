@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
@@ -75,10 +74,7 @@ func cmdRigStatus(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 	sp := newSessionProvider()
 	dops := newDrainOps(sp)
 	return doRigStatus(sp, dops, rig, rigAgents, cityPath, cityName, cfg.Workspace.SessionTemplate, stdout, stderr)

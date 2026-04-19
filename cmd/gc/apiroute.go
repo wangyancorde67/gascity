@@ -47,15 +47,11 @@ func apiClient(cityPath string) *api.Client {
 	return supervisorCityAPIClient(cityPath)
 }
 
-// standaloneControllerCityName resolves the city name for a standalone
-// controller API client. In standalone mode the controller serves exactly
-// one city; we prefer cfg.Workspace.Name when set, falling back to the
-// resolved name from the city directory path.
+// standaloneControllerCityName resolves the effective city name for a
+// standalone controller API client. In standalone mode the controller serves
+// exactly one city, so the client must match the runtime identity.
 func standaloneControllerCityName(cfg *config.City, cityPath string) string {
-	if cfg != nil && cfg.Workspace.Name != "" {
-		return cfg.Workspace.Name
-	}
-	return resolveCityName("", "", cityPath)
+	return loadedCityName(cfg, cityPath)
 }
 
 // resolveAgentForAPI resolves a bare agent name (e.g., "worker") to its

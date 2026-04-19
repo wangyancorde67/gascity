@@ -54,10 +54,7 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc stop: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 
 	if handled, code := unregisterCityFromSupervisor(cityPath, stdout, stderr, "gc stop"); handled {
 		if code != 0 {

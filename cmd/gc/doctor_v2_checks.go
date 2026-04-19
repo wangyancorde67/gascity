@@ -300,18 +300,81 @@ func (v2ScriptsLayoutCheck) Run(ctx *doctor.CheckContext) *doctor.CheckResult {
 
 type v2WorkspaceNameCheck struct{}
 
-func (v2WorkspaceNameCheck) Name() string                     { return "v2-workspace-name" }
-func (v2WorkspaceNameCheck) CanFix() bool                     { return false }
-func (v2WorkspaceNameCheck) Fix(_ *doctor.CheckContext) error { return nil }
+func (v2WorkspaceNameCheck) Name() string { return "v2-workspace-name" }
+func (v2WorkspaceNameCheck) CanFix() bool { return true }
+func (v2WorkspaceNameCheck) Fix(ctx *doctor.CheckContext) error {
+	cfg, err := config.Load(fsys.OSFS{}, filepath.Join(ctx.CityPath, "city.toml"))
+	if err != nil {
+		return err
+	}
+	binding, err := config.LoadSiteBinding(fsys.OSFS{}, ctx.CityPath)
+	if err != nil {
+		return err
+	}
+
+	rawName := strings.TrimSpace(cfg.Workspace.Name)
+	rawPrefix := strings.TrimSpace(cfg.Workspace.Prefix)
+	siteName := strings.TrimSpace(binding.WorkspaceName)
+	sitePrefix := strings.TrimSpace(binding.WorkspacePrefix)
+
+	var conflicts []string
+	if rawName != "" && siteName != "" && rawName != siteName {
+		conflicts = append(conflicts, fmt.Sprintf("workspace.name=%q .gc/site.toml workspace_name=%q", rawName, siteName))
+	}
+	if rawPrefix != "" && sitePrefix != "" && rawPrefix != sitePrefix {
+		conflicts = append(conflicts, fmt.Sprintf("workspace.prefix=%q .gc/site.toml workspace_prefix=%q", rawPrefix, sitePrefix))
+	}
+	if len(conflicts) > 0 {
+		sort.Strings(conflicts)
+		return fmt.Errorf("refusing to migrate workspace identity — city.toml and .gc/site.toml disagree; resolve manually and re-run `gc doctor --fix`:\n  %s",
+			strings.Join(conflicts, "\n  "))
+	}
+
+	name := siteName
+	if name == "" {
+		name = rawName
+	}
+	prefix := sitePrefix
+	if prefix == "" {
+		prefix = rawPrefix
+	}
+
+	// Write the site binding first. If the city.toml rewrite fails
+	// afterwards, runtime identity remains stable and `gc doctor` will
+	// continue warning about the still-present legacy fields rather than
+	// silently losing the chosen name/prefix.
+	if err := config.PersistWorkspaceSiteBinding(fsys.OSFS{}, ctx.CityPath, name, prefix); err != nil {
+		return err
+	}
+	cfg.Workspace.Name = ""
+	cfg.Workspace.Prefix = ""
+	content, err := cfg.MarshalForWrite()
+	if err != nil {
+		return err
+	}
+	return fsys.WriteFileIfChangedAtomic(fsys.OSFS{}, filepath.Join(ctx.CityPath, "city.toml"), content, 0o644)
+}
 func (v2WorkspaceNameCheck) Run(ctx *doctor.CheckContext) *doctor.CheckResult {
 	cfg, ok := parseCityConfig(filepath.Join(ctx.CityPath, "city.toml"))
-	if !ok || strings.TrimSpace(cfg.Workspace.Name) == "" {
-		return okCheck("v2-workspace-name", "workspace.name already absent")
+	if !ok {
+		return okCheck("v2-workspace-name", "workspace identity migration skipped until city.toml parses")
+	}
+	rawName := strings.TrimSpace(cfg.Workspace.Name)
+	rawPrefix := strings.TrimSpace(cfg.Workspace.Prefix)
+	if rawName == "" && rawPrefix == "" {
+		return okCheck("v2-workspace-name", "workspace identity already absent from city.toml")
+	}
+	var details []string
+	if rawName != "" {
+		details = append(details, "workspace.name="+rawName)
+	}
+	if rawPrefix != "" {
+		details = append(details, "workspace.prefix="+rawPrefix)
 	}
 	return warnCheck("v2-workspace-name",
-		"workspace.name will move to .gc/ in a future release",
-		"review site-binding migration guidance before the hard cutover",
-		[]string{cfg.Workspace.Name})
+		"workspace identity still lives in city.toml",
+		"run `gc doctor --fix` to migrate workspace.name/workspace.prefix into .gc/site.toml",
+		details)
 }
 
 type v2PromptTemplateSuffixCheck struct{}

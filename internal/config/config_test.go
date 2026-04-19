@@ -2706,6 +2706,17 @@ func TestEffectiveHQPrefix_ExplicitPrefixOverridesAll(t *testing.T) {
 	}
 }
 
+func TestEffectiveHQPrefix_ResolvedPrefixOverridesDeclaredPrefix(t *testing.T) {
+	cfg := &City{
+		Workspace:               Workspace{Name: "declared-city", Prefix: "declared"},
+		ResolvedWorkspaceName:   "site-city",
+		ResolvedWorkspacePrefix: "sc",
+	}
+	if got := EffectiveHQPrefix(cfg); got != "sc" {
+		t.Errorf("EffectiveHQPrefix() = %q, want %q", got, "sc")
+	}
+}
+
 // --- Suspended field tests ---
 
 func TestParseSuspended(t *testing.T) {

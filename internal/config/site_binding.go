@@ -48,7 +48,9 @@ func SiteBindingPath(cityRoot string) string {
 
 // SiteBinding stores machine-local rig bindings for a city.
 type SiteBinding struct {
-	Rigs []RigSiteBinding `toml:"rig,omitempty"`
+	WorkspaceName   string           `toml:"workspace_name,omitempty"`
+	WorkspacePrefix string           `toml:"workspace_prefix,omitempty"`
+	Rigs            []RigSiteBinding `toml:"rig,omitempty"`
 }
 
 // RigSiteBinding binds a declared rig name to a machine-local path.
@@ -96,6 +98,7 @@ func applySiteBindings(fs fsys.FS, cityRoot string, cfg *City, keepLegacy bool) 
 	if err != nil {
 		return nil, err
 	}
+	applyWorkspaceIdentityBinding(cityRoot, binding, cfg)
 	paths := make(map[string]string, len(binding.Rigs))
 	for _, rig := range binding.Rigs {
 		name := strings.TrimSpace(rig.Name)
@@ -138,10 +141,58 @@ func applySiteBindings(fs fsys.FS, cityRoot string, cfg *City, keepLegacy bool) 
 	return warnings, nil
 }
 
+// ResolveWorkspaceIdentity applies workspace identity from site binding when
+// present, otherwise falls back to declared config and finally directory
+// basename. Callers that need the effective city identity without mutating raw
+// workspace fields should use this helper.
+func ResolveWorkspaceIdentity(fs fsys.FS, cityRoot string, cfg *City) error {
+	if cfg == nil {
+		return nil
+	}
+	binding, err := LoadSiteBinding(fs, cityRoot)
+	if err != nil {
+		return err
+	}
+	applyWorkspaceIdentityBinding(cityRoot, binding, cfg)
+	return nil
+}
+
+func applyWorkspaceIdentityBinding(cityRoot string, binding *SiteBinding, cfg *City) {
+	if cfg == nil {
+		return
+	}
+	name := strings.TrimSpace(filepath.Base(filepath.Clean(cityRoot)))
+	if raw := strings.TrimSpace(cfg.Workspace.Name); raw != "" {
+		name = raw
+	}
+	if binding != nil {
+		if site := strings.TrimSpace(binding.WorkspaceName); site != "" {
+			name = site
+		}
+	}
+	cfg.ResolvedWorkspaceName = name
+
+	prefix := strings.TrimSpace(cfg.Workspace.Prefix)
+	if binding != nil {
+		if site := strings.TrimSpace(binding.WorkspacePrefix); site != "" {
+			prefix = site
+		}
+	}
+	cfg.ResolvedWorkspacePrefix = prefix
+}
+
 // PersistRigSiteBindings writes the current machine-local rig bindings to
 // .gc/site.toml. Rigs without paths are left unbound and omitted.
 func PersistRigSiteBindings(fs fsys.FS, cityRoot string, rigs []Rig) error {
-	binding := SiteBinding{Rigs: make([]RigSiteBinding, 0, len(rigs))}
+	existing, err := LoadSiteBinding(fs, cityRoot)
+	if err != nil {
+		return err
+	}
+	binding := SiteBinding{
+		WorkspaceName:   strings.TrimSpace(existing.WorkspaceName),
+		WorkspacePrefix: strings.TrimSpace(existing.WorkspacePrefix),
+		Rigs:            make([]RigSiteBinding, 0, len(rigs)),
+	}
 	for _, rig := range rigs {
 		name := strings.TrimSpace(rig.Name)
 		path := strings.TrimSpace(rig.Path)
@@ -154,8 +205,27 @@ func PersistRigSiteBindings(fs fsys.FS, cityRoot string, rigs []Rig) error {
 		return binding.Rigs[i].Name < binding.Rigs[j].Name
 	})
 
+	return persistSiteBinding(fs, cityRoot, binding)
+}
+
+// PersistWorkspaceSiteBinding writes machine-local workspace identity to
+// .gc/site.toml while preserving any existing rig bindings.
+func PersistWorkspaceSiteBinding(fs fsys.FS, cityRoot, name, prefix string) error {
+	existing, err := LoadSiteBinding(fs, cityRoot)
+	if err != nil {
+		return err
+	}
+	binding := SiteBinding{
+		WorkspaceName:   strings.TrimSpace(name),
+		WorkspacePrefix: strings.TrimSpace(prefix),
+		Rigs:            append([]RigSiteBinding(nil), existing.Rigs...),
+	}
+	return persistSiteBinding(fs, cityRoot, binding)
+}
+
+func persistSiteBinding(fs fsys.FS, cityRoot string, binding SiteBinding) error {
 	path := SiteBindingPath(cityRoot)
-	if len(binding.Rigs) == 0 {
+	if len(binding.Rigs) == 0 && binding.WorkspaceName == "" && binding.WorkspacePrefix == "" {
 		if err := fs.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("removing site binding %q: %w", path, err)
 		}

@@ -604,16 +604,17 @@ schema, plus the qualified rows that matter most during migration.
 
 > **Current rollout note:** Some rows below describe the target PackV2
 > destination rather than the exact state of every in-flight branch. In
-> release v0.15.0, `workspace.name` still lives in `city.toml`.
-> Phase A rig-binding work removes machine-local `rigs.path` from newly
-> written city configs, but `rigs.prefix` and `rigs.suspended` remain in
-> `city.toml` as of release v0.15.0.
+> the current 15.0 wave, machine-local workspace identity (`workspace.name`,
+> `workspace.prefix`) and `rigs.path` now live in `.gc/site.toml` for newly
+> written or migrated cities. `rigs.prefix` and `rigs.suspended` remain in
+> `city.toml` in this release.
 
 | 0.14.0 element | What it did | New home or action |
 |---|---|---|
 | `include` | Merged extra config fragments into `city.toml` before load | Remove as part of migration. Move real composition to imports and move remaining config to `pack.toml`, `city.toml`, or discovered directories. |
 | `[workspace]` | Held city metadata and pack composition in one place | Split across the root `pack.toml`, `city.toml`, and `.gc/`. |
-| `workspace.name` | Workspace identity | As of release v0.15.0, this remains transitional. Keep it in `city.toml` for the current migration slice. Fresh `gc init` keeps it aligned with `pack.name`; `gc register` uses it when present, otherwise falls back to `pack.name`, and stores the selected registration name in the machine-local supervisor registry without backfilling `city.toml`. Full removal from `city.toml` still waits for the broader site-binding cutover; track [#602](https://github.com/gastownhall/gascity/issues/602). |
+| `workspace.name` | Workspace identity | Move to `.gc/site.toml` as `workspace_name`. Runtime identity resolves from registered alias (supervisor-managed flows), then site binding / legacy config, then directory basename. `pack.name` remains the portable definition identity and init-time default only. |
+| `workspace.prefix` | Workspace bead prefix | Move to `.gc/site.toml` as `workspace_prefix`. Runtime/API surfaces use the effective site-bound prefix when present and otherwise derive from the effective city name. |
 | `workspace.includes` | City-level pack composition | Move to `[imports.*]` in the root city `pack.toml`. |
 | `workspace.default_rig_includes` | Default pack composition for newly added rigs | Move to `[defaults.rig.imports]` in the root city `pack.toml`. This is the target shape, but loader-backed support is still tracked in [#360](https://github.com/gastownhall/gascity/issues/360). |
 | `[providers.*]` | Named provider presets | Usually move to `[providers.*]` in the root city `pack.toml`, unless the setting is truly deployment-only. |

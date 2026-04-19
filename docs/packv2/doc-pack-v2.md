@@ -136,9 +136,9 @@ Everything else — agents, named sessions, providers, formulas, prompts, script
 
 #### Names, prefixes, and generation
 
-`gc init` and `gc rig add` generate names and prefixes by default. Users can override with `--name` and `--prefix` (typically to resolve conflicts). In this rollout, `gc init --name` keeps definition and runtime identity aligned by writing the chosen name to both `pack.toml` and `city.toml`.
+`gc init` and `gc rig add` generate names and prefixes by default. Users can override with `--name` and `--prefix` (typically to resolve conflicts). `gc init` now writes the chosen machine-local workspace name/prefix to `.gc/site.toml`; `pack.toml` keeps the portable definition identity.
 
-`gc register` accepts `--name` to set the city's registration name explicitly. The chosen name is stored in the machine-local supervisor registry and is not written back to `city.toml`. When `--name` is omitted, `gc register` uses `workspace.name` if present; otherwise it falls back to `pack.name` and stores that value in the registry. `gc register` does not rewrite `city.toml` or `pack.toml`. ([#602](https://github.com/gastownhall/gascity/issues/602))
+`gc register` accepts `--name` to set the city's registration name explicitly. The chosen name is stored in the machine-local supervisor registry and is not written back to `city.toml`. When `--name` is omitted, `gc register` uses the current effective city identity (site-bound workspace name if present, otherwise legacy `workspace.name`, otherwise the directory basename) and stores that value in the registry. `gc register` does not rewrite `city.toml` or `pack.toml`. ([#602](https://github.com/gastownhall/gascity/issues/602))
 
 Names and prefixes are both managed by `gc`, but the current Phase A rollout only moves the machine-local rig path into `.gc/`. Rig names, prefixes, and suspended flags still live in `city.toml` for now. Names are human-facing labels; prefixes are derived from names and baked into bead IDs. Neither should be casually changed after creation.
 
@@ -152,9 +152,9 @@ If `gc` detects a mismatch between a rig name in city.toml and its managed state
 
 `pack.name` is the identity of the definition — "this pack is called gastown." It lives in `pack.toml`, is portable, and travels with the pack when imported.
 
-`workspace.name` is still a transitional runtime identity surface in this rollout. `gc init` keeps fresh cities stable by writing the same chosen name to both `pack.toml` and `city.toml`. `gc register` now treats the supervisor registry as the machine-local source of truth for registration identity: an explicit `--name` alias can differ from committed `workspace.name`, and fallback from `pack.name` is stored only in the registry.
+`workspace.name` and `workspace.prefix` are now legacy compatibility fields. Fresh `gc init` writes machine-local identity to `.gc/site.toml`, and `gc doctor --fix` migrates legacy values out of `city.toml`. `gc register` treats the supervisor registry as the machine-local source of truth for registration identity: an explicit `--name` alias can differ from site-bound or legacy workspace identity, and runtime supervisor-managed flows prefer that registered alias.
 
-The long-term direction remains the same: remove `workspace.name` from `city.toml`, derive portable identity from `pack.name`, and keep machine-local naming in site binding. This PR does not complete that cutover.
+The long-term direction remains the same: keep portable identity in `pack.name`, deployment plan in `city.toml`, and machine-local naming/bindings in site binding under `.gc/`.
 
 The full field-by-field migration is in the appendix.
 
@@ -404,7 +404,7 @@ Per-machine state lives in `.gc/` and is managed by `gc` commands:
 
 The rule: **if it's in a checked-in TOML file, it's definition or deployment. If it's in `.gc/`, it's site binding.** No gray area.
 
-> **Current rollout ([#588](https://github.com/gastownhall/gascity/issues/588)):** `rig.path` now lives in `.gc/site.toml`. The loader overlays site binding onto `city.toml` at load time, ignores legacy `rig.path` entries for runtime use, and `gc doctor --fix` migrates the legacy path into `.gc/site.toml`. Phase A only moves `rig.path`: `rig.prefix` and `rig.suspended` remain in `city.toml` for now.
+> **Current rollout:** workspace identity (`workspace.name`, `workspace.prefix`) and `rig.path` now live in `.gc/site.toml`. The loader overlays site binding onto `city.toml` at load time, legacy authored values still read during migration, and `gc doctor --fix` migrates the legacy fields into `.gc/site.toml`. `rig.prefix` and `rig.suspended` remain in `city.toml` for now.
 
 See also [doc-rig-binding-phases.md](doc-rig-binding-phases.md) for the current
 Phase A / Phase B split between path extraction and post-15.0 multi-city rig

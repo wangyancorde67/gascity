@@ -1012,10 +1012,7 @@ func (cr *CityRuntime) reloadConfigTraced(
 }
 
 func lockedConfigName(cfg *config.City, cityPath string) string {
-	if cfg != nil && cfg.Workspace.Name != "" {
-		return cfg.Workspace.Name
-	}
-	return filepath.Base(cityPath)
+	return loadedCityName(cfg, cityPath)
 }
 
 func (cr *CityRuntime) configWatcherTargets() []config.WatchTarget {

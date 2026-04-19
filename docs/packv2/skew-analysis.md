@@ -91,9 +91,9 @@
 
 | Status | Field | As-built | Current rollout disposition | Later destination |
 |--------|-------|----------|--------------------|-----------------------|
-| 🟡 | `name` | Required string | **Optional.** As of release v0.15.0, this remains a transitional runtime identity field. Fresh `gc init` keeps it aligned with `pack.name`; `gc register` reads it when present but stores registration aliases in the machine-local supervisor registry without backfilling `city.toml`. Soft warning: full site-binding cutover remains later. | `.gc/` site binding (#600) |
-| 🟡 | `prefix` | String | **Optional.** As of release v0.15.0, this gets the same treatment as `name`. Soft warning. | `.gc/` site binding (#600) |
-| 🟢 | `provider` | String | **Keep.** As of release v0.15.0, this is still the current runtime default-provider field. Corresponding `[agent_defaults].provider` is still unsupported and emits a migration warning — see `doc-conformance-matrix.md`. | Later default-provider redesign, not part of this rollout |
+| 🟢 | `name` | Optional string | **Migrated.** Fresh `gc init` writes machine-local identity to `.gc/site.toml`; `gc doctor --fix` migrates legacy values out of `city.toml`; runtime resolves registered alias (supervisor-managed flows), then site binding / legacy config, then basename. | `.gc/` site binding (#600) |
+| 🟢 | `prefix` | String | **Migrated.** Fresh `gc init` writes machine-local prefix to `.gc/site.toml`; `gc doctor --fix` migrates legacy values out of `city.toml`. | `.gc/` site binding (#600) |
+| 🟡 | `provider` | String | **Soft warning.** "Use `[agent_defaults] provider = ...` instead." | `[agent_defaults]` in pack.toml |
 | 🟡 | `start_command` | String | **Soft warning.** "Use per-agent `start_command` in `agent.toml` instead." | Per-agent `agent.toml` |
 | 🟡 | `suspended` | Boolean | **Soft warning.** "Use `gc suspend`/`gc resume` instead." | `.gc/` site binding |
 | 🟢 | `max_active_sessions` | Integer | **Keep as-is.** Deployment capacity. | Top-level city.toml field when `[workspace]` is dismantled |
@@ -259,11 +259,11 @@ All Import fields match spec. No changes needed.
 | 🟢 | `orders/` top-level discovery | doc-directory-conventions | `discoverFlatFiles` in orders/discovery.go |
 | 🟢 | `commands/` convention discovery | doc-commands | `DiscoverPackCommands` in command_discovery.go |
 | 🔴 | `[defaults.rig.imports]` loader support | doc-pack-v2 | Migrate tool writes it, loader ignores it |
-| 🟢 | `gc register --name` flag | doc-pack-v2 | Implemented. The current rollout stores the chosen registration name in the machine-local supervisor registry without rewriting `city.toml`; no-flag registration uses `workspace.name` first, then `pack.name`, and stores the selected name only in the registry. |
+| 🟢 | `gc register --name` flag | doc-pack-v2 | Implemented. The current rollout stores the chosen registration name in the machine-local supervisor registry without rewriting `city.toml`; no-flag registration uses the effective city identity (site binding / legacy config / basename) and stores the selected name only in the registry. |
 | 🔴 | `patches/` directory convention | doc-agent-v2 | Not implemented |
 | 🔴 | `skills/` pack discovery | doc-agent-v2 | First slice is current-city-pack only with list-only visibility; imported-pack catalogs are later |
 | 🔴 | `mcp/` TOML abstraction | doc-agent-v2 | First slice is current-city-pack only with list-only visibility; provider projection is later |
-| 🟢 | `.gc/site.toml` for rig path bindings | doc-pack-v2 | Implemented in #588 Phase A (`rig.path` only) |
+| 🟢 | `.gc/site.toml` for workspace identity + rig path bindings | doc-pack-v2 | Implemented. `workspace.name`, `workspace.prefix`, and `rig.path` now migrate into site binding state. |
 | 🔵 | Pack/Deployment/SiteBinding struct separation | doc-loader-v2 | Loader composes into one City struct |
 | 🔵 | Pack-defined `[[service]]` | — | #657 |
 | 🔵 | Expansion of `[agent_defaults]` to all agent fields | — | later wave |
@@ -274,6 +274,6 @@ All Import fields match spec. No changes needed.
 
 1. **Deprecation warning infrastructure** — implement loud and soft warnings for all V1 fields listed above.
 2. **Loud warnings for schema 2 cities** using `[[agent]]`, `workspace.includes`, `workspace.default_rig_includes`, `[packs]`, `rigs.includes`, `rigs.formulas_dir`, `fallback`, `inject_fragments`.
-3. **Soft warnings** for `workspace.name`, `workspace.prefix`, `workspace.provider`, `workspace.start_command`, `workspace.suspended`, `workspace.install_agent_hooks`, `workspace.global_fragments`, `rigs.overrides`, `[formulas].dir`.
+3. **Soft warnings** for `workspace.provider`, `workspace.start_command`, `workspace.suspended`, `workspace.install_agent_hooks`, `workspace.global_fragments`, `rigs.overrides`, `[formulas].dir`.
 4. **Hard error** for `[formulas].dir` set to anything other than `"formulas"`.
 5. **Hard error** for `include` fragments that contain `[imports]`, `includes`, or reference `pack.toml`.

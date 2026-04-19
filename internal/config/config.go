@@ -183,9 +183,12 @@ type City struct {
 	// imported packs so LoadWithIncludes can surface them through provenance.
 	// Runtime-only — not persisted to TOML or JSON.
 	LoadWarnings []string `toml:"-" json:"-"`
-	// ResolvedWorkspaceName is the effective city name derived from the
-	// config file path when workspace.name is omitted. Runtime-only.
+	// ResolvedWorkspaceName is the effective city name after applying site
+	// binding, declared config, and basename fallback rules. Runtime-only.
 	ResolvedWorkspaceName string `toml:"-" json:"-"`
+	// ResolvedWorkspacePrefix is the effective HQ prefix after applying site
+	// binding and declared config. Runtime-only.
+	ResolvedWorkspacePrefix string `toml:"-" json:"-"`
 
 	// FormulaLayers holds the resolved formula directories per scope.
 	// Populated during pack expansion in LoadWithIncludes. Not from TOML.
@@ -704,18 +707,19 @@ func (r *Rig) EffectivePrefix() string {
 }
 
 // EffectiveHQPrefix returns the bead ID prefix for the city's HQ store.
-// Uses the explicit workspace Prefix if set, otherwise derives one from
-// the city name (falling back to ResolvedWorkspaceName when the TOML
-// name field is omitted).
+// Uses the effective site-bound prefix first, then the declared workspace
+// Prefix, then derives one from the effective city name.
 func EffectiveHQPrefix(cfg *City) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.ResolvedWorkspacePrefix != "" {
+		return cfg.ResolvedWorkspacePrefix
+	}
 	if cfg.Workspace.Prefix != "" {
 		return cfg.Workspace.Prefix
 	}
-	name := cfg.Workspace.Name
-	if name == "" {
-		name = cfg.ResolvedWorkspaceName
-	}
-	return DeriveBeadsPrefix(name)
+	return DeriveBeadsPrefix(cfg.EffectiveCityName())
 }
 
 // DeriveBeadsPrefix computes a short bead ID prefix from a rig/city name.
@@ -781,8 +785,9 @@ func splitCompoundWord(word string) []string {
 // Workspace holds city-level metadata and optional defaults that apply
 // to all agents unless overridden per-agent.
 type Workspace struct {
-	// Name is the human-readable name for this city.
-	Name string `toml:"name" jsonschema:"required"`
+	// Name is the legacy checked-in city name. Runtime identity now resolves
+	// from site binding, legacy config, and basename precedence instead.
+	Name string `toml:"name,omitempty"`
 	// Prefix overrides the auto-derived HQ bead ID prefix. When empty,
 	// the prefix is derived from the city Name via DeriveBeadsPrefix.
 	Prefix string `toml:"prefix,omitempty"`
@@ -862,8 +867,8 @@ type SessionConfig struct {
 	StartupTimeout string `toml:"startup_timeout,omitempty" jsonschema:"default=60s"`
 	// Socket specifies the tmux socket name for per-city isolation.
 	// When set, all tmux commands use "tmux -L <socket>" to connect to
-	// a dedicated server. When empty, defaults to the city name
-	// (workspace.name) — giving every city its own tmux server
+	// a dedicated server. When empty, defaults to the effective city name
+	// (site binding, legacy config, or basename) — giving every city its own tmux server
 	// automatically. Set explicitly to override.
 	Socket string `toml:"socket,omitempty"`
 	// RemoteMatch is a substring pattern for the hybrid provider to route
@@ -2718,7 +2723,9 @@ func Load(fs fsys.FS, path string) (*City, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.ResolvedWorkspaceName = filepath.Base(filepath.Dir(path))
+	if err := ResolveWorkspaceIdentity(fs, filepath.Dir(path), cfg); err != nil {
+		return nil, err
+	}
 	// Load intentionally skips include and pack expansion, so validate the
 	// direct named-session declarations without requiring pack-provided
 	// backing templates to be present yet.

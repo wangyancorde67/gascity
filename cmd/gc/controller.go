@@ -821,10 +821,7 @@ func tryReloadConfig(tomlPath, lockedWorkspaceName, cityRoot string) (*reloadRes
 	if err := workspacesvc.ValidateRuntimeSupport(newCfg.Services); err != nil {
 		return failWithWarnings(fmt.Errorf("validating services: %w", err))
 	}
-	newName := newCfg.Workspace.Name
-	if newName == "" {
-		newName = filepath.Base(filepath.Dir(tomlPath))
-	}
+	newName := loadedCityName(newCfg, filepath.Dir(tomlPath))
 	if newName != lockedWorkspaceName {
 		return failWithWarnings(fmt.Errorf("workspace.name changed from %q to %q (restart controller to apply)", lockedWorkspaceName, newName))
 	}
@@ -1108,10 +1105,7 @@ func runController(
 	}
 	defer convergence.RemoveToken(cityPath) //nolint:errcheck // best-effort cleanup
 
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 	rec.Record(events.Event{Type: events.ControllerStarted, Actor: "gc"})
 	telemetry.RecordControllerLifecycle(context.Background(), "started")
 	fmt.Fprintln(stdout, "Controller started.") //nolint:errcheck // best-effort stdout

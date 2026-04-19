@@ -75,7 +75,7 @@ These are settled enough, and implemented enough, to block CI now.
 | Commands discovery | The default `commands/<name>/run.sh` discovery path works; final manifest shape remains non-gating | Unit + testscript | `internal/config/command_discovery.go` |
 | Doctor discovery | The default `doctor/<name>/run.sh` discovery path works | Unit + testscript | `internal/config/doctor_discovery.go` |
 | Legacy migration rewrite | `gc doctor` inventories legacy Pack/City v1 usage and `gc doctor --fix` performs the safe mechanical rewrites for agent directories, prompt/overlay/namepool moves, and import-oriented composition. Legacy remote `workspace.includes` is a hard-break migration issue, not a runtime compatibility target. | Testscript | `cmd/gc/doctor_v2_checks.go`, migration fix path TBD |
-| Registration naming | `gc register --name` stores the chosen machine-local alias in the supervisor registry without mutating `city.toml`; plain `gc register` uses `workspace.name` if present, otherwise `pack.name`, and stores that value in the registry without backfilling `workspace.name` | Unit | `cmd/gc/cmd_register.go`, `cmd/gc/cmd_supervisor_city.go`, `internal/supervisor/registry.go` |
+| Registration naming | `gc register --name` stores the chosen machine-local alias in the supervisor registry without mutating `city.toml`; plain `gc register` uses the effective city identity (site binding / legacy config / basename) and stores that value in the registry without backfilling `city.toml` | Unit | `cmd/gc/cmd_register.go`, `cmd/gc/cmd_supervisor_city.go`, `internal/supervisor/registry.go` |
 
 ## Add To CI When Warning Plumbing Lands
 
@@ -91,7 +91,7 @@ warning surface is implemented end to end.
 | Legacy prompt injection | `global_fragments`, `inject_fragments`, and `inject_fragments_append` emit deprecation warnings toward `append_fragments` or explicit `{{ template }}` | Testscript + unit |
 | Legacy fallback model | `fallback` emits a loud warning and is not part of the v.next authoring surface | Testscript |
 | Legacy path wiring | `prompt_template`, `overlay_dir`, and `namepool` on legacy agent definitions warn during migration-facing flows | Testscript |
-| Workspace soft deprecations | `workspace.start_command`, `workspace.name`, `workspace.prefix`, and any future workspace-surface migration warnings must not imply that runtime precedence already matches a later design | Testscript |
+| Workspace soft deprecations | `workspace.provider`, `workspace.start_command`, and `workspace.install_agent_hooks` warn with the documented replacement path; `workspace.name` and `workspace.prefix` now have an active site-binding migration path via `gc doctor --fix` | Testscript |
 | Formula directory path | `[formulas].dir = "formulas"` soft-warns; any other value is rejected | Unit + testscript |
 | Rig override naming | `rig.overrides` is accepted with a soft warning in favor of `rig.patches` | Unit + testscript |
 | Fragment-only include | top-level `include` stays fragment-only and rejects pack-composition content such as `[imports]`, include-based composition, or `pack.toml` references | Unit + testscript |
@@ -108,7 +108,7 @@ unsettled to be reliable release gates.
 | `patches/` directory convention for imported prompt replacements | documented in v.next docs, not implemented | Current implementation still relies on explicit patch fields rather than full loader-discovered patch files |
 | Pack `skills/` discovery | documented, not implemented | First slice is current-city-pack only with list-only visibility; imported-pack catalogs are later |
 | `mcp/` TOML abstraction | documented, not implemented | Same first-slice scope as skills: current-city-pack only, list-only visibility first, provider projection later |
-| `.gc/site.toml` rig-path split (`#588`) | implemented for `rig.path` | Loader overlays `.gc/site.toml`, commands write site bindings, and `gc doctor --fix` migrates legacy `rig.path`; `rig.prefix` / `rig.suspended` remain in `city.toml` in Phase A |
+| `.gc/site.toml` site-binding split | implemented for workspace identity + `rig.path` | Loader overlays `.gc/site.toml`, commands write site bindings, and `gc doctor --fix` migrates legacy `workspace.name`, `workspace.prefix`, and `rig.path`; `rig.prefix` / `rig.suspended` remain in `city.toml` in this phase |
 | Final doctor manifest symmetry/shape | still under-specified | Discovery is testable now, but the final manifest shape should not be frozen by the first-pass suite |
 | Command collision rules and final command/doctor manifest shape | still under-specified | The docs still use "current preferred direction" language rather than frozen contract language |
 | Legacy cleanup surfaces | e.g. stale `.order.` / `.formula.` references in old docs/examples or dismantling `[workspace]` | Keep as handoff cleanup, but do not treat it as a current-wave ship gate |

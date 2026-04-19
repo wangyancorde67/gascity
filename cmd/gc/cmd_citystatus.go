@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -123,10 +122,7 @@ func doCityStatus(
 		}
 	}
 
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 
 	// Header: city name and path.
 	fmt.Fprintf(stdout, "%s  %s\n", cityName, cityPath) //nolint:errcheck // best-effort stdout
@@ -296,10 +292,7 @@ func doCityStatusJSON(
 		}
 	}
 
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
+	cityName := loadedCityName(cfg, cityPath)
 
 	// Build suspended rig lookup.
 	suspendedRigs := make(map[string]bool)

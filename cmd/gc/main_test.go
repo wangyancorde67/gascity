@@ -62,6 +62,15 @@ func configureIsolatedRuntimeEnv(t *testing.T) {
 	}
 }
 
+func mustLoadSiteBinding(t *testing.T, fs fsys.FS, cityPath string) *config.SiteBinding {
+	t.Helper()
+	binding, err := config.LoadSiteBinding(fs, cityPath)
+	if err != nil {
+		t.Fatalf("LoadSiteBinding(%q): %v", cityPath, err)
+	}
+	return binding
+}
+
 func configureSupervisorHooksForTests() {
 	ensureSupervisorRunningHook = func(_, _ io.Writer) int { return 0 }
 	reloadSupervisorHook = func(_, _ io.Writer) int { return 0 }
@@ -1650,8 +1659,8 @@ func TestDoInitSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading written config: %v", err)
 	}
-	if cfg.Workspace.Name != "bright-lights" {
-		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "bright-lights")
+	if got := config.EffectiveCityName(cfg, ""); got != "bright-lights" {
+		t.Errorf("EffectiveCityName = %q, want %q", got, "bright-lights")
 	}
 	if len(cfg.Agents) != 1 {
 		t.Fatalf("len(Agents) = %d, want 1", len(cfg.Agents))
@@ -1681,10 +1690,13 @@ func TestDoInitWritesExpectedTOML(t *testing.T) {
 
 	got := string(f.Files[filepath.Join("/bright-lights", "city.toml")])
 	want := `[workspace]
-name = "bright-lights"
 `
 	if got != want {
 		t.Errorf("city.toml content:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+	binding := mustLoadSiteBinding(t, f, "/bright-lights")
+	if binding.WorkspaceName != "bright-lights" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "bright-lights")
 	}
 
 	packGot := string(f.Files[filepath.Join("/bright-lights", "pack.toml")])
@@ -1792,6 +1804,12 @@ func TestSplitInitConfigMovesPackOwnedFields(t *testing.T) {
 	}
 	if !cityCfg.Patches.IsEmpty() {
 		t.Fatalf("cityCfg.Patches should be empty, got %#v", cityCfg.Patches)
+	}
+	if cityCfg.Workspace.Name != "" {
+		t.Fatalf("cityCfg.Workspace.Name = %q, want empty", cityCfg.Workspace.Name)
+	}
+	if cityCfg.Workspace.Prefix != "" {
+		t.Fatalf("cityCfg.Workspace.Prefix = %q, want empty", cityCfg.Workspace.Prefix)
 	}
 	if len(cityCfg.Workspace.Includes) != 0 {
 		t.Fatalf("cityCfg.Workspace.Includes = %v, want empty", cityCfg.Workspace.Includes)
@@ -1921,9 +1939,9 @@ func TestDoInitBootstrapsExistingCityToml(t *testing.T) {
 	}
 }
 
-// When bootstrapping an existing city.toml with no --name override, the
-// "Bootstrapped city" stdout line must report the persisted workspace.name
-// rather than the target directory basename (the two can diverge).
+// When bootstrapping an existing city with no --name override, the
+// "Bootstrapped city" stdout line must report the persisted effective city
+// identity rather than the target directory basename (the two can diverge).
 func TestDoInitBootstrapPreservesPersistedName(t *testing.T) {
 	f := fsys.NewFake()
 	f.Files[filepath.Join("/target-basename", "city.toml")] = []byte("[workspace]\nname = \"mining\"\n")
@@ -1950,7 +1968,7 @@ func TestDoInitBootstrapWarnsWhenPersistedNameCannotBeParsed(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doInit = %d, want 0; stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "warning: parsing persisted workspace name") {
+	if !strings.Contains(stderr.String(), "warning: parsing persisted workspace identity") {
 		t.Errorf("stderr = %q, want parse warning", stderr.String())
 	}
 	if !strings.Contains(stdout.String(), `"target-basename"`) {
@@ -1975,8 +1993,12 @@ func TestDoInitBootstrapWithNameOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing updated city.toml: %v", err)
 	}
-	if cfg.Workspace.Name != "new-name" {
-		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "new-name")
+	if cfg.Workspace.Name != "old-name" {
+		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "old-name")
+	}
+	binding := mustLoadSiteBinding(t, f, "/city")
+	if binding.WorkspaceName != "new-name" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "new-name")
 	}
 }
 
@@ -1997,8 +2019,12 @@ func TestDoInitBootstrapTrimsNameOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing updated city.toml: %v", err)
 	}
-	if cfg.Workspace.Name != "new-name" {
-		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "new-name")
+	if cfg.Workspace.Name != "old-name" {
+		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "old-name")
+	}
+	binding := mustLoadSiteBinding(t, f, "/city")
+	if binding.WorkspaceName != "new-name" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "new-name")
 	}
 }
 
@@ -2818,8 +2844,8 @@ scale_check = "echo 3"
 		t.Errorf("stdout missing source filename: %q", out)
 	}
 
-	// Verify city.toml was written with the basename fallback since the
-	// source had no explicit workspace.name.
+	// Verify city.toml keeps only shared config while the chosen local name
+	// is written to .gc/site.toml.
 	data, err := os.ReadFile(filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		t.Fatalf("reading city.toml: %v", err)
@@ -2828,8 +2854,8 @@ scale_check = "echo 3"
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
 	}
-	if cfg.Workspace.Name != "bright-lights" {
-		t.Errorf("Workspace.Name = %q, want %q (dir basename fallback)", cfg.Workspace.Name, "bright-lights")
+	if cfg.Workspace.Name != "" {
+		t.Errorf("Workspace.Name = %q, want empty in city.toml", cfg.Workspace.Name)
 	}
 	if cfg.Workspace.Provider != "claude" {
 		t.Errorf("Workspace.Provider = %q, want %q", cfg.Workspace.Provider, "claude")
@@ -2837,10 +2863,17 @@ scale_check = "echo 3"
 	if len(cfg.Agents) != 0 {
 		t.Fatalf("len(raw city Agents) = %d, want 0", len(cfg.Agents))
 	}
+	binding := mustLoadSiteBinding(t, fsys.OSFS{}, cityPath)
+	if binding.WorkspaceName != "bright-lights" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "bright-lights")
+	}
 
 	composed, err := loadCityConfigFS(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		t.Fatalf("loading composed config: %v", err)
+	}
+	if got := config.EffectiveCityName(composed, ""); got != "bright-lights" {
+		t.Fatalf("EffectiveCityName = %q, want %q", got, "bright-lights")
 	}
 	explicit := explicitAgents(composed.Agents)
 	if len(explicit) != 2 {
@@ -3077,9 +3110,9 @@ func TestCmdInitFromTOMLFileAlreadyInitializedByCityToml(t *testing.T) {
 	}
 }
 
-// Regression for #795: gc init --file must preserve workspace.name from the
-// source template rather than silently replacing it with the target dir
-// basename. The --name override still wins over the source.
+// Regression for #795: gc init --file must preserve the source template's
+// intended identity as the initial site-bound city name, and the --name
+// override still wins over that source default.
 func TestCmdInitFromTOMLFileNamePriority(t *testing.T) {
 	tomlWithName := []byte(`[workspace]
 name = "mining"
@@ -3139,8 +3172,12 @@ prompt_template = "prompts/mayor.md"
 			if err != nil {
 				t.Fatalf("parsing written config: %v", err)
 			}
-			if cfg.Workspace.Name != tt.wantName {
-				t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, tt.wantName)
+			if cfg.Workspace.Name != "" {
+				t.Errorf("Workspace.Name = %q, want empty in city.toml", cfg.Workspace.Name)
+			}
+			binding := mustLoadSiteBinding(t, fsys.OSFS{}, cityPath)
+			if binding.WorkspaceName != tt.wantName {
+				t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, tt.wantName)
 			}
 
 			if tt.checkPack {
@@ -3203,7 +3240,8 @@ func TestDoInitFromDirSuccess(t *testing.T) {
 		t.Errorf("stdout missing city name: %q", out)
 	}
 
-	// Verify city.toml was copied and basename fallback applied.
+	// Verify city.toml was copied with shared config only, while the local
+	// identity is written to .gc/site.toml using the basename fallback.
 	data, err := os.ReadFile(filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		t.Fatalf("reading city.toml: %v", err)
@@ -3212,11 +3250,15 @@ func TestDoInitFromDirSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
 	}
-	if cfg.Workspace.Name != "bright-lights" {
-		t.Errorf("Workspace.Name = %q, want %q (dir basename fallback)", cfg.Workspace.Name, "bright-lights")
+	if cfg.Workspace.Name != "" {
+		t.Errorf("Workspace.Name = %q, want empty in city.toml", cfg.Workspace.Name)
 	}
 	if cfg.Workspace.Provider != "claude" {
 		t.Errorf("Workspace.Provider = %q, want %q", cfg.Workspace.Provider, "claude")
+	}
+	binding := mustLoadSiteBinding(t, fsys.OSFS{}, cityPath)
+	if binding.WorkspaceName != "bright-lights" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "bright-lights")
 	}
 
 	// Verify files were copied.
@@ -3231,8 +3273,8 @@ func TestDoInitFromDirSuccess(t *testing.T) {
 }
 
 // Regression for the #795 parallel-sibling: gc init --from must preserve an
-// explicit workspace.name set on the template city.toml rather than silently
-// replacing it with the target directory basename.
+// explicit source name as the initial site-bound city identity rather than
+// silently replacing it with the target directory basename.
 func TestDoInitFromDirPreservesSourceName(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")
@@ -3268,8 +3310,12 @@ func TestDoInitFromDirPreservesSourceName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
 	}
-	if cfg.Workspace.Name != "mining" {
-		t.Errorf("Workspace.Name = %q, want %q (source name must be preserved)", cfg.Workspace.Name, "mining")
+	if cfg.Workspace.Name != "" {
+		t.Errorf("Workspace.Name = %q, want empty in city.toml", cfg.Workspace.Name)
+	}
+	binding := mustLoadSiteBinding(t, fsys.OSFS{}, cityPath)
+	if binding.WorkspaceName != "mining" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "mining")
 	}
 }
 
@@ -3278,26 +3324,29 @@ func TestResolveCityName(t *testing.T) {
 		name         string
 		nameOverride string
 		sourceName   string
+		sourcePack   string
 		cityPath     string
 		want         string
 	}{
-		{"override wins over source and dir", "custom", "template", "/path/to/dir", "custom"},
-		{"override wins over dir when no source", "custom", "", "/path/to/dir", "custom"},
-		{"source preserved when no override", "", "template", "/path/to/dir", "template"},
-		{"dir basename used as fallback when both empty", "", "", "/path/to/dir", "dir"},
+		{"override wins over source and dir", "custom", "template", "", "/path/to/dir", "custom"},
+		{"override wins over dir when no source", "custom", "", "", "/path/to/dir", "custom"},
+		{"source preserved when no override", "", "template", "pack-template", "/path/to/dir", "template"},
+		{"source pack used when workspace name absent", "", "", "pack-template", "/path/to/dir", "pack-template"},
+		{"dir basename used as fallback when both empty", "", "", "", "/path/to/dir", "dir"},
 		// Whitespace trimming matches runtime config.EffectiveCityName so
 		// that a stray-space name resolves identically at init and runtime.
-		{"override trims whitespace", "  custom  ", "template", "/path/to/dir", "custom"},
-		{"source trims whitespace", "", "  mining  ", "/path/to/dir", "mining"},
-		{"whitespace-only override falls through to source", "   ", "template", "/path/to/dir", "template"},
-		{"whitespace-only source falls through to basename", "", "   ", "/path/to/dir", "dir"},
+		{"override trims whitespace", "  custom  ", "template", "", "/path/to/dir", "custom"},
+		{"source trims whitespace", "", "  mining  ", "", "/path/to/dir", "mining"},
+		{"whitespace-only override falls through to source", "   ", "template", "", "/path/to/dir", "template"},
+		{"whitespace-only source falls through to pack name", "", "   ", "pack-template", "/path/to/dir", "pack-template"},
+		{"whitespace-only source pack falls through to basename", "", "   ", "   ", "/path/to/dir", "dir"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveCityName(tt.nameOverride, tt.sourceName, tt.cityPath)
+			got := resolveCityName(tt.nameOverride, tt.sourceName, tt.sourcePack, tt.cityPath)
 			if got != tt.want {
-				t.Errorf("resolveCityName(%q, %q, %q) = %q, want %q",
-					tt.nameOverride, tt.sourceName, tt.cityPath, got, tt.want)
+				t.Errorf("resolveCityName(%q, %q, %q, %q) = %q, want %q",
+					tt.nameOverride, tt.sourceName, tt.sourcePack, tt.cityPath, got, tt.want)
 			}
 		})
 	}
@@ -3339,8 +3388,12 @@ func TestInitNameFlagWithFrom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing config: %v", err)
 	}
-	if cfg.Workspace.Name != "my-custom-name" {
-		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "my-custom-name")
+	if cfg.Workspace.Name != "" {
+		t.Errorf("Workspace.Name = %q, want empty in city.toml", cfg.Workspace.Name)
+	}
+	binding := mustLoadSiteBinding(t, fsys.OSFS{}, cityPath)
+	if binding.WorkspaceName != "my-custom-name" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "my-custom-name")
 	}
 }
 
@@ -3405,8 +3458,12 @@ func TestInitNameFlagWithFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing config: %v", err)
 	}
-	if cfg.Workspace.Name != "my-file-name" {
-		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "my-file-name")
+	if cfg.Workspace.Name != "" {
+		t.Errorf("Workspace.Name = %q, want empty in city.toml", cfg.Workspace.Name)
+	}
+	binding := mustLoadSiteBinding(t, fsys.OSFS{}, cityPath)
+	if binding.WorkspaceName != "my-file-name" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "my-file-name")
 	}
 }
 
@@ -3435,15 +3492,19 @@ func TestInitNameFlagWithBareInit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing config: %v", err)
 	}
-	if cfg.Workspace.Name != "my-bare-name" {
-		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "my-bare-name")
+	if cfg.Workspace.Name != "" {
+		t.Errorf("Workspace.Name = %q, want empty in city.toml", cfg.Workspace.Name)
 	}
 	packData, err := os.ReadFile(filepath.Join(cityPath, "pack.toml"))
 	if err != nil {
 		t.Fatalf("reading pack.toml: %v", err)
 	}
 	if !strings.Contains(string(packData), `name = "my-bare-name"`) {
-		t.Errorf("pack.toml should keep init name aligned with workspace.name, got:\n%s", string(packData))
+		t.Errorf("pack.toml should keep init name aligned with bare-init name, got:\n%s", string(packData))
+	}
+	binding := mustLoadSiteBinding(t, fsys.OSFS{}, cityPath)
+	if binding.WorkspaceName != "my-bare-name" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "my-bare-name")
 	}
 }
 
@@ -3486,8 +3547,12 @@ func TestInitFromDefaultsToTargetDirBasename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing config: %v", err)
 	}
-	if cfg.Workspace.Name != "my-new-city" {
-		t.Errorf("Workspace.Name = %q, want %q (--from should default to target dir basename)", cfg.Workspace.Name, "my-new-city")
+	if cfg.Workspace.Name != "" {
+		t.Errorf("Workspace.Name = %q, want empty in city.toml", cfg.Workspace.Name)
+	}
+	binding := mustLoadSiteBinding(t, fsys.OSFS{}, cityPath)
+	if binding.WorkspaceName != "my-new-city" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "my-new-city")
 	}
 }
 

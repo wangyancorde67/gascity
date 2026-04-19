@@ -63,7 +63,6 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 	cityRoot := filepath.Dir(path)
 	prov := newProvenance(path)
 	prov.Warnings = append(prov.Warnings, rootWarnings...)
-	root.ResolvedWorkspaceName = filepath.Base(cityRoot)
 	cityAgentsForProvenance := root.Agents
 
 	// V2: if a pack.toml exists alongside city.toml, it is the city's
@@ -449,8 +448,15 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 	// layers have been applied so runtime consumers can trust the values.
 	NormalizeSessionSleepFields(root)
 
-	// Validate named session declarations after pack expansion so stamped
-	// identities and referenced templates are final.
+	siteBindingWarnings, err := ApplySiteBindings(fs, cityRoot, root)
+	if err != nil {
+		return nil, nil, err
+	}
+	prov.Warnings = append(prov.Warnings, siteBindingWarnings...)
+
+	// Validate named session declarations after pack expansion and site
+	// binding resolution so stamped identities and deterministic runtime
+	// names reflect the effective workspace identity.
 	if err := ValidateNamedSessions(root); err != nil {
 		return nil, nil, err
 	}
@@ -476,12 +482,6 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 	if warning := WarnDeprecatedAttachmentFields(root); warning != "" {
 		prov.Warnings = append(prov.Warnings, warning)
 	}
-
-	siteBindingWarnings, err := ApplySiteBindings(fs, cityRoot, root)
-	if err != nil {
-		return nil, nil, err
-	}
-	prov.Warnings = append(prov.Warnings, siteBindingWarnings...)
 
 	// v0.15.1: enrich every agent with its convention-discovered
 	// agent-local asset paths (agents/<name>/skills/, agents/<name>/mcp/).

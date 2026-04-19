@@ -2584,7 +2584,10 @@ type WorkflowSnapshotResponse struct {
 
 // WorkspaceResponse defines model for WorkspaceResponse.
 type WorkspaceResponse struct {
+	DeclaredName    *string `json:"declared_name,omitempty"`
+	DeclaredPrefix  *string `json:"declared_prefix,omitempty"`
 	Name            string  `json:"name"`
+	Prefix          *string `json:"prefix,omitempty"`
 	Provider        *string `json:"provider,omitempty"`
 	SessionTemplate *string `json:"session_template,omitempty"`
 	Suspended       bool    `json:"suspended"`

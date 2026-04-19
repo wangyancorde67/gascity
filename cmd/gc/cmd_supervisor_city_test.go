@@ -392,6 +392,27 @@ func TestRegisterCityWithSupervisorFetchesRemotePacksBeforeLoadingIncludes(t *te
 	}
 }
 
+func TestEffectiveCityNameUsesWorkspaceSiteBinding(t *testing.T) {
+	cityPath := filepath.Join(t.TempDir(), "target-basename")
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityPath, ".gc", "site.toml"), []byte("workspace_name = \"site-city\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	name, err := effectiveCityName(cityPath)
+	if err != nil {
+		t.Fatalf("effectiveCityName returned error: %v", err)
+	}
+	if name != "site-city" {
+		t.Fatalf("effectiveCityName = %q, want %q", name, "site-city")
+	}
+}
+
 func TestRegisterCityWithSupervisorRejectsStandaloneController(t *testing.T) {
 	gcHome := t.TempDir()
 	t.Setenv("GC_HOME", gcHome)

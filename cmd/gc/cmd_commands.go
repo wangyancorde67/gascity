@@ -178,7 +178,7 @@ func tryDiscoveredCommandFallback(args []string, cfg *config.City, cityPath stri
 		return true
 	}
 
-	cityName := cfg.Workspace.Name
+	cityName := loadedCityName(cfg, cityPath)
 	sort.SliceStable(matching, func(i, j int) bool {
 		return len(matching[i].Command) > len(matching[j].Command)
 	})
