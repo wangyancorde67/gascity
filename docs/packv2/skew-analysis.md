@@ -31,7 +31,7 @@
 
 - `[pack]` (name, version, schema, requires_gc)
 - `[imports]`
-- `[defaults.rig.imports]`
+- `[defaults.rig.imports.<binding>]`
 
 ### Legal in both (city wins on merge)
 
@@ -60,7 +60,7 @@
 |--------|-------|----------|--------------------|
 | 🟢 | `include` | []string, merges fragments | **Keep.** Fragment-only (`-f` path). If a fragment contains `[imports]`, `includes`, or references `pack.toml` → hard error. |
 | 🟢 | `workspace` | Required block | **Keep as container.** Deprecated after this rollout (#600). Sub-fields walked individually below. |
-| 🟡 | `packs` | map[string]PackSource | **Loud warning on schema 2.** V1 mechanism, use `[imports]` + `pack.lock`. |
+| 🟡 | `packs` | map[string]PackSource | **Loud warning on schema 2.** V1 mechanism, use `[imports]` + `packs.lock`. |
 | 🟡 | `agent` | []Agent, required | **Loud warning on schema 2.** Not required for schema 2 — agents discovered from `agents/<name>/`. |
 | 🟢 | `imports` | map[string]Import | **Keep.** V2 mechanism, working. |
 | 🟢 | `named_session` | []NamedSession | **Keep.** Legal in both pack.toml and city.toml, city wins. |
@@ -96,7 +96,7 @@
 | 🟡 | `install_agent_hooks` | []string | **Soft warning.** "Use `[agent_defaults]` instead." | `[agent_defaults]` in pack.toml |
 | 🟡 | `global_fragments` | []string | **Soft warning.** "Use `[agent_defaults] append_fragments` or explicit `{{ template }}` instead." | Removed (replaced by template-fragments) |
 | 🟡 | `includes` | []string | **Loud warning on schema 2.** V1 composition, use `[imports]`. | Removed |
-| 🟡 | `default_rig_includes` | []string | **Loud warning on schema 2.** Use `[defaults.rig.imports]` in pack.toml. | Removed |
+| 🟡 | `default_rig_includes` | []string | **Loud warning on schema 2.** Use `[defaults.rig.imports.<binding>]` in pack.toml. | Removed |
 
 ## Agent fields
 
@@ -229,7 +229,7 @@ All Import fields match spec. No changes needed.
 
 | Status | Field | As-built | Current rollout disposition |
 |--------|-------|----------|--------------------|
-| 🟡 | (entire struct) | Present | **Loud warning on schema 2.** V1 mechanism, use `[imports]` + `pack.lock`. |
+| 🟡 | (entire struct) | Present | **Loud warning on schema 2.** V1 mechanism, use `[imports]` + `packs.lock`. |
 
 ---
 
@@ -251,7 +251,7 @@ All Import fields match spec. No changes needed.
 | 🟢 | Import `shadow` field | doc-pack-v2 | Warning/silent logic in pack.go |
 | 🟢 | `orders/` top-level discovery | doc-directory-conventions | `discoverFlatFiles` in orders/discovery.go |
 | 🟢 | `commands/` convention discovery | doc-commands | `DiscoverPackCommands` in command_discovery.go |
-| 🔴 | `[defaults.rig.imports]` loader support | doc-pack-v2 | Migrate tool writes it, loader ignores it |
+| 🔴 | `[defaults.rig.imports.<binding>]` loader support | doc-pack-v2 | Migrate tool writes it, loader ignores it |
 | 🟢 | `gc register --name` flag | doc-pack-v2 | Implemented. The current rollout persists the chosen registration name into `workspace.name`; no-flag registration uses `workspace.name` first, then `pack.name` and backfills `workspace.name`. |
 | 🔴 | `patches/` directory convention | doc-agent-v2 | Not implemented |
 | 🔴 | `skills/` pack discovery | doc-agent-v2 | First slice is current-city-pack only with list-only visibility; imported-pack catalogs are later |

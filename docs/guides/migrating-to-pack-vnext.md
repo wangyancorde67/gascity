@@ -558,7 +558,7 @@ schema, plus the qualified rows that matter most during migration.
 | `[workspace]` | Held city metadata and pack composition in one place | Split across the root `pack.toml`, `city.toml`, and `.gc/`. |
 | `workspace.name` | Workspace identity | Transitional in this wave. Keep it in `city.toml` for the current 0.15.0 migration slice. Fresh `gc init` keeps it aligned with `pack.name`; `gc register` keeps it aligned with the registered city name, using `workspace.name` when present and backfilling it from `pack.name` when absent. Full removal from `city.toml` still waits for the broader site-binding cutover; track [#602](https://github.com/gastownhall/gascity/issues/602). |
 | `workspace.includes` | City-level pack composition | Move to `[imports.*]` in the root city `pack.toml`. |
-| `workspace.default_rig_includes` | Default pack composition for newly added rigs | Move to `[defaults.rig.imports]` in the root city `pack.toml`. This is the target shape, but loader-backed support is still tracked in [#360](https://github.com/gastownhall/gascity/issues/360). |
+| `workspace.default_rig_includes` | Default pack composition for newly added rigs | Move each default include to `[defaults.rig.imports.<binding>]` entries in the root city `pack.toml`. |
 | `[providers.*]` | Named provider presets | Usually move to `[providers.*]` in the root city `pack.toml`, unless the setting is truly deployment-only. |
 | `[packs.*]` | Named remote pack sources used by includes | Collapse into `[imports.*]` entries. There should no longer be a separate `[packs.*]` registry in `city.toml`. |
 | `[[agent]]` | Inline agent definitions | Move to `agents/<name>/`, with optional `agent.toml`. |

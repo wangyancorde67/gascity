@@ -907,7 +907,7 @@ gc import
 | Subcommand | Description |
 |------------|-------------|
 | [gc import add](#gc-import-add) | Add a pack import |
-| [gc import install](#gc-import-install) | Install imports from packs.lock |
+| [gc import install](#gc-import-install) | Install imports and reconcile packs.lock |
 | [gc import list](#gc-import-list) | List imported packs |
 | [gc import migrate](#gc-import-migrate) | Migrate a V1 city layout to the V2 pack shape |
 | [gc import remove](#gc-import-remove) | Remove a pack import |
@@ -928,11 +928,16 @@ gc import add <source> [flags]
 
 ## gc import install
 
-Install imports from packs.lock
+Install imports and reconcile packs.lock
 
 ```
 gc import install
 ```
+
+When `packs.lock` is present, `gc import install` restores cache state
+from that lock. When `packs.lock` is missing or incomplete, it resolves
+the declared imports, writes `packs.lock`, and materializes the cache.
+Normal load/start/config flows do not do this implicitly.
 
 ## gc import list
 

@@ -287,7 +287,7 @@ The current preferred direction is that a command may be placed in one of two br
 2. **root extension**
    - exposed under an approved top-level command tree
    - example: `gc import add`
-   - example: `gc registry list`
+   - example: `gc import upgrade`
 
 This keeps the binding model available by default while leaving room for shared product surfaces that are not awkwardly tied to pack boundaries.
 
@@ -422,47 +422,44 @@ That means:
 
 This keeps the common case obvious from the tree while preserving room for explicit metadata when the defaults are not enough.
 
-### Import and registry examples
+### Import command examples
 
-The import and registry docs are useful stress tests because they can be modeled either as:
+Import commands are useful stress tests because they can be modeled either as:
 
 - two different packs
-- one shared implementation pack contributing to two top-level command trees
+- one shared implementation pack contributing to the same top-level command tree
 
 #### Case 1: separate packs
 
 ```toml
-[imports.import]
-source = "https://github.com/gastownhall/gc-import"
+[imports.import_add]
+source = "https://github.com/gastownhall/gc-import-add"
 
-[imports.registry]
-source = "https://github.com/gastownhall/gc-registry"
+[imports.import_upgrade]
+source = "https://github.com/gastownhall/gc-import-upgrade"
 ```
 
-Commands in the import pack:
+Commands in the add pack:
 
 ```text
-commands/add/run.sh
-commands/install/run.sh
+commands/import/add/run.sh
 ```
 
-Commands in the registry pack:
+Commands in the upgrade pack:
 
 ```text
-commands/list/run.sh
-commands/search/run.sh
+commands/import/upgrade/run.sh
 ```
 
 Result:
 
 ```text
 gc import add
-gc import install
-gc registry list
-gc registry search
+gc import upgrade
 ```
 
-This is the cleanest case when the user-facing feature split and the pack split are the same.
+This is the cleanest case when the user-facing feature split and the
+pack split are the same.
 
 Nested commands should work naturally by directory shape too, for example:
 
@@ -489,14 +486,14 @@ If this pack contributes only under its binding, the result would be:
 
 ```text
 gc packman import add
-gc packman registry list
+gc packman import upgrade
 ```
 
 If this pack is allowed to contribute to extension roots, it could instead define entries that land under:
 
 ```text
 gc import add
-gc registry list
+gc import upgrade
 ```
 
 This is the reason command placement and pack implementation should be separable.
@@ -698,7 +695,7 @@ That still needs to be specified carefully.
 
 This doc is not currently trying to solve:
 
-- package registry discovery
+- package discovery or catalog surfaces
 - remote fetch and lockfile behavior in detail
 - a full structured command-argument DSL
 - provider-specific command execution abstractions

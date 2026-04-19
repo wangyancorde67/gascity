@@ -97,7 +97,7 @@ unsettled to be reliable release gates.
 
 | Area | Current status | Why it is non-gating for now |
 |---|---|---|
-| `[defaults.rig.imports]` loader support | documented intent, not implemented | Migration tooling may write it, but the loader does not yet honor it |
+| `[defaults.rig.imports.<binding>]` loader support | documented intent, not implemented | Migration tooling may write it, but the loader does not yet honor it |
 | `[agent_defaults] provider` driving runtime provider selection | migration target is documented, but runtime behavior is not aligned enough to gate | Current implementation still resolves runtime defaults through `workspace.provider` / `ResolveProvider`; locking in the future rule now would create false failures |
 | `patches/` directory convention for imported prompt replacements | documented in v.next docs, not implemented | Current implementation still relies on explicit patch fields rather than full loader-discovered patch files |
 | Pack `skills/` discovery | documented, not implemented | First slice is current-city-pack only with list-only visibility; imported-pack catalogs are later |
