@@ -6708,6 +6708,19 @@
     "/v0/city": {
       "post": {
         "operationId": "post-v0-city",
+        "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6788,6 +6801,17 @@
         "operationId": "patch-v0-city-by-city-name",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -6839,6 +6863,17 @@
       "delete": {
         "operationId": "delete-v0-city-by-city-name-agent-by-base",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -6949,6 +6984,17 @@
       "patch": {
         "operationId": "patch-v0-city-by-city-name-agent-by-base",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -7195,6 +7241,17 @@
         "operationId": "post-v0-city-by-city-name-agent-by-base-by-action",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -7260,6 +7317,17 @@
       "delete": {
         "operationId": "delete-v0-city-by-city-name-agent-by-dir-by-base",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -7390,6 +7458,17 @@
       "patch": {
         "operationId": "patch-v0-city-by-city-name-agent-by-dir-by-base",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -7666,6 +7745,17 @@
         "operationId": "post-v0-city-by-city-name-agent-by-dir-by-base-by-action",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -7856,6 +7946,17 @@
         "operationId": "create-agent",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -7907,6 +8008,17 @@
       "delete": {
         "operationId": "delete-v0-city-by-city-name-bead-by-id",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -8018,6 +8130,17 @@
         "operationId": "patch-v0-city-by-city-name-bead-by-id",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -8079,6 +8202,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-bead-by-id-assign",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -8154,6 +8288,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-bead-by-id-close",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -8269,6 +8414,17 @@
         "operationId": "post-v0-city-by-city-name-bead-by-id-reopen",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -8320,6 +8476,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-bead-by-id-update",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -8524,6 +8691,17 @@
       "post": {
         "operationId": "create-bead",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -8876,6 +9054,17 @@
         "operationId": "delete-v0-city-by-city-name-convoy-by-id",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -8987,6 +9176,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-convoy-by-id-add",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -9112,6 +9312,17 @@
         "operationId": "post-v0-city-by-city-name-convoy-by-id-close",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -9163,6 +9374,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-convoy-by-id-remove",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -9317,6 +9539,17 @@
       "post": {
         "operationId": "create-convoy",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -9502,6 +9735,17 @@
         "operationId": "emit-event",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -9674,6 +9918,17 @@
         "operationId": "delete-v0-city-by-city-name-extmsg-adapters",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -9774,6 +10029,17 @@
         "operationId": "register-extmsg-adapter",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -9825,6 +10091,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-extmsg-bind",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -10030,6 +10307,17 @@
         "operationId": "ensure-extmsg-group",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -10081,6 +10369,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-extmsg-inbound",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -10134,6 +10433,17 @@
         "operationId": "post-v0-city-by-city-name-extmsg-outbound",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -10186,6 +10496,17 @@
         "operationId": "delete-v0-city-by-city-name-extmsg-participants",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -10235,6 +10556,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-extmsg-participants",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -10400,6 +10732,17 @@
         "operationId": "post-v0-city-by-city-name-extmsg-transcript-ack",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -10451,6 +10794,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-extmsg-unbind",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -10806,6 +11160,17 @@
         "operationId": "post-v0-city-by-city-name-formulas-by-name-preview",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -11118,6 +11483,17 @@
         "operationId": "send-mail",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -11323,6 +11699,17 @@
         "operationId": "delete-v0-city-by-city-name-mail-by-id",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -11455,6 +11842,17 @@
         "operationId": "post-v0-city-by-city-name-mail-by-id-archive",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -11516,6 +11914,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-mail-by-id-mark-unread",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -11579,6 +11988,17 @@
         "operationId": "post-v0-city-by-city-name-mail-by-id-read",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -11640,6 +12060,17 @@
       "post": {
         "operationId": "reply-mail",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -11827,6 +12258,17 @@
         "operationId": "post-v0-city-by-city-name-order-by-name-disable",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -11878,6 +12320,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-order-by-name-enable",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -12205,6 +12658,17 @@
         "operationId": "delete-v0-city-by-city-name-patches-agent-by-base",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -12316,6 +12780,17 @@
       "delete": {
         "operationId": "delete-v0-city-by-city-name-patches-agent-by-dir-by-base",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -12499,6 +12974,17 @@
         "operationId": "put-v0-city-by-city-name-patches-agents",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -12550,6 +13036,17 @@
       "delete": {
         "operationId": "delete-v0-city-by-city-name-patches-provider-by-name",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -12713,6 +13210,17 @@
         "operationId": "put-v0-city-by-city-name-patches-providers",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -12764,6 +13272,17 @@
       "delete": {
         "operationId": "delete-v0-city-by-city-name-patches-rig-by-name",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -12927,6 +13446,17 @@
         "operationId": "put-v0-city-by-city-name-patches-rigs",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -13041,6 +13571,17 @@
         "operationId": "delete-v0-city-by-city-name-provider-by-name",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -13150,6 +13691,17 @@
       "patch": {
         "operationId": "patch-v0-city-by-city-name-provider-by-name",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -13262,6 +13814,17 @@
       "post": {
         "operationId": "create-provider",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -13429,6 +13992,17 @@
         "operationId": "delete-v0-city-by-city-name-rig-by-name",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -13549,6 +14123,17 @@
         "operationId": "patch-v0-city-by-city-name-rig-by-name",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -13610,6 +14195,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-rig-by-name-by-action",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -13753,6 +14349,17 @@
         "operationId": "create-rig",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -13866,6 +14473,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-service-by-name-restart",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -14040,6 +14658,17 @@
       "patch": {
         "operationId": "patch-v0-city-by-city-name-session-by-id",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -14247,6 +14876,17 @@
         "operationId": "post-v0-city-by-city-name-session-by-id-close",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -14309,6 +14949,17 @@
         "operationId": "post-v0-city-by-city-name-session-by-id-kill",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -14360,6 +15011,17 @@
       "post": {
         "operationId": "send-session-message",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -14485,6 +15147,17 @@
         "operationId": "post-v0-city-by-city-name-session-by-id-rename",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -14557,6 +15230,17 @@
         "operationId": "respond-session",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -14618,6 +15302,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-session-by-id-stop",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -14869,6 +15564,17 @@
         "operationId": "submit-session",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -14930,6 +15636,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-session-by-id-suspend",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -15074,6 +15791,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-session-by-id-wake",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -15229,6 +15957,17 @@
         "operationId": "create-session",
         "parameters": [
           {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
             "description": "City name.",
             "in": "path",
             "name": "cityName",
@@ -15280,6 +16019,17 @@
       "post": {
         "operationId": "post-v0-city-by-city-name-sling",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",
@@ -15404,6 +16154,17 @@
       "delete": {
         "operationId": "delete-v0-city-by-city-name-workflow-by-workflow-id",
         "parameters": [
+          {
+            "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+            "in": "header",
+            "name": "X-GC-Request",
+            "required": true,
+            "schema": {
+              "description": "Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "City name.",
             "in": "path",

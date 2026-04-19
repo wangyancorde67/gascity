@@ -176,7 +176,7 @@ func (sm *SupervisorMux) registerSupervisorRoutes() {
 	huma.Get(sm.humaAPI, "/health", sm.humaHandleHealth)
 	huma.Get(sm.humaAPI, "/v0/readiness", sm.humaHandleReadiness)
 	huma.Get(sm.humaAPI, "/v0/provider-readiness", sm.humaHandleProviderReadiness)
-	huma.Post(sm.humaAPI, "/v0/city", sm.humaHandleCityCreate)
+	huma.Post(sm.humaAPI, "/v0/city", sm.humaHandleCityCreate, addMutationCSRFParam)
 	huma.Get(sm.humaAPI, "/v0/events", sm.humaHandleEventList)
 
 	registerSSEStringID(sm.humaAPI, huma.Operation{
