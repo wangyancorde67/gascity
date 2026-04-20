@@ -21,6 +21,19 @@ type mockFetcher struct {
 	delay    time.Duration
 }
 
+type controlledFetch struct {
+	sessions map[string]bool
+	err      error
+	release  <-chan struct{}
+}
+
+type controlledFetcher struct {
+	mu      sync.Mutex
+	calls   int
+	fetches []controlledFetch
+	started chan int
+}
+
 func (m *mockFetcher) FetchRunning(ctx context.Context) (map[string]bool, error) {
 	m.mu.Lock()
 	m.calls++
@@ -50,6 +63,40 @@ func (m *mockFetcher) setResult(sessions map[string]bool, err error) {
 	defer m.mu.Unlock()
 	m.sessions = sessions
 	m.err = err
+}
+
+func (f *controlledFetcher) FetchRunning(ctx context.Context) (map[string]bool, error) {
+	f.mu.Lock()
+	idx := f.calls
+	f.calls++
+	fetch := f.fetches[idx]
+	f.mu.Unlock()
+
+	if f.started != nil {
+		f.started <- idx
+	}
+	if fetch.release != nil {
+		select {
+		case <-fetch.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	if fetch.sessions == nil {
+		return nil, fetch.err
+	}
+	sessions := make(map[string]bool, len(fetch.sessions))
+	for name, running := range fetch.sessions {
+		sessions[name] = running
+	}
+	return sessions, fetch.err
+}
+
+func (f *controlledFetcher) getCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
 }
 
 func TestStateCache_FreshCacheReturnsCorrectState(t *testing.T) {
@@ -191,6 +238,59 @@ func TestStateCache_InvalidateForcesNextReadToRefresh(t *testing.T) {
 	}
 	if got := f.getCalls(); got != 2 {
 		t.Errorf("expected 2 fetch calls after invalidate, got %d", got)
+	}
+}
+
+func TestStateCache_InvalidateDoesNotLoseDirtyAgainstInflightRefresh(t *testing.T) {
+	firstRelease := make(chan struct{})
+	secondRelease := make(chan struct{})
+	close(secondRelease)
+
+	f := &controlledFetcher{
+		started: make(chan int, 2),
+		fetches: []controlledFetch{
+			{
+				sessions: map[string]bool{"agent-1": true},
+				release:  firstRelease,
+			},
+			{
+				sessions: map[string]bool{"agent-2": true},
+				release:  secondRelease,
+			},
+		},
+	}
+	cache := NewStateCache(f, 50*time.Millisecond)
+	cache.staleTTL = time.Minute
+	cache.mu.Lock()
+	cache.sessions = map[string]bool{"agent-1": true}
+	cache.fetchedAt = time.Now().Add(-time.Hour)
+	cache.mu.Unlock()
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- cache.IsRunning("agent-1")
+	}()
+
+	select {
+	case <-f.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for refresh to start")
+	}
+
+	cache.EvictSession("agent-1")
+	close(firstRelease)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first refresh to finish")
+	}
+
+	if cache.IsRunning("agent-1") {
+		t.Fatal("expected invalidated session to remain evicted after stale refresh completes")
+	}
+	if got := f.getCalls(); got != 2 {
+		t.Fatalf("expected second refresh after invalidate, got %d fetches", got)
 	}
 }
 

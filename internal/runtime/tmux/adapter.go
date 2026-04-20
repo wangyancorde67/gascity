@@ -61,19 +61,19 @@ func NewProviderWithConfig(cfg Config) *Provider {
 // and runtime readiness polling. Steps are conditional on Config fields
 // being set; an agent with no startup hints gets fire-and-forget.
 func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) error {
+	success := false
+	defer func() {
+		if !success {
+			p.clearWorkDir(name)
+		}
+	}()
+
 	var err error
 	cfg.Env, err = ensureInstanceToken(cfg.Env)
 	if err != nil {
 		return fmt.Errorf("ensuring instance token: %w", err)
 	}
 	cfg.Env = injectSessionRuntimeHintsEnv(cfg.Env, cfg)
-
-	// Store workDir for CopyTo.
-	if cfg.WorkDir != "" {
-		p.mu.Lock()
-		p.workDirs[name] = cfg.WorkDir
-		p.mu.Unlock()
-	}
 
 	// Copy overlays and CopyFiles before creating the tmux session.
 	// Local provider: files are on the same filesystem.
@@ -110,7 +110,9 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 
 	err = doStartSession(ctx, &tmuxStartOps{tm: p.tm}, name, cfg, p.cfg.SetupTimeout)
 	if err == nil {
+		p.setWorkDir(name, cfg.WorkDir)
 		p.cache.Invalidate()
+		success = true
 		return nil
 	}
 	p.cleanupFailedStart(name, cfg)
@@ -154,6 +156,8 @@ func newInstanceToken() (string, error) {
 }
 
 func (p *Provider) cleanupFailedStart(name string, cfg runtime.Config) {
+	p.clearWorkDir(name)
+
 	instanceToken := strings.TrimSpace(cfg.Env["GC_INSTANCE_TOKEN"])
 	if instanceToken == "" {
 		// Best-effort safety guard: only managed session starts carry the
@@ -187,11 +191,14 @@ func (p *Provider) Stop(name string) error {
 	p.tm.CloseHiddenAttachClient(name)
 	err := p.tm.KillSessionWithProcesses(name)
 	if err != nil && (errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrNoServer)) {
+		p.clearWorkDir(name)
+		p.cache.EvictSession(name)
 		return nil // idempotent
 	}
 	if err == nil {
 		// Immediately remove from cache so IsRunning reflects the kill
 		// without waiting for an async refresh cycle.
+		p.clearWorkDir(name)
 		p.cache.EvictSession(name)
 	}
 	return err
@@ -514,9 +521,7 @@ func (p *Provider) SendKeys(name string, keys ...string) error {
 // CopyTo copies src into the named session's working directory at relDst.
 // Best-effort: returns nil if session unknown or src missing.
 func (p *Provider) CopyTo(name, src, relDst string) error {
-	p.mu.Lock()
-	wd := p.workDirs[name]
-	p.mu.Unlock()
+	wd := p.workDir(name)
 	if wd == "" {
 		return nil // unknown session
 	}
@@ -528,6 +533,26 @@ func (p *Provider) CopyTo(name, src, relDst string) error {
 		dst = filepath.Join(wd, relDst)
 	}
 	return overlay.CopyFileOrDir(src, dst, io.Discard)
+}
+
+func (p *Provider) setWorkDir(name, workDir string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if strings.TrimSpace(workDir) == "" {
+		delete(p.workDirs, name)
+		return
+	}
+	p.workDirs[name] = workDir
+}
+
+func (p *Provider) clearWorkDir(name string) {
+	p.setWorkDir(name, "")
+}
+
+func (p *Provider) workDir(name string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.workDirs[name]
 }
 
 // Attach connects the user's terminal to the named tmux session.

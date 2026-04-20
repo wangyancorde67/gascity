@@ -40,6 +40,7 @@ type StateCache struct {
 	fetchedAt time.Time
 	lastError error
 	dirty     bool // set by Invalidate(); cleared on successful refresh
+	gen       uint64
 	ttl       time.Duration
 	staleTTL  time.Duration
 	sf        singleflight.Group
@@ -100,6 +101,7 @@ func (c *StateCache) IsRunning(name string) bool {
 func (c *StateCache) Invalidate() {
 	c.mu.Lock()
 	c.dirty = true
+	c.gen++
 	c.mu.Unlock()
 }
 
@@ -110,12 +112,17 @@ func (c *StateCache) EvictSession(name string) {
 	c.mu.Lock()
 	delete(c.sessions, name)
 	c.dirty = true
+	c.gen++
 	c.mu.Unlock()
 }
 
 // refresh executes a single coalesced fetch. If the fetch fails, the
 // last-known-good cache is preserved and the error is logged.
 func (c *StateCache) refresh() {
+	c.mu.RLock()
+	refreshGen := c.gen
+	c.mu.RUnlock()
+
 	_, _, _ = c.sf.Do("refresh", func() (interface{}, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
@@ -140,6 +147,10 @@ func (c *StateCache) refresh() {
 		}
 
 		c.mu.Lock()
+		if c.gen != refreshGen {
+			c.mu.Unlock()
+			return nil, nil
+		}
 		c.sessions = sessions
 		c.fetchedAt = time.Now()
 		c.lastError = nil

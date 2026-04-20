@@ -249,6 +249,39 @@ func TestInjectSessionRuntimeHintsEnvAddsReadyPromptPrefix(t *testing.T) {
 	}
 }
 
+func TestProviderStopClearsStoredWorkDir(t *testing.T) {
+	cache := NewStateCache(&mockFetcher{}, time.Second)
+	provider := &Provider{
+		tm: &Tmux{
+			exec: &fakeExecutor{
+				errs: []error{ErrSessionNotFound, ErrSessionNotFound},
+			},
+		},
+		cache:    cache,
+		workDirs: map[string]string{"gc-test": "/tmp/worktree"},
+	}
+
+	if err := provider.Stop("gc-test"); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if _, ok := provider.workDirs["gc-test"]; ok {
+		t.Fatal("workDir entry should be cleared after Stop")
+	}
+}
+
+func TestProviderCleanupFailedStartClearsStoredWorkDir(t *testing.T) {
+	provider := &Provider{
+		cache:    NewStateCache(&mockFetcher{}, time.Second),
+		workDirs: map[string]string{"gc-test": "/tmp/worktree"},
+	}
+
+	provider.cleanupFailedStart("gc-test", runtime.Config{})
+
+	if _, ok := provider.workDirs["gc-test"]; ok {
+		t.Fatal("workDir entry should be cleared after failed start cleanup")
+	}
+}
+
 func TestDoStartSession_FullSequence(t *testing.T) {
 	ops := &fakeStartOps{
 		hasSessionResult: true,
