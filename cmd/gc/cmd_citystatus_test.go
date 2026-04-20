@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/worker"
 )
 
 func TestCityStatusEmptyCity(t *testing.T) {
@@ -64,6 +67,9 @@ func TestCityStatusWithAgents(t *testing.T) {
 	}
 	out := stdout.String()
 
+	if !strings.Contains(out, "/home/user/city") {
+		t.Errorf("stdout missing city path, got:\n%s", out)
+	}
 	if !strings.Contains(out, "Agents:") {
 		t.Errorf("stdout missing 'Agents:', got:\n%s", out)
 	}
@@ -75,6 +81,34 @@ func TestCityStatusWithAgents(t *testing.T) {
 	}
 	if !strings.Contains(out, "1/2 agents running") {
 		t.Errorf("stdout missing '1/2 agents running', got:\n%s", out)
+	}
+}
+
+func TestCityStatusReportsObservationErrors(t *testing.T) {
+	sp := runtime.NewFake()
+	if err := sp.Start(context.Background(), "mayor", runtime.Config{Command: "echo"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	dops := newFakeDrainOps()
+	oldObserve := observeSessionTargetForStatus
+	observeSessionTargetForStatus = func(string, beads.Store, runtime.Provider, *config.City, string) (worker.LiveObservation, error) {
+		return worker.LiveObservation{}, errors.New("status observation unavailable")
+	}
+	t.Cleanup(func() { observeSessionTargetForStatus = oldObserve })
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "city"},
+		Agents: []config.Agent{
+			{Name: "mayor", MaxActiveSessions: intPtr(1)},
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doCityStatus(sp, dops, cfg, "/home/user/city", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "gc status: observing") {
+		t.Fatalf("stderr = %q, want observation warning", stderr.String())
 	}
 }
 
@@ -124,8 +158,8 @@ func TestCityStatusPoolExpansion(t *testing.T) {
 	out := stdout.String()
 
 	// Pool header line.
-	if !strings.Contains(out, "pool (min=1, max=3)") {
-		t.Errorf("stdout missing pool header, got:\n%s", out)
+	if !strings.Contains(out, "scaled (min=1, max=3)") {
+		t.Errorf("stdout missing scaled header, got:\n%s", out)
 	}
 	// Instance lines.
 	if !strings.Contains(out, "polecat-1") {
@@ -276,19 +310,92 @@ func TestCityStatusJSONWithAgents(t *testing.T) {
 	if status.Agents[1].Scope != "rig" {
 		t.Errorf("agents[1].scope = %q, want %q", status.Agents[1].Scope, "rig")
 	}
-	if status.Agents[1].Pool == nil {
-		t.Fatal("agents[1].pool should not be nil")
-	}
-	if status.Agents[1].Pool.Max != 3 {
-		t.Errorf("agents[1].pool.max = %d, want 3", status.Agents[1].Pool.Max)
-	}
-
 	// Rigs.
 	if len(status.Rigs) != 1 {
 		t.Fatalf("got %d rigs, want 1", len(status.Rigs))
 	}
 	if status.Rigs[0].Name != "myrig" {
 		t.Errorf("rigs[0].name = %q, want %q", status.Rigs[0].Name, "myrig")
+	}
+}
+
+func TestCityStatusJSONReportsObservationErrors(t *testing.T) {
+	sp := runtime.NewFake()
+	if err := sp.Start(context.Background(), "mayor", runtime.Config{Command: "echo"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	oldObserve := observeSessionTargetForStatus
+	observeSessionTargetForStatus = func(string, beads.Store, runtime.Provider, *config.City, string) (worker.LiveObservation, error) {
+		return worker.LiveObservation{}, errors.New("status observation unavailable")
+	}
+	t.Cleanup(func() { observeSessionTargetForStatus = oldObserve })
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "city"},
+		Agents: []config.Agent{
+			{Name: "mayor", MaxActiveSessions: intPtr(1)},
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doCityStatusJSON(sp, cfg, t.TempDir(), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "gc status: observing") {
+		t.Fatalf("stderr = %q, want observation warning", stderr.String())
+	}
+
+	var status StatusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("unmarshal: %v; output: %s", err, stdout.String())
+	}
+	if len(status.Agents) != 1 {
+		t.Fatalf("agents len = %d, want 1", len(status.Agents))
+	}
+	if status.Agents[0].Running {
+		t.Fatal("agent should not report running when observation fails")
+	}
+}
+
+func TestCityStatusJSONReportsStoreOpenError(t *testing.T) {
+	sp := runtime.NewFake()
+	oldOpen := openCityStoreAtForStatus
+	openCityStoreAtForStatus = func(string) (beads.Store, error) {
+		return nil, errors.New("bead store unavailable")
+	}
+	t.Cleanup(func() { openCityStoreAtForStatus = oldOpen })
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "city"},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doCityStatusJSON(sp, cfg, t.TempDir(), &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "gc status: opening bead store") {
+		t.Fatalf("stderr = %q, want bead store open error", stderr.String())
+	}
+}
+
+func TestCityStatusJSONReportsCatalogListError(t *testing.T) {
+	sp := runtime.NewFake()
+	oldOpen := openCityStoreAtForStatus
+	openCityStoreAtForStatus = func(string) (beads.Store, error) {
+		return &listErrorStore{Store: beads.NewMemStore()}, nil
+	}
+	t.Cleanup(func() { openCityStoreAtForStatus = oldOpen })
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "city"},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doCityStatusJSON(sp, cfg, t.TempDir(), &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "gc status: building session catalog") || !strings.Contains(stderr.String(), "catalog unavailable") {
+		t.Fatalf("stderr = %q, want catalog list error", stderr.String())
 	}
 }
 
@@ -354,6 +461,89 @@ func TestControllerStatusLine(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := controllerStatusLine(tt.ctrl); got != tt.want {
 				t.Fatalf("controllerStatusLine(%+v) = %q, want %q", tt.ctrl, got, tt.want)
+			}
+		})
+	}
+}
+
+type listErrorStore struct {
+	beads.Store
+}
+
+func (s *listErrorStore) List(beads.ListQuery) ([]beads.Bead, error) {
+	return nil, errors.New("catalog unavailable")
+}
+
+func TestControllerStatusGuidance(t *testing.T) {
+	tests := []struct {
+		name string
+		ctrl ControllerJSON
+		want []string
+	}{
+		{
+			name: "standalone running",
+			ctrl: ControllerJSON{Mode: "standalone", PID: 1234, Running: true},
+			want: []string{
+				"Authority: standalone controller PID 1234",
+				"Next: gc stop /tmp/city && gc start /tmp/city to hand ownership to the supervisor",
+			},
+		},
+		{
+			name: "supervisor registered but down",
+			ctrl: ControllerJSON{Mode: "supervisor"},
+			want: []string{
+				"Authority: supervisor registry; no supervisor process is running",
+				"Next: gc start /tmp/city to start the supervisor and reconcile this city",
+			},
+		},
+		{
+			name: "supervisor city stopped",
+			ctrl: ControllerJSON{Mode: "supervisor", PID: 4321},
+			want: []string{
+				"Authority: supervisor process PID 4321",
+				"Next: gc start /tmp/city to ask the supervisor to start this city",
+			},
+		},
+		{
+			name: "supervisor starting",
+			ctrl: ControllerJSON{Mode: "supervisor", PID: 4321, Status: "starting_bead_store"},
+			want: []string{
+				"Authority: supervisor process PID 4321",
+				"Next: gc supervisor logs to inspect startup progress",
+			},
+		},
+		{
+			name: "supervisor init failed",
+			ctrl: ControllerJSON{Mode: "supervisor", PID: 4321, Status: "init_failed"},
+			want: []string{
+				"Authority: supervisor process PID 4321",
+				"Next: gc supervisor logs to see the init failure",
+			},
+		},
+		{
+			name: "supervisor running",
+			ctrl: ControllerJSON{Mode: "supervisor", PID: 4321, Running: true},
+			want: []string{
+				"Authority: supervisor process PID 4321",
+			},
+		},
+		{
+			name: "unmanaged stopped",
+			ctrl: ControllerJSON{},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := controllerStatusGuidance(tt.ctrl, "/tmp/city")
+			if len(got) != len(tt.want) {
+				t.Fatalf("controllerStatusGuidance length = %d, want %d; got %#v", len(got), len(tt.want), got)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("controllerStatusGuidance[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
 			}
 		})
 	}

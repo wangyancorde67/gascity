@@ -9,6 +9,14 @@ title: "Named Configured Sessions"
 | Author(s) | Codex |
 | Issue | N/A |
 | Supersedes | N/A |
+| Superseded by | session-model-unification (partially) |
+
+> Note
+>
+> This document introduced `[[named_session]]`. The accepted follow-on
+> design in [`session-model-unification`](session-model-unification.md)
+> keeps that concept but replaces the remaining pool/non-pool split with
+> one unified session model.
 
 ## Summary
 

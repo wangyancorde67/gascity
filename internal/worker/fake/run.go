@@ -29,6 +29,7 @@ type Event struct {
 	Sequence    int               `json:"sequence,omitempty"`
 	Transcript  *TranscriptEvent  `json:"transcript,omitempty"`
 	Interaction *InteractionEvent `json:"interaction,omitempty"`
+	Input       *InputEvent       `json:"input,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
@@ -161,6 +162,55 @@ func (r Runner) Run(ctx context.Context, cfg HelperConfig, stdout io.Writer) err
 				Message:     step.Message,
 				Interaction: &interaction,
 				Metadata:    mergeMetadata(step.Metadata, interaction.Metadata),
+			}); err != nil {
+				return err
+			}
+		case "input":
+			input := step.Input
+			if err := writeEvent(eventSink, Event{
+				Time:     now().UTC(),
+				Kind:     "input_waiting",
+				Provider: profile.Provider,
+				Scenario: cfg.Scenario.Name,
+				Step:     stepID,
+				Path:     input.Path,
+				Message:  step.Message,
+				Input:    &input,
+				Metadata: mergeMetadata(step.Metadata, input.Metadata),
+			}); err != nil {
+				return err
+			}
+			observed, err := waitForInput(ctx, input.Path, input.Expect, cfg.Control.timeout(), cfg.Control.pollInterval())
+			if err != nil {
+				return err
+			}
+			input.Observed = observed
+			if input.ReceiptPath != "" {
+				if err := writeFile(input.ReceiptPath, observed, false); err != nil {
+					return err
+				}
+			}
+			if input.EchoPath != "" {
+				if err := writeFile(input.EchoPath, observed, false); err != nil {
+					return err
+				}
+			}
+			if step.State != "" {
+				if err := writeState(output.statePath, step.State); err != nil {
+					return err
+				}
+			}
+			if err := writeEvent(eventSink, Event{
+				Time:     now().UTC(),
+				Kind:     "input_received",
+				Provider: profile.Provider,
+				Scenario: cfg.Scenario.Name,
+				Step:     stepID,
+				State:    step.State,
+				Path:     input.Path,
+				Message:  step.Message,
+				Input:    &input,
+				Metadata: mergeMetadata(step.Metadata, input.Metadata),
 			}); err != nil {
 				return err
 			}
@@ -400,6 +450,17 @@ func waitForControl(ctx context.Context, path, expect string, timeout, poll time
 		case <-ticker.C:
 		}
 	}
+}
+
+func waitForInput(ctx context.Context, path, expect string, timeout, poll time.Duration) (string, error) {
+	if err := waitForControl(ctx, path, expect, timeout, poll); err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read input file %s: %w", path, err)
+	}
+	return string(data), nil
 }
 
 func controlSatisfied(path, expect string) (bool, error) {
