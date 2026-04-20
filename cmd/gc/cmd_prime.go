@@ -142,8 +142,8 @@ func doPrimeWithHookFormat(args []string, stdout, stderr io.Writer, hookMode boo
 
 	// In non-strict mode, hook side effects fire eagerly (existing behavior).
 	// In strict mode, we defer them until after strict checks pass so that a
-	// failing --strict invocation does not persist a session-id for an agent
-	// that doesn't exist.
+	// failing --strict invocation does not persist a session-id for failed
+	// agent resolution or template validation.
 	runHookSideEffects := func() {
 		if !hookMode {
 			return
@@ -219,6 +219,21 @@ func doPrimeWithHookFormat(args []string, stdout, stderr io.Writer, hookMode boo
 			fmt.Fprintf(stderr, "gc prime: agent %q not found in city config\n", agentName) //nolint:errcheck
 			return 1
 		}
+		// renderPrompt returns "" both when the template file cannot be read
+		// and when a valid template legitimately renders empty. Readability is
+		// the strict precondition, so check it before hook side effects.
+		for _, a := range resolvedAgents {
+			if isAgentEffectivelySuspended(cfg, &a) {
+				continue
+			}
+			if a.PromptTemplate == "" {
+				continue
+			}
+			if _, fErr := os.ReadFile(promptTemplateSourcePath(cityPath, a.PromptTemplate)); fErr != nil {
+				fmt.Fprintf(stderr, "gc prime: prompt_template %q for agent %q: %v\n", a.PromptTemplate, agentName, fErr) //nolint:errcheck
+				return 1
+			}
+		}
 		// Strict preconditions passed; now it's safe to persist session-id.
 		runHookSideEffects()
 	}
@@ -248,22 +263,6 @@ func doPrimeWithHookFormat(args []string, stdout, stderr io.Writer, hookMode boo
 			ctx = buildPrimeContext(cityPath, cityName, &a, cfg.Rigs, stderr)
 		}
 		if a.PromptTemplate != "" {
-			// Under strict, surface template-file-read failures specifically.
-			// renderPrompt returns "" in two cases: (1) the file cannot be
-			// read (missing, permissions, etc.), and (2) the template is valid
-			// but renders to empty output (e.g., all `{{if}}` blocks false).
-			// The caller can't tell them apart from the empty return alone,
-			// so strict needs an explicit read attempt to flag (1) without
-			// false-positiving (2). os.ReadFile (rather than os.Stat) catches
-			// permission-denied as well as not-exists. Parse/execute errors
-			// already write to stderr and return the raw template bytes
-			// (non-empty), so those surface via the normal success path.
-			if strictMode {
-				if _, fErr := os.ReadFile(filepath.Join(cityPath, a.PromptTemplate)); fErr != nil {
-					fmt.Fprintf(stderr, "gc prime: prompt_template %q for agent %q: %v\n", a.PromptTemplate, agentName, fErr) //nolint:errcheck
-					return 1
-				}
-			}
 			fragments := effectivePromptFragments(
 				cfg.Workspace.GlobalFragments,
 				a.InjectFragments,

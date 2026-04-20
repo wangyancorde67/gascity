@@ -4673,6 +4673,44 @@ prompt_template = "prompts/does-not-exist.md"
 	}
 }
 
+func TestDoPrimeStrictAbsoluteTemplatePath(t *testing.T) {
+	dir := t.TempDir()
+	gcDir := filepath.Join(dir, ".gc")
+	if err := os.MkdirAll(gcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	promptDir := t.TempDir()
+	promptPath := filepath.Join(promptDir, "mayor.md")
+	if err := os.WriteFile(promptPath, []byte("absolute mayor prompt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	toml := fmt.Sprintf(`[workspace]
+name = "test-city"
+
+[[agent]]
+name = "mayor"
+prompt_template = %q
+`, promptPath)
+	if err := os.WriteFile(filepath.Join(dir, "city.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
+	if code != 0 {
+		t.Fatalf("doPrimeWithMode(strict=true, absolute template path) = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stdout.String() != "absolute mayor prompt" {
+		t.Errorf("stdout = %q, want absolute template content", stdout.String())
+	}
+}
+
 // TestDoPrimeStrictTemplateRendersLegitimatelyEmpty verifies that --strict
 // does NOT error when a template file exists but produces empty output.
 // Templates with conditional blocks (e.g., `{{if .RigName}}...{{end}}`)
@@ -4767,6 +4805,50 @@ name = "mayor"
 	sessionFile := filepath.Join(dir, ".runtime", "session_id")
 	if _, err := os.Stat(sessionFile); !os.IsNotExist(err) {
 		t.Errorf("strict failure should not persist session id, but %s exists (err=%v)", sessionFile, err)
+	}
+}
+
+// TestDoPrimeStrictHookModeMissingTemplateDoesNotPersistSessionOnFailure
+// verifies that strict template validation also runs before hook-mode side
+// effects. A missing prompt_template is a strict failure, so it must not
+// leave behind a session id for the failed hook invocation.
+func TestDoPrimeStrictHookModeMissingTemplateDoesNotPersistSessionOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	gcDir := filepath.Join(dir, ".gc")
+	if err := os.MkdirAll(gcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	toml := `[workspace]
+name = "test-city"
+
+[[agent]]
+name = "mayor"
+prompt_template = "prompts/does-not-exist.md"
+`
+	if err := os.WriteFile(filepath.Join(dir, "city.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GC_SESSION_ID", "test-session-missing-template")
+
+	var stdout, stderr bytes.Buffer
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, true, true)
+	if code == 0 {
+		t.Fatalf("doPrimeWithMode(strict=true, hook=true, missing template) = 0, want non-zero; stderr: %s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `prompt_template "prompts/does-not-exist.md"`) {
+		t.Errorf("stderr = %q, want to reference the missing template path", stderr.String())
+	}
+
+	sessionFile := filepath.Join(dir, ".runtime", "session_id")
+	if _, err := os.Stat(sessionFile); !os.IsNotExist(err) {
+		t.Errorf("strict template failure should not persist session id, but %s exists (err=%v)", sessionFile, err)
 	}
 }
 
