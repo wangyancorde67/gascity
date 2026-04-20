@@ -28,6 +28,7 @@ import (
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/runtime"
+	sessionauto "github.com/gastownhall/gascity/internal/runtime/auto"
 	"github.com/gastownhall/gascity/internal/supervisor"
 	"github.com/gastownhall/gascity/internal/telemetry"
 	"github.com/gastownhall/gascity/internal/workspacesvc"
@@ -1210,10 +1211,31 @@ func reconcileCities(
 
 		var sp runtime.Provider
 		spErr := runPostPrepareStep("creating_session_provider", func() error {
-			var err error
-			sp, err = newSessionProviderByName(
-				effectiveProviderName(cfg.Session.Provider), cfg.Session, cityName, path)
-			return err
+			providerName := effectiveProviderName(cfg.Session.Provider)
+			baseSP, err := newSessionProviderByName(providerName, cfg.Session, cityName, path)
+			if err != nil {
+				return err
+			}
+			// When the city-level provider is not ACP but some agents
+			// use session = "acp", wrap in an auto provider that routes
+			// ACP sessions to the ACP backend and everything else to
+			// the default backend. This mirrors the logic in
+			// newSessionProviderFromContext for CLI commands.
+			if providerName != "acp" && hasACPAgents(cfg.Agents) {
+				acpSP, acpErr := newSessionProviderByName("acp", cfg.Session, cityName, path)
+				if acpErr != nil {
+					return fmt.Errorf("acp provider: %w", acpErr)
+				}
+				autoSP := sessionauto.New(baseSP, acpSP)
+				snapshot := loadProviderSessionSnapshot(sessionProviderContextForCity(cfg, path, providerName))
+				for _, sessName := range configuredACPSessionNames(snapshot, cityName, cfg.Workspace.SessionTemplate, cfg.Agents) {
+					autoSP.RouteACP(sessName)
+				}
+				sp = autoSP
+			} else {
+				sp = baseSP
+			}
+			return nil
 		})
 		if spErr != nil {
 			cr.BatchUpdate(func(
