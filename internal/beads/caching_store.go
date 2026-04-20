@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -581,6 +582,12 @@ func (c *CachingStore) Update(id string, opts UpdateOpts) error {
 		c.beads[id] = cloneBead(fresh)
 		c.mu.Unlock()
 		c.notifyChange("bead.updated", fresh)
+	} else {
+		c.mu.Lock()
+		delete(c.beads, id)
+		delete(c.deps, id)
+		c.mu.Unlock()
+		log.Printf("caching-store: refresh after update failed for %s: %v", id, err)
 	}
 	return nil
 }
@@ -859,27 +866,32 @@ func (c *CachingStore) updateStatsLocked() {
 }
 
 func beadChanged(old, fresh Bead) bool {
-	if old.Status != fresh.Status {
+	return old.ID != fresh.ID ||
+		old.Title != fresh.Title ||
+		old.Status != fresh.Status ||
+		old.Type != fresh.Type ||
+		!intPtrEqual(old.Priority, fresh.Priority) ||
+		!old.CreatedAt.Equal(fresh.CreatedAt) ||
+		old.Assignee != fresh.Assignee ||
+		old.From != fresh.From ||
+		old.ParentID != fresh.ParentID ||
+		old.Ref != fresh.Ref ||
+		old.Description != fresh.Description ||
+		!slices.Equal(old.Labels, fresh.Labels) ||
+		!slices.Equal(old.Needs, fresh.Needs) ||
+		!maps.Equal(old.Metadata, fresh.Metadata) ||
+		!slices.Equal(old.Dependencies, fresh.Dependencies)
+}
+
+func intPtrEqual(left, right *int) bool {
+	switch {
+	case left == nil && right == nil:
 		return true
+	case left == nil || right == nil:
+		return false
+	default:
+		return *left == *right
 	}
-	if old.Title != fresh.Title {
-		return true
-	}
-	if old.Assignee != fresh.Assignee {
-		return true
-	}
-	if old.Description != fresh.Description {
-		return true
-	}
-	if len(old.Metadata) != len(fresh.Metadata) {
-		return true
-	}
-	for k, v := range old.Metadata {
-		if fresh.Metadata[k] != v {
-			return true
-		}
-	}
-	return len(old.Labels) != len(fresh.Labels)
 }
 
 // Delete passes through to the backing store and removes from cache.

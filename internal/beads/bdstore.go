@@ -574,7 +574,9 @@ func (s *BdStore) CloseAll(ids []string, metadata map[string]string) (int, error
 	// prevent metadata writes on closed beads).
 	for _, id := range ids {
 		if len(metadata) > 0 {
-			_ = s.SetMetadataBatch(id, metadata)
+			if err := s.SetMetadataBatch(id, metadata); err != nil {
+				return 0, err
+			}
 		}
 	}
 

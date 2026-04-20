@@ -56,6 +56,10 @@ func OpenFileStore(fs fsys.FS, path string) (*FileStore, error) {
 // every mutating operation acquires the lock and reloads from disk before
 // writing — preventing ID collisions between the CLI and controller daemon.
 func (fs *FileStore) SetLocker(l Locker) {
+	if l == nil {
+		fs.locker = nopLocker{}
+		return
+	}
 	fs.locker = l
 }
 
@@ -83,22 +87,15 @@ func (fs *FileStore) reloadFromDisk() error {
 // If the disk flush fails, the in-memory mutation is rolled back to keep
 // the MemStore and file in sync.
 func (fs *FileStore) Create(b Bead) (Bead, error) {
-	fs.fmu.Lock()
-	defer fs.fmu.Unlock()
-	if err := fs.locker.Lock(); err != nil {
-		return Bead{}, err
-	}
-	defer fs.locker.Unlock() //nolint:errcheck // best-effort unlock
-	if err := fs.reloadFromDisk(); err != nil {
-		return Bead{}, err
-	}
-	snap := fs.snapshotLocked()
-	result, err := fs.MemStore.Create(b)
-	if err != nil {
-		return Bead{}, err
-	}
-	if err := fs.save(); err != nil {
-		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
+	var result Bead
+	if err := fs.withMutation(func() (bool, error) {
+		created, err := fs.MemStore.Create(b)
+		if err != nil {
+			return false, err
+		}
+		result = created
+		return true, nil
+	}); err != nil {
 		return Bead{}, err
 	}
 	return result, nil
@@ -107,70 +104,37 @@ func (fs *FileStore) Create(b Bead) (Bead, error) {
 // Update delegates to MemStore.Update and flushes to disk.
 // If the disk flush fails, the in-memory mutation is rolled back.
 func (fs *FileStore) Update(id string, opts UpdateOpts) error {
-	fs.fmu.Lock()
-	defer fs.fmu.Unlock()
-	if err := fs.locker.Lock(); err != nil {
-		return err
-	}
-	defer fs.locker.Unlock() //nolint:errcheck // best-effort unlock
-	if err := fs.reloadFromDisk(); err != nil {
-		return err
-	}
-	snap := fs.snapshotLocked()
-	if err := fs.MemStore.Update(id, opts); err != nil {
-		return err
-	}
-	if err := fs.save(); err != nil {
-		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
-		return err
-	}
-	return nil
+	return fs.withMutation(func() (bool, error) {
+		if err := fs.MemStore.Update(id, opts); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 }
 
 // Close delegates to MemStore.Close and flushes to disk.
 // If the disk flush fails, the in-memory mutation is rolled back.
 func (fs *FileStore) Close(id string) error {
-	fs.fmu.Lock()
-	defer fs.fmu.Unlock()
-	if err := fs.locker.Lock(); err != nil {
-		return err
-	}
-	defer fs.locker.Unlock() //nolint:errcheck // best-effort unlock
-	if err := fs.reloadFromDisk(); err != nil {
-		return err
-	}
-	snap := fs.snapshotLocked()
-	if err := fs.MemStore.Close(id); err != nil {
-		return err
-	}
-	if err := fs.save(); err != nil {
-		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
-		return err
-	}
-	return nil
+	return fs.withMutation(func() (bool, error) {
+		if err := fs.MemStore.Close(id); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 }
 
 // CloseAll closes multiple beads and sets metadata, then flushes once.
 func (fs *FileStore) CloseAll(ids []string, metadata map[string]string) (int, error) {
-	fs.fmu.Lock()
-	defer fs.fmu.Unlock()
-	if err := fs.locker.Lock(); err != nil {
-		return 0, err
-	}
-	defer fs.locker.Unlock() //nolint:errcheck // best-effort unlock
-	if err := fs.reloadFromDisk(); err != nil {
-		return 0, err
-	}
-	snap := fs.snapshotLocked()
-	closed, err := fs.MemStore.CloseAll(ids, metadata)
-	if err != nil {
-		return 0, err
-	}
-	if closed > 0 {
-		if err := fs.save(); err != nil {
-			fs.restoreFrom(snap.seq, snap.beads, snap.deps)
-			return 0, err
+	closed := 0
+	if err := fs.withMutation(func() (bool, error) {
+		var err error
+		closed, err = fs.MemStore.CloseAll(ids, metadata)
+		if err != nil {
+			return false, err
 		}
+		return closed > 0, nil
+	}); err != nil {
+		return 0, err
 	}
 	return closed, nil
 }
@@ -178,47 +142,23 @@ func (fs *FileStore) CloseAll(ids []string, metadata map[string]string) (int, er
 // SetMetadata delegates to MemStore.SetMetadata and flushes to disk.
 // If the disk flush fails, the in-memory mutation is rolled back.
 func (fs *FileStore) SetMetadata(id, key, value string) error {
-	fs.fmu.Lock()
-	defer fs.fmu.Unlock()
-	if err := fs.locker.Lock(); err != nil {
-		return err
-	}
-	defer fs.locker.Unlock() //nolint:errcheck // best-effort unlock
-	if err := fs.reloadFromDisk(); err != nil {
-		return err
-	}
-	snap := fs.snapshotLocked()
-	if err := fs.MemStore.SetMetadata(id, key, value); err != nil {
-		return err
-	}
-	if err := fs.save(); err != nil {
-		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
-		return err
-	}
-	return nil
+	return fs.withMutation(func() (bool, error) {
+		if err := fs.MemStore.SetMetadata(id, key, value); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 }
 
 // SetMetadataBatch delegates to MemStore.SetMetadataBatch and flushes to disk.
 // If the disk flush fails, the in-memory mutation is rolled back.
 func (fs *FileStore) SetMetadataBatch(id string, kvs map[string]string) error {
-	fs.fmu.Lock()
-	defer fs.fmu.Unlock()
-	if err := fs.locker.Lock(); err != nil {
-		return err
-	}
-	defer fs.locker.Unlock() //nolint:errcheck // best-effort unlock
-	if err := fs.reloadFromDisk(); err != nil {
-		return err
-	}
-	snap := fs.snapshotLocked()
-	if err := fs.MemStore.SetMetadataBatch(id, kvs); err != nil {
-		return err
-	}
-	if err := fs.save(); err != nil {
-		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
-		return err
-	}
-	return nil
+	return fs.withMutation(func() (bool, error) {
+		if err := fs.MemStore.SetMetadataBatch(id, kvs); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 }
 
 // Ping checks that the store file is accessible.
@@ -229,47 +169,23 @@ func (fs *FileStore) Ping() error {
 // DepAdd delegates to MemStore.DepAdd and flushes to disk.
 // If the disk flush fails, the in-memory mutation is rolled back.
 func (fs *FileStore) DepAdd(issueID, dependsOnID, depType string) error {
-	fs.fmu.Lock()
-	defer fs.fmu.Unlock()
-	if err := fs.locker.Lock(); err != nil {
-		return err
-	}
-	defer fs.locker.Unlock() //nolint:errcheck // best-effort unlock
-	if err := fs.reloadFromDisk(); err != nil {
-		return err
-	}
-	snap := fs.snapshotLocked()
-	if err := fs.MemStore.DepAdd(issueID, dependsOnID, depType); err != nil {
-		return err
-	}
-	if err := fs.save(); err != nil {
-		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
-		return err
-	}
-	return nil
+	return fs.withMutation(func() (bool, error) {
+		if err := fs.MemStore.DepAdd(issueID, dependsOnID, depType); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 }
 
 // DepRemove delegates to MemStore.DepRemove and flushes to disk.
 // If the disk flush fails, the in-memory mutation is rolled back.
 func (fs *FileStore) DepRemove(issueID, dependsOnID string) error {
-	fs.fmu.Lock()
-	defer fs.fmu.Unlock()
-	if err := fs.locker.Lock(); err != nil {
-		return err
-	}
-	defer fs.locker.Unlock() //nolint:errcheck // best-effort unlock
-	if err := fs.reloadFromDisk(); err != nil {
-		return err
-	}
-	snap := fs.snapshotLocked()
-	if err := fs.MemStore.DepRemove(issueID, dependsOnID); err != nil {
-		return err
-	}
-	if err := fs.save(); err != nil {
-		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
-		return err
-	}
-	return nil
+	return fs.withMutation(func() (bool, error) {
+		if err := fs.MemStore.DepRemove(issueID, dependsOnID); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 }
 
 // memSnapshot holds a snapshot of MemStore state for rollback.
@@ -277,6 +193,34 @@ type memSnapshot struct {
 	seq   int
 	beads []Bead
 	deps  []Dep
+}
+
+// withMutation serializes writers, reloads from disk under the cross-process
+// lock, and rolls back in-memory state if the flush fails.
+func (fs *FileStore) withMutation(mutate func() (bool, error)) error {
+	fs.fmu.Lock()
+	defer fs.fmu.Unlock()
+	if err := fs.locker.Lock(); err != nil {
+		return err
+	}
+	defer fs.locker.Unlock() //nolint:errcheck // best-effort unlock
+	if err := fs.reloadFromDisk(); err != nil {
+		return err
+	}
+
+	snap := fs.snapshotLocked()
+	shouldSave, err := mutate()
+	if err != nil {
+		return err
+	}
+	if !shouldSave {
+		return nil
+	}
+	if err := fs.save(); err != nil {
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
+		return err
+	}
+	return nil
 }
 
 // snapshotLocked takes a snapshot of MemStore state for rollback.

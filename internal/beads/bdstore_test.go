@@ -421,6 +421,36 @@ func TestBdStoreCloseCLIError(t *testing.T) {
 	}
 }
 
+func TestBdStoreCloseAllReturnsMetadataWriteFailure(t *testing.T) {
+	metadataErr := errors.New("metadata write failed")
+	runner := fakeRunner(map[string]struct {
+		out []byte
+		err error
+	}{
+		`bd update --json bd-abc-123 --set-metadata source=wave1`: {
+			err: metadataErr,
+		},
+		`bd close --json bd-abc-123`: {
+			out: []byte(`[{"id":"bd-abc-123","title":"test","status":"closed","issue_type":"task","created_at":"2025-01-15T10:30:00Z"}]`),
+		},
+	})
+
+	s := beads.NewBdStore("/city", runner)
+	closed, err := s.CloseAll([]string{"bd-abc-123"}, map[string]string{"source": "wave1"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if closed != 0 {
+		t.Fatalf("closed = %d, want 0", closed)
+	}
+	if !strings.Contains(err.Error(), `setting metadata on "bd-abc-123"`) {
+		t.Fatalf("error = %q, want metadata context", err)
+	}
+	if !errors.Is(err, metadataErr) {
+		t.Fatalf("error = %v, want wrapped metadata error", err)
+	}
+}
+
 // --- List ---
 
 func TestBdStoreList(t *testing.T) {
@@ -1354,5 +1384,26 @@ func TestBdStoreApplyGraphPlan(t *testing.T) {
 	}
 	if matches, _ := filepath.Glob(filepath.Join(dir, ".gc", "tmp", "graph-apply-*.json")); len(matches) != 0 {
 		t.Fatalf("temp graph apply files were not cleaned up: %v", matches)
+	}
+}
+
+func TestBdStoreApplyGraphPlanRejectsMissingIDs(t *testing.T) {
+	dir := t.TempDir()
+	runner := func(string, string, ...string) ([]byte, error) {
+		return []byte(`{"ids":{"mol.root":"bd-1"}}`), nil
+	}
+
+	s := beads.NewBdStore(dir, runner)
+	_, err := s.ApplyGraphPlan(t.Context(), &beads.GraphApplyPlan{
+		Nodes: []beads.GraphApplyNode{
+			{Key: "mol.root", Title: "Root"},
+			{Key: "mol.step", Title: "Step"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "missing IDs for keys: mol.step") {
+		t.Fatalf("error = %q, want missing key detail", err)
 	}
 }
