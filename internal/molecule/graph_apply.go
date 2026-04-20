@@ -388,6 +388,7 @@ func setNodeParentRef(nodes []beads.GraphApplyNode, stepID, parentKey, parentID 
 		}
 		if parentKey != "" {
 			nodes[i].ParentKey = parentKey
+			nodes[i].ParentID = ""
 		}
 		if parentID != "" {
 			nodes[i].ParentID = parentID

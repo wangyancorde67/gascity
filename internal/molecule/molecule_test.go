@@ -858,6 +858,68 @@ func TestInstantiateFragmentPrefersRecipeParentOverExternalParent(t *testing.T) 
 	}
 }
 
+func TestInstantiateFragmentGraphApplyPrefersRecipeParentOverExternalParent(t *testing.T) {
+	store := &graphApplySpyStore{MemStore: beads.NewMemStore()}
+	root, err := store.Create(beads.Bead{
+		Title:    "Workflow root",
+		Type:     "task",
+		Priority: priorityPtr(1),
+		Metadata: map[string]string{"gc.kind": "workflow"},
+	})
+	if err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	externalParent, err := store.Create(beads.Bead{
+		Title: "External parent",
+		Type:  "task",
+	})
+	if err != nil {
+		t.Fatalf("create external parent: %v", err)
+	}
+
+	prev := IsGraphApplyEnabled()
+	SetGraphApplyEnabled(true)
+	t.Cleanup(func() { SetGraphApplyEnabled(prev) })
+
+	recipe := &formula.FragmentRecipe{
+		Steps: []formula.RecipeStep{
+			{ID: "frag.scope", Title: "Scope", Type: "task"},
+			{ID: "frag.scope.child", Title: "Child", Type: "task"},
+		},
+		Deps: []formula.RecipeDep{
+			{StepID: "frag.scope.child", DependsOnID: "frag.scope", Type: "parent-child"},
+		},
+	}
+
+	if _, err := InstantiateFragment(context.Background(), store, recipe, FragmentOptions{
+		RootID: root.ID,
+		ExternalDeps: []ExternalDep{
+			{
+				StepID:      "frag.scope.child",
+				DependsOnID: externalParent.ID,
+				Type:        "parent-child",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("InstantiateFragment: %v", err)
+	}
+	if store.plan == nil {
+		t.Fatal("ApplyGraphPlan was not called")
+	}
+
+	nodesByKey := make(map[string]beads.GraphApplyNode, len(store.plan.Nodes))
+	for _, node := range store.plan.Nodes {
+		nodesByKey[node.Key] = node
+	}
+	child := nodesByKey["frag.scope.child"]
+	if child.ParentKey != "frag.scope" {
+		t.Fatalf("child.ParentKey = %q, want frag.scope", child.ParentKey)
+	}
+	if child.ParentID != "" {
+		t.Fatalf("child.ParentID = %q, want empty when recipe parent wins", child.ParentID)
+	}
+}
+
 func TestBuildFragmentApplyPlan_UsesTracksOwnershipEdges(t *testing.T) {
 	store := beads.NewMemStore()
 	root, err := store.Create(beads.Bead{

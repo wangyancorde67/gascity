@@ -131,6 +131,10 @@ func collectExpiredBeadClosure(store beads.Store, rootID string) ([]string, erro
 			}
 		}
 
+		// Treat structural parentage as workflow ownership. Some molecule step
+		// beads are linked only by ParentID / parent-child deps and do not carry
+		// gc.root_bead_id metadata, so GC must follow those ownership edges while
+		// still ignoring non-ownership deps such as blocks or waits-for.
 		children, err := store.Children(id, beads.IncludeClosed)
 		if err != nil {
 			return fmt.Errorf("list children for %s: %w", id, err)
