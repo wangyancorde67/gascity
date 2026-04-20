@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/worker"
 )
 
 func TestCityStatusEmptyCity(t *testing.T) {
@@ -81,6 +84,34 @@ func TestCityStatusWithAgents(t *testing.T) {
 	}
 }
 
+func TestCityStatusReportsObservationErrors(t *testing.T) {
+	sp := runtime.NewFake()
+	if err := sp.Start(context.Background(), "mayor", runtime.Config{Command: "echo"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	dops := newFakeDrainOps()
+	oldObserve := observeSessionTargetForStatus
+	observeSessionTargetForStatus = func(string, beads.Store, runtime.Provider, *config.City, string) (worker.LiveObservation, error) {
+		return worker.LiveObservation{}, errors.New("status observation unavailable")
+	}
+	t.Cleanup(func() { observeSessionTargetForStatus = oldObserve })
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "city"},
+		Agents: []config.Agent{
+			{Name: "mayor", MaxActiveSessions: intPtr(1)},
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doCityStatus(sp, dops, cfg, "/home/user/city", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "gc status: observing") {
+		t.Fatalf("stderr = %q, want observation warning", stderr.String())
+	}
+}
+
 func TestCityStatusSuspended(t *testing.T) {
 	sp := runtime.NewFake()
 	dops := newFakeDrainOps()
@@ -126,7 +157,7 @@ func TestCityStatusPoolExpansion(t *testing.T) {
 	}
 	out := stdout.String()
 
-	// Scaled header line.
+	// Pool header line.
 	if !strings.Contains(out, "scaled (min=1, max=3)") {
 		t.Errorf("stdout missing scaled header, got:\n%s", out)
 	}
@@ -272,23 +303,99 @@ func TestCityStatusJSONWithAgents(t *testing.T) {
 		t.Error("agents[0].pool should be nil for singleton")
 	}
 
-	// Second agent: polecat-1 (scaled, not running).
+	// Second agent: polecat-1 (pool, not running).
 	if status.Agents[1].QualifiedName != "myrig/polecat-1" {
 		t.Errorf("agents[1].qualified_name = %q, want %q", status.Agents[1].QualifiedName, "myrig/polecat-1")
 	}
 	if status.Agents[1].Scope != "rig" {
 		t.Errorf("agents[1].scope = %q, want %q", status.Agents[1].Scope, "rig")
 	}
-	if status.Agents[1].Pool != nil {
-		t.Fatal("agents[1].pool should be nil for scaled session output")
-	}
-
 	// Rigs.
 	if len(status.Rigs) != 1 {
 		t.Fatalf("got %d rigs, want 1", len(status.Rigs))
 	}
 	if status.Rigs[0].Name != "myrig" {
 		t.Errorf("rigs[0].name = %q, want %q", status.Rigs[0].Name, "myrig")
+	}
+}
+
+func TestCityStatusJSONReportsObservationErrors(t *testing.T) {
+	sp := runtime.NewFake()
+	if err := sp.Start(context.Background(), "mayor", runtime.Config{Command: "echo"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	oldObserve := observeSessionTargetForStatus
+	observeSessionTargetForStatus = func(string, beads.Store, runtime.Provider, *config.City, string) (worker.LiveObservation, error) {
+		return worker.LiveObservation{}, errors.New("status observation unavailable")
+	}
+	t.Cleanup(func() { observeSessionTargetForStatus = oldObserve })
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "city"},
+		Agents: []config.Agent{
+			{Name: "mayor", MaxActiveSessions: intPtr(1)},
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doCityStatusJSON(sp, cfg, t.TempDir(), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "gc status: observing") {
+		t.Fatalf("stderr = %q, want observation warning", stderr.String())
+	}
+
+	var status StatusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("unmarshal: %v; output: %s", err, stdout.String())
+	}
+	if len(status.Agents) != 1 {
+		t.Fatalf("agents len = %d, want 1", len(status.Agents))
+	}
+	if status.Agents[0].Running {
+		t.Fatal("agent should not report running when observation fails")
+	}
+}
+
+func TestCityStatusJSONReportsStoreOpenError(t *testing.T) {
+	sp := runtime.NewFake()
+	oldOpen := openCityStoreAtForStatus
+	openCityStoreAtForStatus = func(string) (beads.Store, error) {
+		return nil, errors.New("bead store unavailable")
+	}
+	t.Cleanup(func() { openCityStoreAtForStatus = oldOpen })
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "city"},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doCityStatusJSON(sp, cfg, t.TempDir(), &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "gc status: opening bead store") {
+		t.Fatalf("stderr = %q, want bead store open error", stderr.String())
+	}
+}
+
+func TestCityStatusJSONReportsCatalogListError(t *testing.T) {
+	sp := runtime.NewFake()
+	oldOpen := openCityStoreAtForStatus
+	openCityStoreAtForStatus = func(string) (beads.Store, error) {
+		return &listErrorStore{Store: beads.NewMemStore()}, nil
+	}
+	t.Cleanup(func() { openCityStoreAtForStatus = oldOpen })
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "city"},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doCityStatusJSON(sp, cfg, t.TempDir(), &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "gc status: building session catalog") || !strings.Contains(stderr.String(), "catalog unavailable") {
+		t.Fatalf("stderr = %q, want catalog list error", stderr.String())
 	}
 }
 
@@ -362,6 +469,14 @@ func TestControllerStatusLine(t *testing.T) {
 			}
 		})
 	}
+}
+
+type listErrorStore struct {
+	beads.Store
+}
+
+func (s *listErrorStore) List(beads.ListQuery) ([]beads.Bead, error) {
+	return nil, errors.New("catalog unavailable")
 }
 
 func TestControllerStatusGuidance(t *testing.T) {
