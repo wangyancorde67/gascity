@@ -13,6 +13,8 @@ import (
 
 const maxOrdersFeedLimit = 500
 
+var orderFeedLogf = log.Printf
+
 type monitorFeedItemResponse struct {
 	ID                 string `json:"id"`
 	Type               string `json:"type"`
@@ -375,6 +377,7 @@ func orderTrackingUpdatedAt(store beads.Store, tracking beads.Bead, scopedName s
 		Sort:  beads.SortCreatedDesc,
 	})
 	if err != nil {
+		orderFeedLogf("api: order feed update lookup failed for %s bead %s: %v", scopedName, tracking.ID, err)
 		return updatedAt
 	}
 	if len(runs) > 0 && runs[0].CreatedAt.After(updatedAt) {

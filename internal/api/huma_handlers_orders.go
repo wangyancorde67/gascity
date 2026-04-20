@@ -71,11 +71,11 @@ func (s *Server) humaHandleOrderCheck(_ context.Context, _ *OrderCheckInput) (*O
 	now := time.Now()
 	checks := make([]orderCheckResponse, 0, len(aa))
 	for _, a := range aa {
-		stores, err := orderStoresForState(s.state, a)
+		stores, err := orders.StoresForState(s.state, a)
 		if err != nil {
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
-		result := orders.CheckTrigger(a, now, orderLastRunFnAcrossStores(stores...), ep, orderCursorFuncAcrossStores(stores...))
+		result := orders.CheckTrigger(a, now, orders.LastRunAcrossStores(stores...), ep, orders.CursorAcrossStores(stores...))
 		cr := orderCheckResponse{
 			Name:       a.Name,
 			ScopedName: a.ScopedName(),
@@ -87,7 +87,7 @@ func (s *Server) humaHandleOrderCheck(_ context.Context, _ *OrderCheckInput) (*O
 			ts := result.LastRun.Format(time.RFC3339)
 			cr.LastRun = &ts
 		}
-		if results, err := orderHistoryBeadsAcrossStores(stores, a.ScopedName()); err == nil && len(results) > 0 {
+		if results, err := orders.HistoryBeadsAcrossStores(stores, a.ScopedName()); err == nil && len(results) > 0 {
 			outcome := lastRunOutcomeFromLabels(results[0].Labels)
 			if outcome != "" {
 				cr.LastRunOutcome = &outcome
@@ -164,12 +164,12 @@ func (s *Server) humaHandleOrderHistory(_ context.Context, input *OrderHistoryIn
 			orderDef.Rig = scopedName[idx+5:]
 		}
 	}
-	stores, err := orderStoresForState(s.state, orderDef)
+	stores, err := orders.StoresForState(s.state, orderDef)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	results, err := orderHistoryBeadsAcrossStores(stores, scopedName)
+	results, err := orders.HistoryBeadsAcrossStores(stores, scopedName)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -251,7 +251,7 @@ func (s *Server) humaHandleOrderHistoryDetail(_ context.Context, input *OrderHis
 			stores = append(stores, info.store)
 		}
 	}
-	b, err := orderHistoryBeadAcrossStores(stores, input.BeadID)
+	b, err := orders.HistoryBeadAcrossStores(stores, input.BeadID)
 	if err != nil {
 		if errors.Is(err, beads.ErrNotFound) {
 			return nil, huma.Error404NotFound("bead not found")
