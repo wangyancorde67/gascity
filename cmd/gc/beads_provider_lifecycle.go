@@ -705,15 +705,15 @@ type doltRuntimeState struct {
 
 // currentDoltPort returns the controller-managed Dolt port for the city.
 // The only managed-local authority is .gc/runtime/packs/dolt/dolt-state.json.
-// .beads/dolt-server.port is a compatibility mirror for raw bd, not a GC
-// control-plane input.
 func currentDoltPort(cityPath string) string {
+	return currentManagedDoltPort(cityPath)
+}
+
+func syncManagedDoltPortArtifact(cityPath string) error {
 	if port := currentManagedDoltPort(cityPath); port != "" {
-		writeDoltPortFile(cityPath, port)
-		return port
+		return writeDoltPortFileStrict(fsys.OSFS{}, cityPath, port)
 	}
-	removeDoltPortFile(cityPath)
-	return ""
+	return removeDoltPortFileStrict(cityPath)
 }
 
 func managedDoltStatePath(cityPath string) string {
@@ -781,31 +781,6 @@ func doltPortReachable(port string) bool {
 	}
 	_ = conn.Close()
 	return true
-}
-
-func writeDoltPortFile(dir, port string) {
-	if dir == "" || port == "" {
-		return
-	}
-	trimmedPort := strings.TrimSpace(port)
-	if trimmedPort == "" {
-		return
-	}
-	portFile := filepath.Join(dir, ".beads", "dolt-server.port")
-	if data, err := os.ReadFile(portFile); err == nil && strings.TrimSpace(string(data)) == trimmedPort {
-		return
-	}
-	if err := ensureBeadsDir(fsys.OSFS{}, filepath.Dir(portFile)); err != nil {
-		return
-	}
-	_ = fsys.WriteFileAtomic(fsys.OSFS{}, portFile, []byte(trimmedPort+"\n"), 0o644)
-}
-
-func removeDoltPortFile(dir string) {
-	if dir == "" {
-		return
-	}
-	_ = os.Remove(filepath.Join(dir, ".beads", "dolt-server.port"))
 }
 
 func removeScopeLocalDoltServerArtifacts(dir string) error {
@@ -905,21 +880,21 @@ func syncConfiguredDoltPortFiles(cityPath string, cityDolt config.DoltConfig, ci
 	if err != nil {
 		return err
 	}
-	managedPort := ""
-	if cityState.EndpointOrigin == contract.EndpointOriginManagedCity {
-		managedPort = currentDoltPort(cityPath)
-	}
 	if cityUsesBd {
 		if err := normalizeScopeDoltConfig(cityPath, cityState); err != nil {
 			return err
 		}
-		if managedPort != "" {
-			writeDoltPortFile(cityPath, managedPort)
-		} else {
-			removeDoltPortFile(cityPath)
+		if cityState.EndpointOrigin == contract.EndpointOriginManagedCity {
+			if err := syncManagedDoltPortArtifact(cityPath); err != nil {
+				return err
+			}
+		} else if err := removeDoltPortFileStrict(cityPath); err != nil {
+			return err
 		}
 	} else {
-		removeDoltPortFile(cityPath)
+		if err := removeDoltPortFileStrict(cityPath); err != nil {
+			return err
+		}
 	}
 
 	for i := range rigs {
@@ -928,24 +903,20 @@ func syncConfiguredDoltPortFiles(cityPath string, cityDolt config.DoltConfig, ci
 			continue
 		}
 		if !rigUsesManagedBdStoreContract(cityPath, rig) {
-			removeDoltPortFile(rig.Path)
+			if err := removeDoltPortFileStrict(rig.Path); err != nil {
+				return err
+			}
 			continue
 		}
 		rigState, err := syncDesiredRigDoltConfigState(cityPath, rig, cityState)
 		if err != nil {
 			return err
 		}
-		rigManagedPort := ""
-		if cityState.EndpointOrigin == contract.EndpointOriginManagedCity && rigState.EndpointOrigin == contract.EndpointOriginInheritedCity {
-			rigManagedPort = managedPort
-		}
 		if err := normalizeScopeDoltConfig(rig.Path, rigState); err != nil {
 			return err
 		}
-		if rigManagedPort != "" {
-			writeDoltPortFile(rig.Path, rigManagedPort)
-		} else {
-			removeDoltPortFile(rig.Path)
+		if err := syncRigManagedPortArtifact(cityPath, rig.Path, cityState, rigState); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -714,6 +714,43 @@ esac
 	}
 }
 
+func TestCloseAllReportsMetadataAndCloseFailures(t *testing.T) {
+	dir := t.TempDir()
+	script := writeScript(t, dir, `
+case "$1" in
+  set-metadata)
+    if [ "$2" = "EX-1" ]; then
+      echo "metadata failed" >&2
+      exit 1
+    fi
+    cat > /dev/null
+    ;;
+  close)
+    if [ "$2" = "EX-2" ]; then
+      echo "close failed" >&2
+      exit 1
+    fi
+    ;;
+  *) exit 2 ;;
+esac
+`)
+	s := NewStore(script)
+
+	n, err := s.CloseAll([]string{"EX-1", "EX-2", "EX-3"}, map[string]string{"state": "done"})
+	if err == nil {
+		t.Fatal("expected error from CloseAll, got nil")
+	}
+	if n != 2 {
+		t.Fatalf("CloseAll closed %d beads, want 2", n)
+	}
+	if !strings.Contains(err.Error(), "setting metadata \"state\" on bead \"EX-1\"") {
+		t.Fatalf("error = %q, want metadata failure for EX-1", err.Error())
+	}
+	if !strings.Contains(err.Error(), "closing bead \"EX-2\"") {
+		t.Fatalf("error = %q, want close failure for EX-2", err.Error())
+	}
+}
+
 func TestGet_numericMetadataValuesCoercedToStrings(t *testing.T) {
 	dir := t.TempDir()
 

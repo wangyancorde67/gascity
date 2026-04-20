@@ -621,6 +621,9 @@ func TestCurrentDoltPortPrefersRuntimeState(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := syncManagedDoltPortArtifact(cityDir); err != nil {
+		t.Fatalf("syncManagedDoltPortArtifact: %v", err)
+	}
 	got := currentDoltPort(cityDir)
 	if got != fmt.Sprintf("%d", ln.Addr().(*net.TCPAddr).Port) {
 		t.Fatalf("currentDoltPort() = %q, want %d", got, ln.Addr().(*net.TCPAddr).Port)
@@ -648,11 +651,73 @@ func TestCurrentDoltPortIgnoresReachablePortFileWithoutManagedState(t *testing.T
 		t.Fatal(err)
 	}
 
+	if err := syncManagedDoltPortArtifact(cityDir); err != nil {
+		t.Fatalf("syncManagedDoltPortArtifact: %v", err)
+	}
 	if got := currentDoltPort(cityDir); got != "" {
 		t.Fatalf("currentDoltPort() = %q, want empty when runtime state is missing", got)
 	}
 	if _, err := os.Stat(filepath.Join(cityDir, ".beads", "dolt-server.port")); !os.IsNotExist(err) {
 		t.Fatalf("reachable compatibility port file should be removed, stat err = %v", err)
+	}
+}
+
+func TestSyncManagedDoltPortArtifactReturnsWriteError(t *testing.T) {
+	cityDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityDir, ".gc", "runtime", "packs", "dolt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	portPath := filepath.Join(cityDir, ".beads", "dolt-server.port")
+	if err := os.MkdirAll(portPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(portPath, "blocker"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ln := listenOnRandomPort(t)
+	t.Cleanup(func() { _ = ln.Close() })
+	if err := writeDoltState(cityDir, doltRuntimeState{
+		Running:   true,
+		PID:       os.Getpid(),
+		Port:      ln.Addr().(*net.TCPAddr).Port,
+		DataDir:   filepath.Join(cityDir, ".beads", "dolt"),
+		StartedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := syncManagedDoltPortArtifact(cityDir); err == nil {
+		t.Fatal("expected write error from syncManagedDoltPortArtifact, got nil")
+	}
+}
+
+func TestSyncManagedDoltPortArtifactReturnsRemoveError(t *testing.T) {
+	cityDir := t.TempDir()
+	portPath := filepath.Join(cityDir, ".beads", "dolt-server.port")
+	if err := os.MkdirAll(portPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(portPath, "blocker"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := syncManagedDoltPortArtifact(cityDir); err == nil {
+		t.Fatal("expected remove error from syncManagedDoltPortArtifact, got nil")
+	}
+}
+
+func TestSyncManagedDoltPortMirrorsReturnsRemoveErrorWhenConfigMissing(t *testing.T) {
+	cityDir := t.TempDir()
+	portPath := filepath.Join(cityDir, ".beads", "dolt-server.port")
+	if err := os.MkdirAll(portPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(portPath, "blocker"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := syncManagedDoltPortMirrors(cityDir); err == nil {
+		t.Fatal("expected remove error from syncManagedDoltPortMirrors, got nil")
 	}
 }
 
@@ -1738,6 +1803,9 @@ func TestCurrentDoltPortIgnoresDeadRuntimeStateAndPrunesDeadPortFile(t *testing.
 		t.Fatal(err)
 	}
 
+	if err := syncManagedDoltPortArtifact(cityDir); err != nil {
+		t.Fatalf("syncManagedDoltPortArtifact: %v", err)
+	}
 	if got := currentDoltPort(cityDir); got != "" {
 		t.Fatalf("currentDoltPort() = %q, want empty for dead runtime state", got)
 	}
@@ -1771,6 +1839,9 @@ func TestCurrentDoltPortIgnoresReachablePortFileWhenManagedStateIsStopped(t *tes
 		t.Fatal(err)
 	}
 
+	if err := syncManagedDoltPortArtifact(cityDir); err != nil {
+		t.Fatalf("syncManagedDoltPortArtifact: %v", err)
+	}
 	if got := currentDoltPort(cityDir); got != "" {
 		t.Fatalf("currentDoltPort() = %q, want empty when managed state is stopped", got)
 	}

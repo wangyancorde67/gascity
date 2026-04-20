@@ -208,8 +208,8 @@ func managedBdWaitTestTemplate(t *testing.T, bdPath, doltPath string) string {
 			managedBdWaitTemplateErr = fmt.Errorf("remove template runtime pack state: %w", err)
 			return
 		}
-		removeDoltPortFile(cityPath)
-		removeDoltPortFile(rigPath)
+		_ = removeDoltPortFileStrict(cityPath)
+		_ = removeDoltPortFileStrict(rigPath)
 		managedBdWaitTemplatePath = cityPath
 	})
 	if managedBdWaitTemplateErr != nil {

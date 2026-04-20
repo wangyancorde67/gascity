@@ -258,15 +258,20 @@ func (s *Store) Close(id string) error {
 // CloseAll closes multiple beads and sets metadata on each.
 func (s *Store) CloseAll(ids []string, metadata map[string]string) (int, error) {
 	closed := 0
+	var errs []error
 	for _, id := range ids {
 		for k, v := range metadata {
-			_ = s.SetMetadata(id, k, v)
+			if err := s.SetMetadata(id, k, v); err != nil {
+				errs = append(errs, fmt.Errorf("setting metadata %q on bead %q: %w", k, id, err))
+			}
 		}
-		if err := s.Close(id); err == nil {
-			closed++
+		if err := s.Close(id); err != nil {
+			errs = append(errs, err)
+			continue
 		}
+		closed++
 	}
-	return closed, nil
+	return closed, errors.Join(errs...)
 }
 
 // List returns beads matching the query.
