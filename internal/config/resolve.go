@@ -715,7 +715,8 @@ func resolvedChainToSpec(r ResolvedProvider, leaf ProviderSpec) ProviderSpec {
 		out.ACPCommand = r.ACPCommand
 	}
 	if r.ACPArgs != nil {
-		out.ACPArgs = append([]string(nil), r.ACPArgs...)
+		out.ACPArgs = make([]string, len(r.ACPArgs))
+		copy(out.ACPArgs, r.ACPArgs)
 	}
 	if r.PrintArgs != nil {
 		out.PrintArgs = append([]string(nil), r.PrintArgs...)
