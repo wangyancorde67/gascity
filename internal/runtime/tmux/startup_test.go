@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -797,6 +798,42 @@ func TestDoStartSession_SetRemainOnExitErrorIgnored(t *testing.T) {
 	assertCallSequence(t, ops, []string{"createSession", "setRemainOnExit"})
 }
 
+func TestDoStartSession_ReportsBestEffortStartupWarnings(t *testing.T) {
+	var stderr bytes.Buffer
+	ops := &fakeStartOps{
+		hasSessionResult:        true,
+		setRemainOnExitErr:      errors.New("remain-on-exit unsupported"),
+		waitCommandErr:          errors.New("shell not ready"),
+		acceptStartupDialogsErr: errors.New("trust dialog timed out"),
+		waitReadyErr:            errors.New("prompt detection timed out"),
+	}
+
+	cfg := runtime.Config{
+		Command:                "claude",
+		ProcessNames:           []string{"claude"},
+		ReadyPromptPrefix:      "> ",
+		EmitsPermissionWarning: true,
+		Nudge:                  "continue",
+	}
+
+	err := doStartSession(context.Background(), ops, "test", cfg, DefaultConfig().SetupTimeout, newStartupReporter(&stderr))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stderr.String()
+	for _, want := range []string{
+		"gc: startup set_remain_on_exit warning: remain-on-exit unsupported",
+		"gc: startup wait_for_command warning: shell not ready",
+		"gc: startup accept_startup_dialogs warning: trust dialog timed out",
+		"gc: startup wait_for_ready warning: prompt detection timed out",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stderr missing %q in %q", want, out)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ensureFreshSession tests
 // ---------------------------------------------------------------------------
@@ -1088,6 +1125,68 @@ func TestDoStartSession_SetupEnvPassthrough(t *testing.T) {
 		}
 	}
 	t.Error("no runSetupCommand call found")
+}
+
+func TestRunSessionSetup_ReportsCommandAndScriptWarnings(t *testing.T) {
+	var stderr bytes.Buffer
+	ops := &fakeStartOps{}
+	ops.runSetupCommandHook = func(cmd string) {
+		switch cmd {
+		case "echo setup one":
+			ops.runSetupCommandErr = errors.New("setup one failed")
+		case "/tmp/setup.sh":
+			ops.runSetupCommandErr = errors.New("script failed")
+		default:
+			ops.runSetupCommandErr = nil
+		}
+	}
+
+	cfg := runtime.Config{
+		Env:                map[string]string{"GC_AGENT": "mayor"},
+		SessionSetup:       []string{"echo setup one", "echo setup two"},
+		SessionSetupScript: "/tmp/setup.sh",
+	}
+
+	runSessionSetup(context.Background(), ops, "gc-test", cfg, DefaultConfig().SetupTimeout, newStartupReporter(&stderr))
+
+	out := stderr.String()
+	for _, want := range []string{
+		"gc: session_setup[0] warning: setup one failed",
+		"gc: session_setup_script warning: script failed",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stderr missing %q in %q", want, out)
+		}
+	}
+	if strings.Contains(out, "session_setup[1] warning") {
+		t.Fatalf("unexpected warning for successful setup command: %q", out)
+	}
+}
+
+func TestRunSessionLive_ReportsWarnings(t *testing.T) {
+	var stderr bytes.Buffer
+	ops := &fakeStartOps{}
+	ops.runSetupCommandHook = func(cmd string) {
+		if cmd == "echo live two" {
+			ops.runSetupCommandErr = errors.New("live failed")
+			return
+		}
+		ops.runSetupCommandErr = nil
+	}
+
+	cfg := runtime.Config{
+		SessionLive: []string{"echo live one", "echo live two"},
+	}
+
+	runSessionLive(context.Background(), ops, "gc-test", cfg, DefaultConfig().SetupTimeout, newStartupReporter(&stderr))
+
+	out := stderr.String()
+	if !strings.Contains(out, "gc: session_live[1] warning: live failed") {
+		t.Fatalf("stderr = %q, want session_live warning", out)
+	}
+	if strings.Contains(out, "session_live[0] warning") {
+		t.Fatalf("unexpected warning for successful live command: %q", out)
+	}
 }
 
 // ---------------------------------------------------------------------------
