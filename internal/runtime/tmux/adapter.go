@@ -20,11 +20,12 @@ import (
 
 // Provider adapts [Tmux] to the [runtime.Provider] interface.
 type Provider struct {
-	tm       *Tmux
-	cfg      Config
-	cache    *StateCache
-	mu       sync.Mutex
-	workDirs map[string]string // session name → workDir (for CopyTo)
+	tm              *Tmux
+	cfg             Config
+	cache           *StateCache
+	mu              sync.Mutex
+	workDirs        map[string]string   // session name → workDir (for CopyTo)
+	startupWarnings map[string][]string // session name → last startup/live warnings
 }
 
 var instanceTokenReader = rand.Reader
@@ -48,10 +49,11 @@ func NewProviderWithConfig(cfg Config) *Provider {
 	tm := NewTmuxWithConfig(cfg)
 	ttl := cacheTTLFromEnv()
 	return &Provider{
-		tm:       tm,
-		cfg:      cfg,
-		cache:    NewStateCache(&tmuxFetcher{tm: tm}, ttl),
-		workDirs: make(map[string]string),
+		tm:              tm,
+		cfg:             cfg,
+		cache:           NewStateCache(&tmuxFetcher{tm: tm}, ttl),
+		workDirs:        make(map[string]string),
+		startupWarnings: make(map[string][]string),
 	}
 }
 
@@ -110,7 +112,9 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 		}
 	}
 
-	err = doStartSession(ctx, &tmuxStartOps{tm: p.tm}, name, cfg, p.cfg.SetupTimeout, newStartupReporter(os.Stderr))
+	reporter := newStartupReporter(os.Stderr)
+	err = doStartSession(ctx, &tmuxStartOps{tm: p.tm}, name, cfg, p.cfg.SetupTimeout, reporter)
+	p.recordStartupWarnings(name, reporter.warnings())
 	if err == nil {
 		p.setWorkDir(name, cfg.WorkDir)
 		p.cache.Invalidate()
@@ -159,6 +163,7 @@ func newInstanceToken() (string, error) {
 
 func (p *Provider) cleanupFailedStart(name string, cfg runtime.Config) {
 	p.clearWorkDir(name)
+	p.recordStartupWarnings(name, nil)
 
 	instanceToken := strings.TrimSpace(cfg.Env["GC_INSTANCE_TOKEN"])
 	if instanceToken == "" {
@@ -178,10 +183,40 @@ func (p *Provider) cleanupFailedStart(name string, cfg runtime.Config) {
 	}
 }
 
+func (p *Provider) recordStartupWarnings(name string, warnings []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.startupWarnings == nil {
+		p.startupWarnings = make(map[string][]string)
+	}
+	if len(warnings) == 0 {
+		delete(p.startupWarnings, name)
+		return
+	}
+	cp := make([]string, len(warnings))
+	copy(cp, warnings)
+	p.startupWarnings[name] = cp
+}
+
+// StartupWarnings returns the most recent warnings recorded for the named session.
+func (p *Provider) StartupWarnings(name string) []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	warnings := p.startupWarnings[name]
+	if len(warnings) == 0 {
+		return nil
+	}
+	cp := make([]string, len(warnings))
+	copy(cp, warnings)
+	return cp
+}
+
 // RunLive re-applies session_live commands to a running session.
 // Called by the reconciler when only session_live config has changed.
 func (p *Provider) RunLive(name string, cfg runtime.Config) error {
-	runSessionLive(context.Background(), &tmuxStartOps{tm: p.tm}, name, cfg, p.cfg.SetupTimeout, newStartupReporter(os.Stderr))
+	reporter := newStartupReporter(os.Stderr)
+	runSessionLive(context.Background(), &tmuxStartOps{tm: p.tm}, name, cfg, p.cfg.SetupTimeout, reporter)
+	p.recordStartupWarnings(name, reporter.warnings())
 	return nil
 }
 
@@ -194,6 +229,7 @@ func (p *Provider) Stop(name string) error {
 	err := p.tm.KillSessionWithProcesses(name)
 	if err != nil && (errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrNoServer)) {
 		p.clearWorkDir(name)
+		p.recordStartupWarnings(name, nil)
 		p.cache.EvictSession(name)
 		return nil // idempotent
 	}
@@ -201,6 +237,7 @@ func (p *Provider) Stop(name string) error {
 		// Immediately remove from cache so IsRunning reflects the kill
 		// without waiting for an async refresh cycle.
 		p.clearWorkDir(name)
+		p.recordStartupWarnings(name, nil)
 		p.cache.EvictSession(name)
 	}
 	return err

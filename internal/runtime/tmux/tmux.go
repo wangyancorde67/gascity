@@ -234,6 +234,9 @@ func wrapError(err error, stderr string, args []string) error {
 		strings.Contains(stderr, "can't find pane") {
 		return ErrSessionNotFound
 	}
+	if strings.Contains(stderr, "unknown variable") && len(args) > 0 && args[0] == "show-environment" {
+		return ErrEnvironmentNotSet
+	}
 
 	if stderr != "" {
 		return fmt.Errorf("tmux %s: %s", args[0], stderr)
@@ -1189,6 +1192,9 @@ func (t *Tmux) RemoveEnvironment(session, key string) error {
 func (t *Tmux) GetEnvironment(session, key string) (string, error) {
 	out, err := t.run("show-environment", "-t", session, key)
 	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unknown variable") {
+			return "", fmt.Errorf("%w: %s", ErrEnvironmentNotSet, key)
+		}
 		return "", err
 	}
 	if strings.TrimSpace(out) == "-"+key {

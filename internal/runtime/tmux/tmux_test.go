@@ -355,6 +355,20 @@ func TestWrapError(t *testing.T) {
 	}
 }
 
+func TestGetEnvironmentTreatsUnknownVariableAsMissing(t *testing.T) {
+	tm := &Tmux{
+		exec: &fakeExecutor{err: errors.New("unknown variable: GC_META")},
+	}
+
+	val, err := tm.GetEnvironment("gc-test", "GC_META")
+	if val != "" {
+		t.Fatalf("GetEnvironment value = %q, want empty", val)
+	}
+	if !errors.Is(err, ErrEnvironmentNotSet) {
+		t.Fatalf("GetEnvironment error = %v, want ErrEnvironmentNotSet", err)
+	}
+}
+
 func TestEnsureSessionFresh_NoExistingSession(t *testing.T) {
 	if !hasTmux() {
 		t.Skip("tmux not installed")

@@ -3,10 +3,14 @@ package tmux
 import (
 	"fmt"
 	"io"
+	"strings"
+	"sync"
 )
 
 type startupReporter struct {
 	stderr io.Writer
+	mu     sync.Mutex
+	warns  []string
 }
 
 func newStartupReporter(stderr io.Writer) *startupReporter {
@@ -24,10 +28,16 @@ func selectStartupReporter(reporters []*startupReporter) *startupReporter {
 }
 
 func (r *startupReporter) warnf(format string, args ...any) {
-	if r == nil || r.stderr == nil {
+	if r == nil {
 		return
 	}
-	_, _ = fmt.Fprintf(r.stderr, format, args...)
+	msg := fmt.Sprintf(format, args...)
+	if r.stderr != nil {
+		_, _ = io.WriteString(r.stderr, msg)
+	}
+	r.mu.Lock()
+	r.warns = append(r.warns, strings.TrimSpace(msg))
+	r.mu.Unlock()
 }
 
 func (r *startupReporter) startupWarning(step string, err error) {
@@ -56,4 +66,15 @@ func (r *startupReporter) sessionLiveWarning(index int, err error) {
 		return
 	}
 	r.warnf("gc: session_live[%d] warning: %v\n", index, err)
+}
+
+func (r *startupReporter) warnings() []string {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, len(r.warns))
+	copy(out, r.warns)
+	return out
 }

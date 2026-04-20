@@ -326,6 +326,22 @@ func TestProviderGetMetaPropagatesUnexpectedErrors(t *testing.T) {
 	}
 }
 
+func TestProviderGetMetaTreatsUnknownVariableAsMissing(t *testing.T) {
+	provider := &Provider{
+		tm: &Tmux{
+			exec: &fakeExecutor{err: errors.New("unknown variable: GC_META")},
+		},
+	}
+
+	val, err := provider.GetMeta("gc-test", "GC_META")
+	if val != "" {
+		t.Fatalf("GetMeta value = %q, want empty", val)
+	}
+	if err != nil {
+		t.Fatalf("GetMeta error = %v, want nil", err)
+	}
+}
+
 func TestDoStartSession_FullSequence(t *testing.T) {
 	ops := &fakeStartOps{
 		hasSessionResult: true,
@@ -1186,6 +1202,27 @@ func TestRunSessionLive_ReportsWarnings(t *testing.T) {
 	}
 	if strings.Contains(out, "session_live[0] warning") {
 		t.Fatalf("unexpected warning for successful live command: %q", out)
+	}
+}
+
+func TestProviderStartupWarningsAreRecordedAndCopied(t *testing.T) {
+	provider := &Provider{}
+	provider.recordStartupWarnings("gc-test", []string{"warning one", "warning two"})
+
+	got := provider.StartupWarnings("gc-test")
+	if len(got) != 2 {
+		t.Fatalf("StartupWarnings length = %d, want 2", len(got))
+	}
+	got[0] = "mutated"
+
+	again := provider.StartupWarnings("gc-test")
+	if again[0] != "warning one" {
+		t.Fatalf("StartupWarnings was not copied defensively: %v", again)
+	}
+
+	provider.recordStartupWarnings("gc-test", nil)
+	if cleared := provider.StartupWarnings("gc-test"); len(cleared) != 0 {
+		t.Fatalf("StartupWarnings after clear = %v, want empty", cleared)
 	}
 }
 

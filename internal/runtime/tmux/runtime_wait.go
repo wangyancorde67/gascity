@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
@@ -234,6 +235,8 @@ func waitForIdlePoll(ctx context.Context) error {
 	}
 }
 
+var errCodexTranscriptWatchUnavailable = errors.New("codex transcript watch unavailable")
+
 // WaitForInterruptBoundary waits for a provider-native interrupt acknowledgement.
 func (t *Tmux) WaitForInterruptBoundary(ctx context.Context, session string, since time.Time, timeout time.Duration) error {
 	provider, _ := t.GetEnvironment(session, "GC_PROVIDER")
@@ -256,7 +259,56 @@ func (t *Tmux) WaitForInterruptBoundary(ctx context.Context, session string, sin
 	return waitForCodexInterruptBoundary(ctx, codexHome, since, timeout)
 }
 
-func waitForCodexInterruptBoundary(ctx context.Context, codexHome string, since time.Time, timeout time.Duration) error {
+func waitForCodexInterruptBoundaryWatch(ctx context.Context, codexHome string, since time.Time, timeout time.Duration) error {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return errCodexTranscriptWatchUnavailable
+	}
+	defer watcher.Close() //nolint:errcheck
+
+	if err := addCodexTranscriptWatchTree(watcher, codexHome); err != nil {
+		return errCodexTranscriptWatchUnavailable
+	}
+
+	if found, err := codexInterruptBoundarySatisfied(codexHome, since); err == nil && found {
+		return nil
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+			return ErrIdleTimeout
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return errCodexTranscriptWatchUnavailable
+			}
+			if event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Rename|fsnotify.Remove) == 0 {
+				continue
+			}
+			if event.Op&fsnotify.Create != 0 {
+				if info, statErr := os.Stat(event.Name); statErr == nil && info.IsDir() {
+					_ = addCodexTranscriptWatchTree(watcher, event.Name)
+				}
+			}
+			if found, err := codexInterruptBoundarySatisfied(codexHome, since); err == nil && found {
+				return nil
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return errCodexTranscriptWatchUnavailable
+			}
+			_ = err
+			return errCodexTranscriptWatchUnavailable
+		}
+	}
+}
+
+func waitForCodexInterruptBoundaryPoll(ctx context.Context, codexHome string, since time.Time, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
@@ -274,6 +326,47 @@ func waitForCodexInterruptBoundary(ctx context.Context, codexHome string, since 
 		}
 	}
 	return ErrIdleTimeout
+}
+
+func waitForCodexInterruptBoundary(ctx context.Context, codexHome string, since time.Time, timeout time.Duration) error {
+	if err := waitForCodexInterruptBoundaryWatch(ctx, codexHome, since, timeout); err != nil {
+		if errors.Is(err, errCodexTranscriptWatchUnavailable) {
+			return waitForCodexInterruptBoundaryPoll(ctx, codexHome, since, timeout)
+		}
+		return err
+	}
+	return nil
+}
+
+func addCodexTranscriptWatchTree(watcher *fsnotify.Watcher, root string) error {
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return errCodexTranscriptWatchUnavailable
+	}
+	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return errCodexTranscriptWatchUnavailable
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if addErr := watcher.Add(path); addErr != nil {
+			return errCodexTranscriptWatchUnavailable
+		}
+		return nil
+	})
+}
+
+func codexInterruptBoundarySatisfied(codexHome string, since time.Time) (bool, error) {
+	transcriptPath, modTime, err := latestCodexTranscriptPath(codexHome)
+	if err != nil || modTime.Before(since) {
+		return false, err
+	}
+	tail, err := readFileTail(transcriptPath, codexInterruptBoundaryTailBytes)
+	if err != nil {
+		return false, err
+	}
+	return codexTranscriptTailContainsTurnAborted(tail), nil
 }
 
 func latestCodexTranscriptPath(codexHome string) (string, time.Time, error) {
