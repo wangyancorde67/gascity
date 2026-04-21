@@ -880,10 +880,13 @@ type AroundAdvice struct {
 }
 
 func requiresExplicitGraphContract(f *Formula) bool {
-	if f == nil || f.Version < 2 || strings.TrimSpace(f.Contract) != "" || f.Type == TypeExpansion {
+	if f == nil || f.Version < 2 || strings.TrimSpace(f.Contract) != "" {
 		return false
 	}
-	return stepsRequireGraphContract(f.Steps)
+	if stepsRequireGraphContract(f.Steps) {
+		return true
+	}
+	return stepsRequireGraphContract(f.Template)
 }
 
 func stepsRequireGraphContract(steps []*Step) bool {

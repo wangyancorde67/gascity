@@ -174,6 +174,39 @@ title = "[{target.title}] Implement: {{feature}}"
 	})
 }
 
+func TestCompileExpansionFragmentRejectsImplicitGraphContract(t *testing.T) {
+	enableV2ForTest(t)
+
+	dir := t.TempDir()
+	expansion := `
+formula = "implicit-graph-expansion"
+type = "expansion"
+version = 2
+
+[[template]]
+id = "{target}.review"
+title = "Review"
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member" }
+
+[[template]]
+id = "{target}.submit"
+title = "Submit"
+needs = ["{target}.review"]
+`
+	if err := os.WriteFile(filepath.Join(dir, "implicit-graph-expansion.toml"), []byte(expansion), 0o644); err != nil {
+		t.Fatalf("write expansion: %v", err)
+	}
+
+	target := &Step{ID: "demo.target", Title: "Target"}
+	_, err := CompileExpansionFragment(context.Background(), "implicit-graph-expansion", []string{dir}, target, nil)
+	if err == nil {
+		t.Fatal("CompileExpansionFragment succeeded, want explicit graph contract error")
+	}
+	if !strings.Contains(err.Error(), `contract = "graph.v2"`) {
+		t.Fatalf("CompileExpansionFragment error = %v, want graph.v2 contract guidance", err)
+	}
+}
+
 func TestExpandStepDoesNotMutateSharedTemplateState(t *testing.T) {
 	t.Parallel()
 
