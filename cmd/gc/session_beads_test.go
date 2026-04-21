@@ -1880,6 +1880,7 @@ func TestSyncSessionBeads_RefreshesStoredConfigDerivedMetadataOnConfigChange(t *
 			"resume_flag":        "--resume",
 			"resume_style":       "flag",
 			"resume_command":     "claude --resume {{.SessionKey}}",
+			"session_id_flag":    "--session-id",
 			"session_key":        "session-123",
 			"generation":         "1",
 			"continuation_epoch": "7",
@@ -1900,6 +1901,7 @@ func TestSyncSessionBeads_RefreshesStoredConfigDerivedMetadataOnConfigChange(t *
 				ResumeFlag:      "resume",
 				ResumeStyle:     "subcommand",
 				ResumeCommand:   "gemini resume {{.SessionKey}}",
+				SessionIDFlag:   "--session-id",
 			},
 		},
 	}
@@ -1943,6 +1945,9 @@ func TestSyncSessionBeads_RefreshesStoredConfigDerivedMetadataOnConfigChange(t *
 	if got["resume_command"] != "gemini resume {{.SessionKey}}" {
 		t.Fatalf("resume_command = %q, want gemini resume {{.SessionKey}}", got["resume_command"])
 	}
+	if got["session_id_flag"] != "--session-id" {
+		t.Fatalf("session_id_flag = %q, want --session-id", got["session_id_flag"])
+	}
 	if got["session_key"] != "session-123" {
 		t.Fatalf("session_key = %q, want session-123", got["session_key"])
 	}
@@ -1975,6 +1980,7 @@ func TestSyncSessionBeads_ClearsConfigDerivedMetadataForNamelessResolvedProvider
 			"resume_flag":        "resume",
 			"resume_style":       "subcommand",
 			"resume_command":     "gemini resume {{.SessionKey}}",
+			"session_id_flag":    "--session-id",
 			"session_key":        "session-123",
 			"generation":         "1",
 			"continuation_epoch": "7",
@@ -2032,6 +2038,9 @@ func TestSyncSessionBeads_ClearsConfigDerivedMetadataForNamelessResolvedProvider
 	if got["resume_command"] != "" {
 		t.Fatalf("resume_command = %q, want empty", got["resume_command"])
 	}
+	if got["session_id_flag"] != "" {
+		t.Fatalf("session_id_flag = %q, want empty", got["session_id_flag"])
+	}
 	if got["session_key"] != "session-123" {
 		t.Fatalf("session_key = %q, want session-123", got["session_key"])
 	}
@@ -2040,7 +2049,7 @@ func TestSyncSessionBeads_ClearsConfigDerivedMetadataForNamelessResolvedProvider
 	}
 }
 
-func TestSyncSessionBeads_ClearsConfigDerivedMetadataForNilResolvedProvider(t *testing.T) {
+func TestSyncSessionBeads_PreservesConfigDerivedMetadataForNilResolvedProvider(t *testing.T) {
 	store := newCountingMetadataStore()
 	clk := &clock.Fake{Time: time.Date(2026, 4, 22, 12, 6, 0, 0, time.UTC)}
 	sp := runtime.NewFake()
@@ -2064,6 +2073,7 @@ func TestSyncSessionBeads_ClearsConfigDerivedMetadataForNilResolvedProvider(t *t
 			"resume_flag":        "resume",
 			"resume_style":       "subcommand",
 			"resume_command":     "gemini resume {{.SessionKey}}",
+			"session_id_flag":    "--session-id",
 			"session_key":        "session-123",
 			"generation":         "1",
 			"continuation_epoch": "7",
@@ -2103,29 +2113,164 @@ func TestSyncSessionBeads_ClearsConfigDerivedMetadataForNilResolvedProvider(t *t
 	if got["command"] != "/usr/bin/custom --fallback" {
 		t.Fatalf("command = %q, want /usr/bin/custom --fallback", got["command"])
 	}
-	if got["provider"] != "" {
-		t.Fatalf("provider = %q, want empty", got["provider"])
+	if got["provider"] != "gemini-wrapper" {
+		t.Fatalf("provider = %q, want gemini-wrapper", got["provider"])
 	}
-	if got["provider_kind"] != "" {
-		t.Fatalf("provider_kind = %q, want empty", got["provider_kind"])
+	if got["provider_kind"] != "gemini" {
+		t.Fatalf("provider_kind = %q, want gemini", got["provider_kind"])
 	}
-	if got["builtin_ancestor"] != "" {
-		t.Fatalf("builtin_ancestor = %q, want empty", got["builtin_ancestor"])
+	if got["builtin_ancestor"] != "gemini" {
+		t.Fatalf("builtin_ancestor = %q, want gemini", got["builtin_ancestor"])
 	}
-	if got["resume_flag"] != "" {
-		t.Fatalf("resume_flag = %q, want empty", got["resume_flag"])
+	if got["resume_flag"] != "resume" {
+		t.Fatalf("resume_flag = %q, want resume", got["resume_flag"])
 	}
-	if got["resume_style"] != "" {
-		t.Fatalf("resume_style = %q, want empty", got["resume_style"])
+	if got["resume_style"] != "subcommand" {
+		t.Fatalf("resume_style = %q, want subcommand", got["resume_style"])
 	}
-	if got["resume_command"] != "" {
-		t.Fatalf("resume_command = %q, want empty", got["resume_command"])
+	if got["resume_command"] != "gemini resume {{.SessionKey}}" {
+		t.Fatalf("resume_command = %q, want gemini resume {{.SessionKey}}", got["resume_command"])
+	}
+	if got["session_id_flag"] != "--session-id" {
+		t.Fatalf("session_id_flag = %q, want --session-id", got["session_id_flag"])
 	}
 	if got["session_key"] != "session-123" {
 		t.Fatalf("session_key = %q, want session-123", got["session_key"])
 	}
 	if got["continuation_epoch"] != "7" {
 		t.Fatalf("continuation_epoch = %q, want 7", got["continuation_epoch"])
+	}
+}
+
+func TestSyncSessionBeads_PreservesLiveProviderMetadataUntilRestartCommitsCurrentHash(t *testing.T) {
+	store := newCountingMetadataStore()
+	clk := &clock.Fake{Time: time.Date(2026, 4, 22, 12, 7, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+
+	oldTP := TemplateParams{
+		TemplateName: "worker",
+		Command:      "claude --old",
+		WakeMode:     "resume",
+		ResolvedProvider: &config.ResolvedProvider{
+			Name:            "claude-wrapper",
+			BuiltinAncestor: "claude",
+			ResumeFlag:      "--resume",
+			ResumeStyle:     "flag",
+			ResumeCommand:   "claude --resume {{.SessionKey}}",
+			SessionIDFlag:   "--session-id",
+		},
+	}
+	newTP := TemplateParams{
+		TemplateName:     "worker",
+		Command:          "/usr/bin/custom --fast",
+		WakeMode:         "resume",
+		ResolvedProvider: &config.ResolvedProvider{},
+	}
+	oldStartedHash := runtime.CoreFingerprint(templateParamsToConfig(oldTP))
+	newStartedHash := runtime.CoreFingerprint(templateParamsToConfig(newTP))
+
+	if err := sp.Start(context.Background(), "worker", runtime.Config{Command: oldTP.Command}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	_, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name":        "worker",
+			"template":            "worker",
+			"state":               "active",
+			"wake_mode":           "resume",
+			"command":             oldTP.Command,
+			"provider":            "claude-wrapper",
+			"provider_kind":       "claude",
+			"builtin_ancestor":    "claude",
+			"resume_flag":         "--resume",
+			"resume_style":        "flag",
+			"resume_command":      "claude --resume {{.SessionKey}}",
+			"session_id_flag":     "--session-id",
+			"session_key":         "session-123",
+			"generation":          "1",
+			"continuation_epoch":  "7",
+			"started_config_hash": oldStartedHash,
+		},
+	})
+	if err != nil {
+		t.Fatalf("creating seed bead: %v", err)
+	}
+
+	ds := map[string]TemplateParams{"worker": newTP}
+	var stderr bytes.Buffer
+	syncSessionBeads("", store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
+	if stderr.Len() > 0 {
+		t.Fatalf("unexpected stderr after deferred sync: %s", stderr.String())
+	}
+
+	all := allSessionBeads(t, store)
+	if len(all) != 1 {
+		t.Fatalf("expected 1 bead after deferred sync, got %d", len(all))
+	}
+	got := all[0].Metadata
+	if got["command"] != "/usr/bin/custom --fast" {
+		t.Fatalf("command = %q, want /usr/bin/custom --fast", got["command"])
+	}
+	if got["provider"] != "claude-wrapper" {
+		t.Fatalf("provider = %q, want claude-wrapper before restart", got["provider"])
+	}
+	if got["provider_kind"] != "claude" {
+		t.Fatalf("provider_kind = %q, want claude before restart", got["provider_kind"])
+	}
+	if got["builtin_ancestor"] != "claude" {
+		t.Fatalf("builtin_ancestor = %q, want claude before restart", got["builtin_ancestor"])
+	}
+	if got["resume_flag"] != "--resume" {
+		t.Fatalf("resume_flag = %q, want --resume before restart", got["resume_flag"])
+	}
+	if got["resume_style"] != "flag" {
+		t.Fatalf("resume_style = %q, want flag before restart", got["resume_style"])
+	}
+	if got["resume_command"] != "claude --resume {{.SessionKey}}" {
+		t.Fatalf("resume_command = %q, want claude --resume {{.SessionKey}} before restart", got["resume_command"])
+	}
+	if got["session_id_flag"] != "--session-id" {
+		t.Fatalf("session_id_flag = %q, want --session-id before restart", got["session_id_flag"])
+	}
+
+	if err := store.SetMetadata(all[0].ID, "started_config_hash", newStartedHash); err != nil {
+		t.Fatalf("SetMetadata(started_config_hash): %v", err)
+	}
+	clk.Advance(time.Minute)
+	syncSessionBeads("", store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
+	if stderr.Len() > 0 {
+		t.Fatalf("unexpected stderr after post-restart sync: %s", stderr.String())
+	}
+
+	all = allSessionBeads(t, store)
+	if len(all) != 1 {
+		t.Fatalf("expected 1 bead after post-restart sync, got %d", len(all))
+	}
+	got = all[0].Metadata
+	if got["provider"] != "" {
+		t.Fatalf("provider = %q, want empty after restart", got["provider"])
+	}
+	if got["provider_kind"] != "" {
+		t.Fatalf("provider_kind = %q, want empty after restart", got["provider_kind"])
+	}
+	if got["builtin_ancestor"] != "" {
+		t.Fatalf("builtin_ancestor = %q, want empty after restart", got["builtin_ancestor"])
+	}
+	if got["resume_flag"] != "" {
+		t.Fatalf("resume_flag = %q, want empty after restart", got["resume_flag"])
+	}
+	if got["resume_style"] != "" {
+		t.Fatalf("resume_style = %q, want empty after restart", got["resume_style"])
+	}
+	if got["resume_command"] != "" {
+		t.Fatalf("resume_command = %q, want empty after restart", got["resume_command"])
+	}
+	if got["session_id_flag"] != "" {
+		t.Fatalf("session_id_flag = %q, want empty after restart", got["session_id_flag"])
 	}
 }
 
