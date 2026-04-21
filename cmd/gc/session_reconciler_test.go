@@ -1580,6 +1580,39 @@ func TestReconcileSessionBeads_NoDriftWhenHashMatches(t *testing.T) {
 	}
 }
 
+func TestReconcileSessionBeads_ProviderFamilyDriftInitiatesDrain(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
+	oldProvider := &config.ResolvedProvider{Name: "claude-wrapper", Kind: "claude", BuiltinAncestor: "claude"}
+	newProvider := &config.ResolvedProvider{Name: "gemini-wrapper", Kind: "gemini", BuiltinAncestor: "gemini"}
+	env.desiredState["worker"] = TemplateParams{
+		Command:          "test-cmd",
+		SessionName:      "worker",
+		TemplateName:     "worker",
+		ResolvedProvider: newProvider,
+	}
+	_ = env.sp.Start(context.Background(), "worker", runtime.Config{Command: "test-cmd"})
+	session := env.createSessionBead("worker", "worker")
+	env.markSessionActive(&session)
+	env.setSessionMetadata(&session, map[string]string{
+		"started_config_hash":        runtime.CoreFingerprint(runtime.Config{Command: "test-cmd"}),
+		startedProviderFamilyHashKey: resolvedProviderSessionMetadataHash(oldProvider, resolvedProviderFamilyMetadataKeys),
+		"provider":                   oldProvider.Name,
+		"provider_kind":              oldProvider.Kind,
+		"builtin_ancestor":           oldProvider.BuiltinAncestor,
+	})
+
+	env.reconcile([]beads.Bead{session})
+
+	ds := env.dt.get(session.ID)
+	if ds == nil {
+		t.Fatalf("expected drain to be initiated for provider family drift (session.ID=%q, stderr=%s)", session.ID, env.stderr.String())
+	}
+	if ds.reason != "config-drift" {
+		t.Errorf("drain reason = %q, want %q", ds.reason, "config-drift")
+	}
+}
+
 // Regression test for #127: a freshly created session can be drained for
 // config-drift shortly after wake because the reconciler's drift check runs
 // before started_config_hash is written. The fix skips drift detection until

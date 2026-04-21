@@ -117,12 +117,13 @@ func TestReconcileSessionBeads_RestartRequestRotatesKeyForSessionIDProviders(t *
 
 	session := env.createSessionBead(sessionName, "worker")
 	env.setSessionMetadata(&session, map[string]string{
-		namedSessionMetadataKey:      "true",
-		namedSessionIdentityMetadata: "worker",
-		namedSessionModeMetadata:     "on_demand",
-		"restart_requested":          "true",
-		"session_key":                "original-key",
-		"started_config_hash":        "hash-before-restart",
+		namedSessionMetadataKey:        "true",
+		namedSessionIdentityMetadata:   "worker",
+		namedSessionModeMetadata:       "on_demand",
+		"restart_requested":            "true",
+		"session_key":                  "original-key",
+		"started_config_hash":          "hash-before-restart",
+		"started_provider_family_hash": "family-before-restart",
 	})
 
 	env.reconcile([]beads.Bead{session})
@@ -136,6 +137,9 @@ func TestReconcileSessionBeads_RestartRequestRotatesKeyForSessionIDProviders(t *
 	}
 	if got.Metadata["started_config_hash"] != "" {
 		t.Fatalf("started_config_hash = %q, want empty", got.Metadata["started_config_hash"])
+	}
+	if got.Metadata["started_provider_family_hash"] != "" {
+		t.Fatalf("started_provider_family_hash = %q, want empty", got.Metadata["started_provider_family_hash"])
 	}
 	if got.Metadata["continuation_reset_pending"] != "true" {
 		t.Fatalf("continuation_reset_pending = %q, want true", got.Metadata["continuation_reset_pending"])
@@ -162,12 +166,13 @@ func TestReconcileSessionBeads_RestartRequestClearsKeyForResumeOnlyProviders(t *
 
 	session := env.createSessionBead(sessionName, "worker")
 	env.setSessionMetadata(&session, map[string]string{
-		namedSessionMetadataKey:      "true",
-		namedSessionIdentityMetadata: "worker",
-		namedSessionModeMetadata:     "on_demand",
-		"restart_requested":          "true",
-		"session_key":                "original-key",
-		"started_config_hash":        "hash-before-restart",
+		namedSessionMetadataKey:        "true",
+		namedSessionIdentityMetadata:   "worker",
+		namedSessionModeMetadata:       "on_demand",
+		"restart_requested":            "true",
+		"session_key":                  "original-key",
+		"started_config_hash":          "hash-before-restart",
+		"started_provider_family_hash": "family-before-restart",
 	})
 
 	env.reconcile([]beads.Bead{session})
@@ -178,6 +183,9 @@ func TestReconcileSessionBeads_RestartRequestClearsKeyForResumeOnlyProviders(t *
 	}
 	if got.Metadata["started_config_hash"] != "" {
 		t.Fatalf("started_config_hash = %q, want empty", got.Metadata["started_config_hash"])
+	}
+	if got.Metadata["started_provider_family_hash"] != "" {
+		t.Fatalf("started_provider_family_hash = %q, want empty", got.Metadata["started_provider_family_hash"])
 	}
 	if got.Metadata["continuation_reset_pending"] != "true" {
 		t.Fatalf("continuation_reset_pending = %q, want true", got.Metadata["continuation_reset_pending"])
@@ -203,16 +211,17 @@ func TestReconcileSessionBeads_RestartRequestPreservesLiveHashesDuringHandoff(t 
 
 	session := env.createSessionBead(sessionName, "worker")
 	env.setSessionMetadata(&session, map[string]string{
-		namedSessionMetadataKey:      "true",
-		namedSessionIdentityMetadata: "worker",
-		namedSessionModeMetadata:     "on_demand",
-		"state":                      "active",
-		"restart_requested":          "true",
-		"session_key":                "original-key",
-		"started_config_hash":        "hash-before-restart",
-		"started_live_hash":          "live-before-restart",
-		"live_hash":                  "live-before-restart",
-		"startup_dialog_verified":    "true",
+		namedSessionMetadataKey:        "true",
+		namedSessionIdentityMetadata:   "worker",
+		namedSessionModeMetadata:       "on_demand",
+		"state":                        "active",
+		"restart_requested":            "true",
+		"session_key":                  "original-key",
+		"started_config_hash":          "hash-before-restart",
+		"started_provider_family_hash": "family-before-restart",
+		"started_live_hash":            "live-before-restart",
+		"live_hash":                    "live-before-restart",
+		"startup_dialog_verified":      "true",
 	})
 	if err := env.sp.Start(context.Background(), sessionName, runtime.Config{Command: "true"}); err != nil {
 		t.Fatalf("start session: %v", err)
@@ -226,6 +235,9 @@ func TestReconcileSessionBeads_RestartRequestPreservesLiveHashesDuringHandoff(t 
 	got, _ := env.store.Get(session.ID)
 	if got.Metadata["started_config_hash"] != "" {
 		t.Fatalf("started_config_hash = %q, want empty", got.Metadata["started_config_hash"])
+	}
+	if got.Metadata["started_provider_family_hash"] != "" {
+		t.Fatalf("started_provider_family_hash = %q, want empty", got.Metadata["started_provider_family_hash"])
 	}
 	if got.Metadata["session_key"] == "" || got.Metadata["session_key"] == "original-key" {
 		t.Fatalf("session_key = %q, want rotated key", got.Metadata["session_key"])

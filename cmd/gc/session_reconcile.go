@@ -541,7 +541,7 @@ func recordWakeFailure(session *beads.Bead, store beads.Store, clk clock.Clock) 
 	// runs. Clear started_config_hash whenever either field is set so the
 	// recovery remains correct in that call order and for any skewed state
 	// left behind by older builds.
-	if session.Metadata["session_key"] != "" || session.Metadata["started_config_hash"] != "" {
+	if session.Metadata["session_key"] != "" || session.Metadata["started_config_hash"] != "" || session.Metadata["started_provider_family_hash"] != "" {
 		_ = store.SetMetadataBatch(session.ID, map[string]string{
 			"session_key":                  "",
 			"started_config_hash":          "",
