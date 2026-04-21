@@ -55,35 +55,58 @@ func snapshotOrLoadSessionBeads(store beads.Store, sessionBeads *sessionBeadSnap
 	return loadSessionBeads(store)
 }
 
+var resolvedProviderSessionMetadataKeys = []string{
+	"provider",
+	"provider_kind",
+	"builtin_ancestor",
+	"resume_flag",
+	"resume_style",
+	"resume_command",
+}
+
+func resolvedProviderSessionMetadata(resolved *config.ResolvedProvider) map[string]string {
+	if resolved == nil {
+		return nil
+	}
+	name := strings.TrimSpace(resolved.Name)
+	ancestor := strings.TrimSpace(resolved.BuiltinAncestor)
+	if ancestor == name {
+		ancestor = ""
+	}
+	return map[string]string{
+		"provider":         name,
+		"provider_kind":    resolvedProviderFamilyMetadata(resolved),
+		"builtin_ancestor": ancestor,
+		"resume_flag":      strings.TrimSpace(resolved.ResumeFlag),
+		"resume_style":     strings.TrimSpace(resolved.ResumeStyle),
+		"resume_command":   strings.TrimSpace(resolved.ResumeCommand),
+	}
+}
+
 func stampResolvedProviderSessionMetadata(meta map[string]string, resolved *config.ResolvedProvider) {
 	if meta == nil || resolved == nil {
 		return
 	}
-	name := strings.TrimSpace(resolved.Name)
-	if name != "" {
-		meta["provider"] = name
-	}
-	if family := resolvedProviderFamilyMetadata(resolved); family != "" {
-		meta["provider_kind"] = family
-	}
-	if ancestor := strings.TrimSpace(resolved.BuiltinAncestor); ancestor != "" && ancestor != name {
-		meta["builtin_ancestor"] = ancestor
+	for key, value := range resolvedProviderSessionMetadata(resolved) {
+		if value != "" {
+			meta[key] = value
+		}
 	}
 }
 
-func queueMissingResolvedProviderSessionMetadata(existing map[string]string, queue func(string, string), resolved *config.ResolvedProvider) {
+func queueResolvedProviderSessionMetadata(existing map[string]string, queue func(string, string), resolved *config.ResolvedProvider) {
 	if queue == nil || resolved == nil {
 		return
 	}
-	name := strings.TrimSpace(resolved.Name)
-	if existing["provider"] == "" && name != "" {
-		queue("provider", name)
-	}
-	if family := resolvedProviderFamilyMetadata(resolved); existing["provider_kind"] == "" && family != "" {
-		queue("provider_kind", family)
-	}
-	if ancestor := strings.TrimSpace(resolved.BuiltinAncestor); existing["builtin_ancestor"] == "" && ancestor != "" && ancestor != name {
-		queue("builtin_ancestor", ancestor)
+	desired := resolvedProviderSessionMetadata(resolved)
+	for _, key := range resolvedProviderSessionMetadataKeys {
+		value := desired[key]
+		if key == "provider" && value == "" {
+			continue
+		}
+		if strings.TrimSpace(existing[key]) != value {
+			queue(key, value)
+		}
 	}
 }
 
@@ -691,22 +714,14 @@ func syncSessionBeadsWithSnapshot(
 			} else if slot := resolvePoolSlot(tp.InstanceName, tp.TemplateName); slot > 0 {
 				meta["pool_slot"] = strconv.Itoa(slot)
 			}
-			// Store command and resume fields so gc session attach can
-			// reconstruct the resume command from bead metadata alone.
+			// Store command plus resolved-provider metadata so attach and
+			// resume flows can reconstruct current provider behavior from the
+			// bead alone.
 			if tp.Command != "" {
 				meta["command"] = tp.Command
 			}
 			if tp.ResolvedProvider != nil {
 				stampResolvedProviderSessionMetadata(meta, tp.ResolvedProvider)
-				if tp.ResolvedProvider.ResumeFlag != "" {
-					meta["resume_flag"] = tp.ResolvedProvider.ResumeFlag
-				}
-				if tp.ResolvedProvider.ResumeStyle != "" {
-					meta["resume_style"] = tp.ResolvedProvider.ResumeStyle
-				}
-				if tp.ResolvedProvider.ResumeCommand != "" {
-					meta["resume_command"] = tp.ResolvedProvider.ResumeCommand
-				}
 			}
 			createBead := func() (beads.Bead, error) {
 				return store.Create(beads.Bead{
@@ -879,28 +894,21 @@ func syncSessionBeadsWithSnapshot(
 		if b.Metadata["continuation_epoch"] == "" {
 			queueMeta("continuation_epoch", strconv.Itoa(session.DefaultContinuationEpoch))
 		}
-		// Refresh command and resume fields. The stored command is used for
+		// Refresh config-derived session metadata. The stored command is used for
 		// `gc session attach` and — on legacy code paths — can act as the
-		// authoritative command source for respawn. If agent config changes
-		// (e.g., adding `[option_defaults] model = "opus"`), the freshly
-		// resolved tp.Command will differ from the stored value; sync here
-		// so the bead matches the current config. An empty tp.Command is
-		// ignored to avoid clobbering the stored value when resolution fails
-		// transiently.
+		// authoritative command source for respawn, so refresh it when the
+		// resolved launch command drifts. An empty tp.Command is ignored to avoid
+		// clobbering the stored value when command resolution fails transiently.
+		//
+		// Resolved-provider identity and resume metadata are also config-derived,
+		// but unlike session_key / continuation_epoch they are not lifecycle
+		// state. When provider config changes, sync them exactly to the current
+		// resolved provider, including clearing stale fields that no longer apply.
 		if tp.Command != "" && b.Metadata["command"] != tp.Command {
 			queueMeta("command", tp.Command)
 		}
 		if tp.ResolvedProvider != nil {
-			queueMissingResolvedProviderSessionMetadata(b.Metadata, queueMeta, tp.ResolvedProvider)
-			if b.Metadata["resume_flag"] == "" && tp.ResolvedProvider.ResumeFlag != "" {
-				queueMeta("resume_flag", tp.ResolvedProvider.ResumeFlag)
-			}
-			if b.Metadata["resume_style"] == "" && tp.ResolvedProvider.ResumeStyle != "" {
-				queueMeta("resume_style", tp.ResolvedProvider.ResumeStyle)
-			}
-			if b.Metadata["resume_command"] == "" && tp.ResolvedProvider.ResumeCommand != "" {
-				queueMeta("resume_command", tp.ResolvedProvider.ResumeCommand)
-			}
+			queueResolvedProviderSessionMetadata(b.Metadata, queueMeta, tp.ResolvedProvider)
 		}
 
 		// Update existing bead metadata.
