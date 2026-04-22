@@ -647,27 +647,17 @@ func reconcileSessionBeadsTraced(
 							}
 						}
 					}
-					currentHash := runtime.CoreFingerprint(agentCfg)
-					storedFamilyHash := strings.TrimSpace(session.Metadata[startedProviderFamilyHashKey])
-					currentFamilyHash := ""
-					familyDrift := false
-					if tp.ResolvedProvider != nil && storedFamilyHash != "" {
-						currentFamilyHash = resolvedProviderSessionMetadataHash(tp.ResolvedProvider, resolvedProviderFamilyMetadataKeys)
-						familyDrift = storedFamilyHash != currentFamilyHash
-					}
-					if storedHash != currentHash || familyDrift {
-						if storedHash != currentHash {
-							fmt.Fprintf(stderr, "config-drift %s: stored=%s current=%s cmd=%q\n", name, storedHash[:12], currentHash[:12], agentCfg.Command) //nolint:errcheck
-						} else {
-							fmt.Fprintf(stderr, "config-drift %s: provider-family stored=%s current=%s\n", name, storedFamilyHash[:12], currentFamilyHash[:12]) //nolint:errcheck
-						}
+					match := startedConfigMatchesFingerprint(session.Metadata, agentCfg, tp.ResolvedProvider)
+					currentHash := match.currentHash
+					if !match.matches {
+						fmt.Fprintf(stderr, "config-drift %s: stored=%s current=%s cmd=%q\n", name, storedHash[:12], currentHash[:12], agentCfg.Command) //nolint:errcheck
 						// Diagnostic: log per-field breakdown to identify the drifting field.
 						var storedBreakdown map[string]string
 						if raw := session.Metadata["core_hash_breakdown"]; raw != "" {
 							_ = json.Unmarshal([]byte(raw), &storedBreakdown)
 						}
-						runtime.LogCoreFingerprintDrift(stderr, name, storedBreakdown, agentCfg)
-						driftEpisode := storedHash + ":" + currentHash + ":" + storedFamilyHash + ":" + currentFamilyHash
+						runtime.LogCoreFingerprintDrift(stderr, name, storedBreakdown, withProviderSessionFingerprint(agentCfg, tp.ResolvedProvider, session.Metadata))
+						driftEpisode := storedHash + ":" + currentHash
 						if isNamedSessionBead(*session) {
 							// Defer config-drift restart for named sessions
 							// that are actively in use (pending interaction,
@@ -681,11 +671,9 @@ func reconcileSessionBeadsTraced(
 							if active {
 								if trace != nil {
 									trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", string(TraceOutcomeDeferredActive), traceRecordPayload{
-										"stored_hash":         storedHash,
-										"current_hash":        currentHash,
-										"stored_family_hash":  storedFamilyHash,
-										"current_family_hash": currentFamilyHash,
-										"active_reason":       activeReason,
+										"stored_hash":   storedHash,
+										"current_hash":  currentHash,
+										"active_reason": activeReason,
 									}, nil, "")
 								}
 								continue
@@ -693,10 +681,8 @@ func reconcileSessionBeadsTraced(
 							resetConfiguredNamedSessionForConfigDrift(session, store, sp, name, alive, "creating", stderr)
 							if trace != nil {
 								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "restart_in_place", traceRecordPayload{
-									"stored_hash":         storedHash,
-									"current_hash":        currentHash,
-									"stored_family_hash":  storedFamilyHash,
-									"current_family_hash": currentFamilyHash,
+									"stored_hash":  storedHash,
+									"current_hash": currentHash,
 								}, nil, "")
 							}
 							rec.Record(events.Event{
@@ -717,11 +703,9 @@ func reconcileSessionBeadsTraced(
 							}
 							if trace != nil {
 								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "pending", "deferred_pending", traceRecordPayload{
-									"stored_hash":         storedHash,
-									"current_hash":        currentHash,
-									"stored_family_hash":  storedFamilyHash,
-									"current_family_hash": currentFamilyHash,
-									"drain_canceled":      drainCancelled,
+									"stored_hash":    storedHash,
+									"current_hash":   currentHash,
+									"drain_canceled": drainCancelled,
 								}, nil, "")
 							}
 							continue
@@ -730,10 +714,8 @@ func reconcileSessionBeadsTraced(
 						if err == nil && attached {
 							if trace != nil {
 								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "deferred_attached", traceRecordPayload{
-									"stored_hash":         storedHash,
-									"current_hash":        currentHash,
-									"stored_family_hash":  storedFamilyHash,
-									"current_family_hash": currentFamilyHash,
+									"stored_hash":  storedHash,
+									"current_hash": currentHash,
 								}, nil, "")
 							}
 							continue
@@ -742,10 +724,8 @@ func reconcileSessionBeadsTraced(
 							resetConfiguredNamedSessionForConfigDrift(session, store, sp, name, alive, "creating", stderr)
 							if trace != nil {
 								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "restart_in_place", traceRecordPayload{
-									"stored_hash":         storedHash,
-									"current_hash":        currentHash,
-									"stored_family_hash":  storedFamilyHash,
-									"current_family_hash": currentFamilyHash,
+									"stored_hash":  storedHash,
+									"current_hash": currentHash,
 								}, nil, "")
 							}
 							rec.Record(events.Event{
@@ -762,10 +742,8 @@ func reconcileSessionBeadsTraced(
 						if sp.IsAttached(name) {
 							if trace != nil {
 								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "deferred_attached", traceRecordPayload{
-									"stored_hash":         storedHash,
-									"current_hash":        currentHash,
-									"stored_family_hash":  storedFamilyHash,
-									"current_family_hash": currentFamilyHash,
+									"stored_hash":  storedHash,
+									"current_hash": currentHash,
 								}, nil, "")
 							}
 							continue
@@ -778,10 +756,8 @@ func reconcileSessionBeadsTraced(
 							fmt.Fprintf(stdout, "Draining session '%s': config-drift\n", name) //nolint:errcheck
 							if trace != nil {
 								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "drain", traceRecordPayload{
-									"stored_hash":         storedHash,
-									"current_hash":        currentHash,
-									"stored_family_hash":  storedFamilyHash,
-									"current_family_hash": currentFamilyHash,
+									"stored_hash":  storedHash,
+									"current_hash": currentHash,
 								}, nil, "")
 							}
 							rec.Record(events.Event{

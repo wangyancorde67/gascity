@@ -1100,9 +1100,9 @@ func TestRecoverRunningPendingCreate_StampsCreationCompleteAtForAlreadyActive(t 
 		t.Fatalf("creation_complete_at = %q, want %q — sweep guard would treat healed bead as stale without this stamp",
 			got.Metadata["creation_complete_at"], clkTime.Format(time.RFC3339))
 	}
-	wantFamilyHash := resolvedProviderSessionMetadataHash(tp.ResolvedProvider, resolvedProviderFamilyMetadataKeys)
-	if got.Metadata[startedProviderFamilyHashKey] != wantFamilyHash {
-		t.Fatalf("%s = %q, want %q", startedProviderFamilyHashKey, got.Metadata[startedProviderFamilyHashKey], wantFamilyHash)
+	wantStartedHash := coreFingerprintForTemplateParams(tp, nil)
+	if got.Metadata["started_config_hash"] != wantStartedHash {
+		t.Fatalf("started_config_hash = %q, want %q", got.Metadata["started_config_hash"], wantStartedHash)
 	}
 }
 

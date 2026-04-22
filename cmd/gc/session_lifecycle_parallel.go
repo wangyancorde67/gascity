@@ -53,7 +53,6 @@ type preparedStart struct {
 	candidate     startCandidate
 	cfg           runtime.Config
 	coreHash      string
-	familyHash    string
 	coreBreakdown map[string]string
 	liveHash      string
 }
@@ -318,9 +317,8 @@ func buildPreparedStart(
 		}
 	}
 
-	coreHash := runtime.CoreFingerprint(agentCfg)
-	familyHash := resolvedProviderSessionMetadataHash(tp.ResolvedProvider, resolvedProviderFamilyMetadataKeys)
-	coreBreakdown := runtime.CoreFingerprintBreakdown(agentCfg)
+	coreHash := coreFingerprint(agentCfg, tp.ResolvedProvider, session.Metadata)
+	coreBreakdown := coreFingerprintBreakdown(agentCfg, tp.ResolvedProvider, session.Metadata)
 	liveHash := runtime.LiveFingerprint(agentCfg)
 	if wd := resolveTaskWorkDir(store, session.ID, candidate.name(), strings.TrimSpace(session.Metadata["alias"]), candidate.logicalTemplate(cfg)); wd != "" {
 		agentCfg.WorkDir = wd
@@ -440,7 +438,6 @@ func buildPreparedStart(
 		candidate:     candidate,
 		cfg:           agentCfg,
 		coreHash:      coreHash,
-		familyHash:    familyHash,
 		coreBreakdown: coreBreakdown,
 		liveHash:      liveHash,
 	}, nil
@@ -690,7 +687,6 @@ func commitStartResultTraced(
 	// the state gate.
 	metadata := sessionpkg.CommitStartedPatch(sessionpkg.CommitStartedPatchInput{
 		CoreHash:                result.prepared.coreHash,
-		ProviderFamilyHash:      result.prepared.familyHash,
 		LiveHash:                result.prepared.liveHash,
 		CoreBreakdown:           coreBreakdown,
 		ConfirmState:            confirmPendingStart(session.Metadata["state"]),
@@ -762,10 +758,9 @@ func recoverRunningPendingCreate(
 		now = time.Now()
 	}
 	metadata := sessionpkg.CommitStartedPatch(sessionpkg.CommitStartedPatchInput{
-		CoreHash:           prepared.coreHash,
-		ProviderFamilyHash: prepared.familyHash,
-		LiveHash:           prepared.liveHash,
-		CoreBreakdown:      coreBreakdown,
+		CoreHash:      prepared.coreHash,
+		LiveHash:      prepared.liveHash,
+		CoreBreakdown: coreBreakdown,
 		ConfirmState: confirmPendingStart(session.Metadata["state"]) ||
 			sessionpkg.State(strings.TrimSpace(session.Metadata["state"])) == sessionpkg.StateAwake,
 		ClearSleepReason: session.Metadata["sleep_reason"] != "",

@@ -541,16 +541,14 @@ func recordWakeFailure(session *beads.Bead, store beads.Store, clk clock.Clock) 
 	// runs. Clear started_config_hash whenever either field is set so the
 	// recovery remains correct in that call order and for any skewed state
 	// left behind by older builds.
-	if session.Metadata["session_key"] != "" || session.Metadata["started_config_hash"] != "" || session.Metadata["started_provider_family_hash"] != "" {
+	if session.Metadata["session_key"] != "" || session.Metadata["started_config_hash"] != "" {
 		_ = store.SetMetadataBatch(session.ID, map[string]string{
-			"session_key":                  "",
-			"started_config_hash":          "",
-			"started_provider_family_hash": "",
-			"continuation_reset_pending":   "true",
+			"session_key":                "",
+			"started_config_hash":        "",
+			"continuation_reset_pending": "true",
 		})
 		session.Metadata["session_key"] = ""
 		session.Metadata["started_config_hash"] = ""
-		session.Metadata["started_provider_family_hash"] = ""
 		session.Metadata["continuation_reset_pending"] = "true"
 	}
 	if attempts >= defaultMaxWakeAttempts {
@@ -829,7 +827,6 @@ func healStatePatch(session beads.Bead, alive bool, clk clock.Clock) map[string]
 	if target == string(sessionpkg.StateAsleep) && view.ResetContinuation {
 		batch["session_key"] = ""
 		batch["started_config_hash"] = ""
-		batch["started_provider_family_hash"] = ""
 		batch["continuation_reset_pending"] = "true"
 	}
 	return emptyNil(batch)

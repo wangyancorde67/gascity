@@ -37,6 +37,7 @@ import (
 const (
 	startupPromptDeliveredEnv = "GC_STARTUP_PROMPT_DELIVERED"
 	managedSessionHookEnv     = "GC_MANAGED_SESSION_HOOK"
+	providerFingerprintPrefix = "provider_meta."
 )
 
 // TemplateParams holds all resolved values needed to start a session.
@@ -595,4 +596,135 @@ func templateParamsToConfig(tp TemplateParams) runtime.Config {
 		CopyFiles:              tp.Hints.CopyFiles,
 		FingerprintExtra:       tp.FPExtra,
 	}
+}
+
+func providerSessionFingerprintMetadata(
+	resolved *config.ResolvedProvider,
+	fallback map[string]string,
+) (map[string]string, bool) {
+	if resolved != nil {
+		selected := make(map[string]string, len(resolvedProviderConfigMetadataKeys))
+		meta := resolvedProviderSessionMetadata(resolved)
+		for _, key := range resolvedProviderConfigMetadataKeys {
+			selected[key] = meta[key]
+		}
+		return selected, true
+	}
+	if len(fallback) == 0 {
+		return nil, false
+	}
+	selected := make(map[string]string, len(resolvedProviderConfigMetadataKeys))
+	present := false
+	for _, key := range resolvedProviderConfigMetadataKeys {
+		value := ""
+		if raw, ok := fallback[key]; ok {
+			present = true
+			value = raw
+		}
+		selected[key] = strings.TrimSpace(value)
+	}
+	if !present {
+		return nil, false
+	}
+	return selected, true
+}
+
+func withProviderSessionFingerprint(cfg runtime.Config, resolved *config.ResolvedProvider, fallback map[string]string) runtime.Config {
+	fpExtra := maps.Clone(cfg.FingerprintExtra)
+	for key := range fpExtra {
+		if strings.HasPrefix(key, providerFingerprintPrefix) {
+			delete(fpExtra, key)
+		}
+	}
+	meta, ok := providerSessionFingerprintMetadata(resolved, fallback)
+	if !ok {
+		cfg.FingerprintExtra = fpExtra
+		return cfg
+	}
+	if fpExtra == nil {
+		fpExtra = make(map[string]string, len(meta))
+	}
+	for _, key := range resolvedProviderConfigMetadataKeys {
+		fpExtra[providerFingerprintPrefix+key] = meta[key]
+	}
+	cfg.FingerprintExtra = fpExtra
+	return cfg
+}
+
+func coreFingerprintConfig(tp TemplateParams, fallback map[string]string) runtime.Config {
+	return withProviderSessionFingerprint(templateParamsToConfig(tp), tp.ResolvedProvider, fallback)
+}
+
+func coreFingerprintForTemplateParams(tp TemplateParams, fallback map[string]string) string {
+	return coreFingerprint(templateParamsToConfig(tp), tp.ResolvedProvider, fallback)
+}
+
+func coreFingerprintBreakdownForTemplateParams(tp TemplateParams, fallback map[string]string) map[string]string {
+	return coreFingerprintBreakdown(templateParamsToConfig(tp), tp.ResolvedProvider, fallback)
+}
+
+func legacyCoreFingerprintForTemplateParams(tp TemplateParams) string {
+	return runtime.CoreFingerprint(templateParamsToConfig(tp))
+}
+
+func coreFingerprint(cfg runtime.Config, resolved *config.ResolvedProvider, fallback map[string]string) string {
+	return runtime.CoreFingerprint(withProviderSessionFingerprint(cfg, resolved, fallback))
+}
+
+func coreFingerprintBreakdown(cfg runtime.Config, resolved *config.ResolvedProvider, fallback map[string]string) map[string]string {
+	return runtime.CoreFingerprintBreakdown(withProviderSessionFingerprint(cfg, resolved, fallback))
+}
+
+func startedConfigMatchesFingerprint(
+	meta map[string]string,
+	cfg runtime.Config,
+	resolved *config.ResolvedProvider,
+) startedConfigFingerprintMatch {
+	currentHash := coreFingerprint(cfg, resolved, meta)
+	storedHash := strings.TrimSpace(meta["started_config_hash"])
+	if storedHash == "" {
+		return startedConfigFingerprintMatch{currentHash: currentHash}
+	}
+	if storedHash == currentHash {
+		return startedConfigFingerprintMatch{
+			currentHash:          currentHash,
+			matches:              true,
+			providerMetadataSync: true,
+		}
+	}
+	if storedHash != runtime.CoreFingerprint(cfg) {
+		return startedConfigFingerprintMatch{currentHash: currentHash}
+	}
+	storedProviderMeta, storedProviderKnown := providerSessionFingerprintMetadata(nil, meta)
+	if !storedProviderKnown {
+		return startedConfigFingerprintMatch{
+			currentHash: currentHash,
+			matches:     true,
+		}
+	}
+	desiredProviderMeta, desiredProviderKnown := providerSessionFingerprintMetadata(resolved, nil)
+	if !desiredProviderKnown {
+		return startedConfigFingerprintMatch{
+			currentHash: currentHash,
+			matches:     true,
+		}
+	}
+	if !maps.Equal(storedProviderMeta, desiredProviderMeta) {
+		return startedConfigFingerprintMatch{currentHash: currentHash}
+	}
+	return startedConfigFingerprintMatch{
+		currentHash:          currentHash,
+		matches:              true,
+		providerMetadataSync: true,
+	}
+}
+
+type startedConfigFingerprintMatch struct {
+	currentHash          string
+	matches              bool
+	providerMetadataSync bool
+}
+
+func startedConfigMatchesCurrentFingerprint(meta map[string]string, tp TemplateParams) startedConfigFingerprintMatch {
+	return startedConfigMatchesFingerprint(meta, templateParamsToConfig(tp), tp.ResolvedProvider)
 }

@@ -8,7 +8,6 @@ import (
 var freshWakeConversationResetKeys = []string{
 	"session_key",
 	"started_config_hash",
-	"started_provider_family_hash",
 	"started_live_hash",
 	"live_hash",
 	startupDialogVerifiedKey,
@@ -44,7 +43,6 @@ func (p MetadataPatch) Apply(meta map[string]string) map[string]string {
 // reuse the same cleared fields so fresh-wake semantics do not drift.
 func applyFreshWakeConversationReset(patch MetadataPatch) {
 	patch["started_config_hash"] = ""
-	patch["started_provider_family_hash"] = ""
 	patch["started_live_hash"] = ""
 	patch["live_hash"] = ""
 	patch[startupDialogVerifiedKey] = ""
@@ -174,7 +172,6 @@ func ConfirmStartedPatch(now time.Time) MetadataPatch {
 // where the claim is gone but the post-create marker hasn't landed yet.
 type CommitStartedPatchInput struct {
 	CoreHash                string
-	ProviderFamilyHash      string
 	LiveHash                string
 	CoreBreakdown           string
 	ConfirmState            bool
@@ -190,9 +187,6 @@ func CommitStartedPatch(input CommitStartedPatchInput) MetadataPatch {
 		"started_config_hash": input.CoreHash,
 		"live_hash":           input.LiveHash,
 		"started_live_hash":   input.LiveHash,
-	}
-	if input.ProviderFamilyHash != "" {
-		patch["started_provider_family_hash"] = input.ProviderFamilyHash
 	}
 	if input.CoreBreakdown != "" {
 		patch["core_hash_breakdown"] = input.CoreBreakdown
@@ -276,12 +270,11 @@ func CompleteDrainPatch(now time.Time, reason string, freshWake bool) MetadataPa
 // currently running runtime.
 func RestartRequestPatch(sessionKey string) MetadataPatch {
 	patch := MetadataPatch{
-		"restart_requested":            "",
-		"started_config_hash":          "",
-		"started_provider_family_hash": "",
-		"continuation_reset_pending":   "true",
-		"last_woke_at":                 "",
-		"pending_create_claim":         "",
+		"restart_requested":          "",
+		"started_config_hash":        "",
+		"continuation_reset_pending": "true",
+		"last_woke_at":               "",
+		"pending_create_claim":       "",
 	}
 	if sessionKey != "" {
 		patch["session_key"] = sessionKey

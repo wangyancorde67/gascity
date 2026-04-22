@@ -1001,9 +1001,8 @@ func TestRecordWakeFailure_ClearsStartedConfigHash(t *testing.T) {
 	store := newTestStore()
 
 	session := makeBead("b1", map[string]string{
-		"session_key":                  "old-key",
-		"started_config_hash":          "abc123",
-		"started_provider_family_hash": "family123",
+		"session_key":         "old-key",
+		"started_config_hash": "abc123",
 	})
 
 	recordWakeFailure(&session, store, clk)
@@ -1014,9 +1013,6 @@ func TestRecordWakeFailure_ClearsStartedConfigHash(t *testing.T) {
 	if session.Metadata["started_config_hash"] != "" {
 		t.Errorf("started_config_hash = %q, want empty (so next wake uses --session-id, not --resume)", session.Metadata["started_config_hash"])
 	}
-	if session.Metadata["started_provider_family_hash"] != "" {
-		t.Errorf("started_provider_family_hash = %q, want empty", session.Metadata["started_provider_family_hash"])
-	}
 }
 
 func TestRecordWakeFailure_ClearsStartedConfigHashWhenSessionKeyAlreadyEmpty(t *testing.T) {
@@ -1025,17 +1021,13 @@ func TestRecordWakeFailure_ClearsStartedConfigHashWhenSessionKeyAlreadyEmpty(t *
 	store := newTestStore()
 
 	session := makeBead("b1", map[string]string{
-		"started_config_hash":          "abc123",
-		"started_provider_family_hash": "family123",
+		"started_config_hash": "abc123",
 	})
 
 	recordWakeFailure(&session, store, clk)
 
 	if session.Metadata["started_config_hash"] != "" {
 		t.Errorf("started_config_hash = %q, want empty", session.Metadata["started_config_hash"])
-	}
-	if session.Metadata["started_provider_family_hash"] != "" {
-		t.Errorf("started_provider_family_hash = %q, want empty", session.Metadata["started_provider_family_hash"])
 	}
 	if session.Metadata["continuation_reset_pending"] != "true" {
 		t.Errorf("continuation_reset_pending = %q, want true", session.Metadata["continuation_reset_pending"])
@@ -1586,11 +1578,10 @@ func TestCheckStability_RapidExitAfterHealStateKeepsStartedConfigHashCleared(t *
 	store := newTestStore()
 
 	session := makeBead("b1", map[string]string{
-		"state":                        "active",
-		"session_key":                  "old-key",
-		"started_config_hash":          "hash-before",
-		"started_provider_family_hash": "family-before",
-		"last_woke_at":                 now.Add(-5 * time.Second).UTC().Format(time.RFC3339),
+		"state":               "active",
+		"session_key":         "old-key",
+		"started_config_hash": "hash-before",
+		"last_woke_at":        now.Add(-5 * time.Second).UTC().Format(time.RFC3339),
 	})
 
 	healState(&session, false, store, clk)
@@ -1600,17 +1591,11 @@ func TestCheckStability_RapidExitAfterHealStateKeepsStartedConfigHashCleared(t *
 	if session.Metadata["started_config_hash"] != "" {
 		t.Fatalf("healState started_config_hash = %q, want empty", session.Metadata["started_config_hash"])
 	}
-	if session.Metadata["started_provider_family_hash"] != "" {
-		t.Fatalf("healState started_provider_family_hash = %q, want empty", session.Metadata["started_provider_family_hash"])
-	}
 	if !checkStability(&session, nil, false, nil, store, clk) {
 		t.Fatal("checkStability should record the rapid exit")
 	}
 	if session.Metadata["started_config_hash"] != "" {
 		t.Fatalf("started_config_hash = %q after recordWakeFailure, want empty", session.Metadata["started_config_hash"])
-	}
-	if session.Metadata["started_provider_family_hash"] != "" {
-		t.Fatalf("started_provider_family_hash = %q after recordWakeFailure, want empty", session.Metadata["started_provider_family_hash"])
 	}
 	if session.Metadata["continuation_reset_pending"] != "true" {
 		t.Fatalf("continuation_reset_pending = %q, want true", session.Metadata["continuation_reset_pending"])

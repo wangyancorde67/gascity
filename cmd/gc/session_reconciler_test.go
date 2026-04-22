@@ -1595,11 +1595,15 @@ func TestReconcileSessionBeads_ProviderFamilyDriftInitiatesDrain(t *testing.T) {
 	session := env.createSessionBead("worker", "worker")
 	env.markSessionActive(&session)
 	env.setSessionMetadata(&session, map[string]string{
-		"started_config_hash":        runtime.CoreFingerprint(runtime.Config{Command: "test-cmd"}),
-		startedProviderFamilyHashKey: resolvedProviderSessionMetadataHash(oldProvider, resolvedProviderFamilyMetadataKeys),
-		"provider":                   oldProvider.Name,
-		"provider_kind":              oldProvider.Kind,
-		"builtin_ancestor":           oldProvider.BuiltinAncestor,
+		"started_config_hash": coreFingerprintForTemplateParams(TemplateParams{
+			Command:          "test-cmd",
+			SessionName:      "worker",
+			TemplateName:     "worker",
+			ResolvedProvider: oldProvider,
+		}, nil),
+		"provider":         oldProvider.Name,
+		"provider_kind":    oldProvider.Kind,
+		"builtin_ancestor": oldProvider.BuiltinAncestor,
 	})
 
 	env.reconcile([]beads.Bead{session})
@@ -1610,6 +1614,56 @@ func TestReconcileSessionBeads_ProviderFamilyDriftInitiatesDrain(t *testing.T) {
 	}
 	if ds.reason != "config-drift" {
 		t.Errorf("drain reason = %q, want %q", ds.reason, "config-drift")
+	}
+}
+
+func TestReconcileSessionBeads_LegacyStartedHashWithMatchingProviderMetadataDoesNotDrain(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
+	provider := &config.ResolvedProvider{Name: "claude-wrapper", Kind: "claude", BuiltinAncestor: "claude"}
+	env.desiredState["worker"] = TemplateParams{
+		Command:          "test-cmd",
+		SessionName:      "worker",
+		TemplateName:     "worker",
+		ResolvedProvider: provider,
+	}
+	_ = env.sp.Start(context.Background(), "worker", runtime.Config{Command: "test-cmd"})
+	session := env.createSessionBead("worker", "worker")
+	env.markSessionActive(&session)
+	env.setSessionMetadata(&session, map[string]string{
+		"started_config_hash": runtime.CoreFingerprint(runtime.Config{Command: "test-cmd"}),
+		"provider":            provider.Name,
+		"provider_kind":       provider.Kind,
+		"builtin_ancestor":    provider.BuiltinAncestor,
+	})
+
+	env.reconcile([]beads.Bead{session})
+
+	if ds := env.dt.get(session.ID); ds != nil {
+		t.Fatalf("expected no drain for legacy started hash with matching provider metadata, got %+v", ds)
+	}
+}
+
+func TestReconcileSessionBeads_LegacyStartedHashWithoutProviderMetadataDoesNotDrain(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
+	env.desiredState["worker"] = TemplateParams{
+		Command:          "test-cmd",
+		SessionName:      "worker",
+		TemplateName:     "worker",
+		ResolvedProvider: &config.ResolvedProvider{Name: "claude-wrapper", Kind: "claude", BuiltinAncestor: "claude"},
+	}
+	_ = env.sp.Start(context.Background(), "worker", runtime.Config{Command: "test-cmd"})
+	session := env.createSessionBead("worker", "worker")
+	env.markSessionActive(&session)
+	env.setSessionMetadata(&session, map[string]string{
+		"started_config_hash": runtime.CoreFingerprint(runtime.Config{Command: "test-cmd"}),
+	})
+
+	env.reconcile([]beads.Bead{session})
+
+	if ds := env.dt.get(session.ID); ds != nil {
+		t.Fatalf("expected no drain for legacy started hash without provider metadata, got %+v", ds)
 	}
 }
 

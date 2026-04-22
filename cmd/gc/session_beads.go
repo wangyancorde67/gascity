@@ -37,9 +37,16 @@ var (
 		"resume_command",
 		"session_id_flag",
 	}
+	resolvedProviderConfigMetadataKeys = []string{
+		"provider",
+		"provider_kind",
+		"builtin_ancestor",
+		"resume_flag",
+		"resume_style",
+		"resume_command",
+		"session_id_flag",
+	}
 )
-
-const startedProviderFamilyHashKey = "started_provider_family_hash"
 
 // loadSessionBeads returns all open session beads from the store.
 func loadSessionBeads(store beads.Store) ([]beads.Bead, error) {
@@ -146,45 +153,16 @@ func hasStoredResolvedProviderSessionMetadataKeys(meta map[string]string, keys [
 	return false
 }
 
-func storedResolvedProviderSessionMetadataHash(meta map[string]string, keys []string) string {
-	if len(meta) == 0 {
-		return ""
-	}
-	subset := make(map[string]string)
-	for _, key := range keys {
-		if value := strings.TrimSpace(meta[key]); value != "" {
-			subset[key] = value
-		}
-	}
-	if len(subset) == 0 {
-		return ""
-	}
-	h := sha256.New()
-	hashSortedStringMap(h, subset)
-	sum := fmt.Sprintf("%x", h.Sum(nil))
-	if len(sum) > 16 {
-		return sum[:16]
-	}
-	return sum
-}
-
-func shouldSyncResolvedProviderFamilyMetadata(b beads.Bead, tp TemplateParams, alive bool) bool {
+func shouldSyncResolvedProviderMetadata(b beads.Bead, tp TemplateParams, alive bool) bool {
 	state := strings.TrimSpace(b.Metadata["state"])
 	if !alive || (state != "active" && state != "awake") {
 		return true
 	}
-	if !hasStoredResolvedProviderSessionMetadataKeys(b.Metadata, resolvedProviderFamilyMetadataKeys) {
-		return true
-	}
-	startedHash := strings.TrimSpace(b.Metadata[startedProviderFamilyHashKey])
-	if startedHash == "" {
+	match := startedConfigMatchesCurrentFingerprint(b.Metadata, tp)
+	if !match.matches {
 		return false
 	}
-	desiredHash := resolvedProviderSessionMetadataHash(tp.ResolvedProvider, resolvedProviderFamilyMetadataKeys)
-	if desiredHash == "" {
-		return false
-	}
-	return startedHash == desiredHash
+	return match.providerMetadataSync
 }
 
 func canRebindConfiguredNamedSession(b beads.Bead, identity, sessionName, backingTemplate string) bool {
@@ -799,9 +777,6 @@ func syncSessionBeadsWithSnapshot(
 			}
 			if tp.ResolvedProvider != nil {
 				stampResolvedProviderSessionMetadata(meta, tp.ResolvedProvider)
-				if state == "active" {
-					meta[startedProviderFamilyHashKey] = resolvedProviderSessionMetadataHash(tp.ResolvedProvider, resolvedProviderFamilyMetadataKeys)
-				}
 			}
 			createBead := func() (beads.Bead, error) {
 				return store.Create(beads.Bead{
@@ -980,21 +955,16 @@ func syncSessionBeadsWithSnapshot(
 		// resolved launch command drifts. An empty tp.Command is ignored to avoid
 		// clobbering the stored value when command resolution fails transiently.
 		//
-		// Resolved-provider identity and resume metadata are also config-derived,
-		// but unlike session_key / continuation_epoch they are not lifecycle
-		// state. When provider config changes, sync them exactly to the current
-		// resolved provider, including clearing stale fields that no longer apply.
+		// Provider-derived metadata is also config-derived, but unlike
+		// session_key / continuation_epoch it is not lifecycle state. Keep that
+		// bundle pinned to the runtime's started_config_hash while the session is
+		// live so attach/resume/submit paths do not observe metadata from a
+		// provider config the running session never actually started with.
 		if tp.Command != "" && b.Metadata["command"] != tp.Command {
 			queueMeta("command", tp.Command)
 		}
-		if alive && (state == "active" || state == "awake") && strings.TrimSpace(b.Metadata[startedProviderFamilyHashKey]) == "" {
-			if liveFamilyHash := storedResolvedProviderSessionMetadataHash(b.Metadata, resolvedProviderFamilyMetadataKeys); liveFamilyHash != "" {
-				queueMeta(startedProviderFamilyHashKey, liveFamilyHash)
-			}
-		}
-		queueResolvedProviderSessionMetadataKeys(b.Metadata, queueMeta, tp.ResolvedProvider, resolvedProviderResumeMetadataKeys)
-		if shouldSyncResolvedProviderFamilyMetadata(b, tp, alive) {
-			queueResolvedProviderSessionMetadataKeys(b.Metadata, queueMeta, tp.ResolvedProvider, resolvedProviderFamilyMetadataKeys)
+		if shouldSyncResolvedProviderMetadata(b, tp, alive) {
+			queueResolvedProviderSessionMetadataKeys(b.Metadata, queueMeta, tp.ResolvedProvider, resolvedProviderConfigMetadataKeys)
 		}
 
 		// Update existing bead metadata.
