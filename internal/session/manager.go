@@ -64,6 +64,7 @@ type Info struct {
 	Closed        bool
 	Title         string
 	Alias         string
+	AgentName     string // persisted concrete identity for MCP materialization
 	Provider      string
 	Transport     string
 	Command       string // resolved command stored at creation
@@ -1186,6 +1187,7 @@ func (m *Manager) infoFromBead(b beads.Bead) Info {
 		Closed:        closed,
 		Title:         b.Title,
 		Alias:         b.Metadata["alias"],
+		AgentName:     b.Metadata["agent_name"],
 		Provider:      b.Metadata["provider"],
 		Transport:     transport,
 		Command:       b.Metadata["command"],

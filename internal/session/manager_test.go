@@ -328,6 +328,28 @@ func TestCreateBeadOnly(t *testing.T) {
 	}
 }
 
+func TestGetSurfacesAgentNameMetadata(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.CreateBeadOnly("helper", "my chat", "claude", "/tmp", "claude", "", nil, ProviderResume{})
+	if err != nil {
+		t.Fatalf("CreateBeadOnly: %v", err)
+	}
+	if err := store.SetMetadata(info.ID, "agent_name", "myrig/helper-adhoc-123"); err != nil {
+		t.Fatalf("SetMetadata(agent_name): %v", err)
+	}
+
+	got, err := mgr.Get(info.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.AgentName != "myrig/helper-adhoc-123" {
+		t.Fatalf("AgentName = %q, want %q", got.AgentName, "myrig/helper-adhoc-123")
+	}
+}
+
 func TestCreateNamedWithTransport_UsesExplicitSessionName(t *testing.T) {
 	store := beads.NewMemStore()
 	sp := runtime.NewFake()

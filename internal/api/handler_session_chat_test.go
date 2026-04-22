@@ -222,7 +222,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForProviderSession(t *testing.T) 
 	}
 }
 
-func TestBuildSessionResumeKeepsDefaultCommandWithoutACPTransportProvider(t *testing.T) {
+func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyProviderSessionWithoutTransportMetadataWithoutSessionAutoProvider(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
 	fs.cfg = &config.City{
@@ -252,7 +252,7 @@ func TestBuildSessionResumeKeepsDefaultCommandWithoutACPTransportProvider(t *tes
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo"; got != want {
+	if got, want := cmd, "/bin/echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -411,7 +411,7 @@ func TestBuildSessionResumeKeepsDefaultCommandForLegacyTemplateWithoutExplicitAC
 	}
 }
 
-func TestBuildSessionResumePropagatesMCPResolutionError(t *testing.T) {
+func TestBuildSessionResumeIgnoresMCPResolutionErrorForACPResume(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
 	fs.cfg = &config.City{
@@ -450,8 +450,15 @@ command = [broken
 		WorkDir:   fs.cityPath,
 	}
 
-	if _, _, err := srv.buildSessionResume(info); err == nil {
-		t.Fatal("buildSessionResume() error = nil, want MCP resolution error")
+	cmd, hints, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
+	if got, want := cmd, "/bin/echo acp"; got != want {
+		t.Fatalf("resume command = %q, want %q", got, want)
+	}
+	if len(hints.MCPServers) != 0 {
+		t.Fatalf("Hints.MCPServers len = %d, want 0", len(hints.MCPServers))
 	}
 }
 
@@ -494,5 +501,75 @@ command = [broken
 	}
 	if got, want := cmd, "/bin/echo"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
+	}
+}
+
+func TestBuildSessionResumeUsesStoredAgentNameForResumeMCPMaterialization(t *testing.T) {
+	supportsACP := true
+	fs := newSessionFakeState(t)
+	fs.cfg = &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:              "ant",
+			Dir:               "myrig",
+			Provider:          "opencode",
+			Session:           "acp",
+			WorkDir:           ".gc/worktrees/{{.Rig}}/ants/{{.AgentBase}}",
+			MinActiveSessions: intPtr(0),
+			MaxActiveSessions: intPtr(4),
+		}},
+		Providers: map[string]config.ProviderSpec{
+			"opencode": {
+				DisplayName: "OpenCode",
+				Command:     "/bin/echo",
+				PathCheck:   "true",
+				SupportsACP: &supportsACP,
+				ACPCommand:  "/bin/echo",
+				ACPArgs:     []string{"acp"},
+			},
+		},
+	}
+	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
+	if err := os.MkdirAll(fs.cfg.PackMCPDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(mcp): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fs.cfg.PackMCPDir, "identity.template.toml"), []byte(`
+name = "identity"
+command = "/bin/mcp"
+args = ["{{.AgentName}}", "{{.WorkDir}}", "{{.TemplateName}}"]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(mcp): %v", err)
+	}
+
+	workDir := filepath.Join(fs.cityPath, ".gc", "worktrees", "myrig", "ants", "ant")
+	srv := New(fs)
+	info := session.Info{
+		ID:        "gc-1",
+		Template:  "myrig/ant",
+		Alias:     "ant",
+		AgentName: "myrig/ant-adhoc-123",
+		Provider:  "opencode",
+		Transport: "acp",
+		WorkDir:   workDir,
+	}
+
+	cmd, hints, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
+	if got, want := cmd, "/bin/echo acp"; got != want {
+		t.Fatalf("resume command = %q, want %q", got, want)
+	}
+	if len(hints.MCPServers) != 1 {
+		t.Fatalf("Hints.MCPServers len = %d, want 1", len(hints.MCPServers))
+	}
+	if got, want := hints.MCPServers[0].Args[0], info.AgentName; got != want {
+		t.Fatalf("Args[0] = %q, want %q", got, want)
+	}
+	if got, want := hints.MCPServers[0].Args[1], workDir; got != want {
+		t.Fatalf("Args[1] = %q, want %q", got, want)
+	}
+	if got, want := hints.MCPServers[0].Args[2], "myrig/ant"; got != want {
+		t.Fatalf("Args[2] = %q, want %q", got, want)
 	}
 }

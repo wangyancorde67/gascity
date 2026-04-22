@@ -778,7 +778,7 @@ ready_delay_ms = 250
 	}
 }
 
-func TestResolvedWorkerRuntimeWithConfigPropagatesMCPResolutionError(t *testing.T) {
+func TestResolvedWorkerRuntimeWithConfigIgnoresMCPResolutionErrorForACPResume(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]
 name = "test-city"
@@ -807,12 +807,22 @@ command = [broken
 		t.Fatalf("loadCityConfig: %v", err)
 	}
 
-	if _, err := resolvedWorkerRuntimeWithConfig(cityDir, cfg, session.Info{
+	resolved, err := resolvedWorkerRuntimeWithConfig(cityDir, cfg, session.Info{
 		Template:  "worker",
 		Transport: "acp",
 		WorkDir:   cityDir,
-	}, ""); err == nil {
-		t.Fatal("resolvedWorkerRuntimeWithConfig() error = nil, want MCP resolution error")
+	}, "")
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfig: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfig() = nil")
+	}
+	if got, want := resolved.Command, "/bin/echo acp"; got != want {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+	if len(resolved.Hints.MCPServers) != 0 {
+		t.Fatalf("Hints.MCPServers len = %d, want 0", len(resolved.Hints.MCPServers))
 	}
 }
 
@@ -856,6 +866,68 @@ command = [broken
 	}
 	if len(resolved.Hints.MCPServers) != 0 {
 		t.Fatalf("Hints.MCPServers len = %d, want 0", len(resolved.Hints.MCPServers))
+	}
+}
+
+func TestResolvedWorkerRuntimeWithConfigUsesStoredAgentNameForResumeMCPMaterialization(t *testing.T) {
+	cityDir := t.TempDir()
+	writePhase0InterfaceCity(t, cityDir, `[workspace]
+name = "test-city"
+
+[beads]
+provider = "file"
+
+[[agent]]
+name = "ant"
+dir = "myrig"
+provider = "stub"
+session = "acp"
+work_dir = ".gc/worktrees/{{.Rig}}/ants/{{.AgentBase}}"
+min_active_sessions = 0
+max_active_sessions = 4
+
+[providers.stub]
+command = "/bin/echo"
+supports_acp = true
+acp_command = "/bin/echo"
+acp_args = ["acp"]
+`)
+	writeCatalogFile(t, cityDir, "mcp/identity.template.toml", `
+name = "identity"
+command = "/bin/mcp"
+args = ["{{.AgentName}}", "{{.WorkDir}}", "{{.TemplateName}}"]
+`)
+
+	cfg, err := loadCityConfig(cityDir)
+	if err != nil {
+		t.Fatalf("loadCityConfig: %v", err)
+	}
+
+	workDir := filepath.Join(cityDir, ".gc", "worktrees", "myrig", "ants", "ant")
+	resolved, err := resolvedWorkerRuntimeWithConfig(cityDir, cfg, session.Info{
+		Template:  "myrig/ant",
+		Alias:     "ant",
+		AgentName: "myrig/ant-adhoc-123",
+		Transport: "acp",
+		WorkDir:   workDir,
+	}, "")
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfig: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfig() = nil")
+	}
+	if len(resolved.Hints.MCPServers) != 1 {
+		t.Fatalf("Hints.MCPServers len = %d, want 1", len(resolved.Hints.MCPServers))
+	}
+	if got, want := resolved.Hints.MCPServers[0].Args[0], "myrig/ant-adhoc-123"; got != want {
+		t.Fatalf("Args[0] = %q, want %q", got, want)
+	}
+	if got, want := resolved.Hints.MCPServers[0].Args[1], workDir; got != want {
+		t.Fatalf("Args[1] = %q, want %q", got, want)
+	}
+	if got, want := resolved.Hints.MCPServers[0].Args[2], "myrig/ant"; got != want {
+		t.Fatalf("Args[2] = %q, want %q", got, want)
 	}
 }
 

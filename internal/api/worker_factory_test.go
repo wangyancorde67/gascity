@@ -184,6 +184,69 @@ args = ["--stdio"]
 	}
 }
 
+func TestResolveWorkerSessionRuntimeUsesStoredAgentNameForResumeMCPMaterialization(t *testing.T) {
+	fs := newSessionFakeState(t)
+	fs.cfg.Agents = []config.Agent{{
+		Name:              "ant",
+		Dir:               "myrig",
+		Provider:          "resolved-worker",
+		Session:           "acp",
+		WorkDir:           ".gc/worktrees/{{.Rig}}/ants/{{.AgentBase}}",
+		MinActiveSessions: intPtr(0),
+		MaxActiveSessions: intPtr(4),
+	}}
+	supportsACP := true
+	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
+		DisplayName: "Resolved Worker",
+		Command:     "/bin/echo",
+		SupportsACP: &supportsACP,
+		ACPCommand:  "/bin/echo",
+		ACPArgs:     []string{"acp"},
+	}
+	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
+	if err := os.MkdirAll(fs.cfg.PackMCPDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(mcp): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fs.cfg.PackMCPDir, "identity.template.toml"), []byte(`
+name = "identity"
+command = "/bin/mcp"
+args = ["{{.AgentName}}", "{{.WorkDir}}", "{{.TemplateName}}"]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(mcp): %v", err)
+	}
+
+	workDir := filepath.Join(fs.cityPath, ".gc", "worktrees", "myrig", "ants", "ant")
+	srv := New(fs)
+	info := session.Info{
+		ID:        "sess-1",
+		Template:  "myrig/ant",
+		Alias:     "ant",
+		AgentName: "myrig/ant-adhoc-123",
+		Transport: "acp",
+		WorkDir:   workDir,
+	}
+
+	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info, "")
+	if err != nil {
+		t.Fatalf("resolveWorkerSessionRuntime: %v", err)
+	}
+	if runtimeCfg == nil {
+		t.Fatal("resolveWorkerSessionRuntime() = nil")
+	}
+	if len(runtimeCfg.Hints.MCPServers) != 1 {
+		t.Fatalf("Hints.MCPServers len = %d, want 1", len(runtimeCfg.Hints.MCPServers))
+	}
+	if got, want := runtimeCfg.Hints.MCPServers[0].Args[0], info.AgentName; got != want {
+		t.Fatalf("Args[0] = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Hints.MCPServers[0].Args[1], workDir; got != want {
+		t.Fatalf("Args[1] = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Hints.MCPServers[0].Args[2], "myrig/ant"; got != want {
+		t.Fatalf("Args[2] = %q, want %q", got, want)
+	}
+}
+
 func TestWorkerFactorySessionByIDUsesResolvedTemplateRuntime(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Agents[0].Provider = "resolved-worker"

@@ -47,6 +47,31 @@ func sessionResumeHints(resolved *config.ResolvedProvider, workDir string, mcpSe
 	}
 }
 
+func resumeSessionIdentity(info session.Info) string {
+	return firstNonEmptyString(info.AgentName, info.Alias, info.Template, info.Provider)
+}
+
+func (s *Server) resumeSessionMCPServers(info session.Info, resolved *config.ResolvedProvider, workDir, transport string) []runtime.MCPServerConfig {
+	if resolved == nil {
+		return nil
+	}
+	// Existing ACP sessions resume from their stored session state. Current
+	// MCP catalog materialization only seeds session/new and should not strand
+	// already-created sessions if the catalog on disk is currently broken.
+	mcpServers, err := s.sessionMCPServers(
+		info.Template,
+		firstNonEmptyString(info.Provider, resolved.Name),
+		resumeSessionIdentity(info),
+		workDir,
+		transport,
+		s.sessionKind(info.ID),
+	)
+	if err != nil {
+		return nil
+	}
+	return mcpServers
+}
+
 func (s *Server) providerSessionMCPServers(providerName, workDir, transport string) ([]runtime.MCPServerConfig, error) {
 	cfg := s.state.Config()
 	if cfg == nil || strings.TrimSpace(workDir) == "" || strings.TrimSpace(transport) != "acp" {
@@ -156,17 +181,7 @@ func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, 
 	if resolved == nil {
 		return cmd, runtime.Config{WorkDir: info.WorkDir}, nil
 	}
-	mcpServers, err := s.sessionMCPServers(
-		info.Template,
-		firstNonEmptyString(info.Provider, resolved.Name),
-		info.Alias,
-		firstNonEmptyString(workDir, info.WorkDir),
-		transport,
-		s.sessionKind(info.ID),
-	)
-	if err != nil {
-		return "", runtime.Config{}, err
-	}
+	mcpServers := s.resumeSessionMCPServers(info, resolved, firstNonEmptyString(workDir, info.WorkDir), transport)
 	resolvedInfo := info
 	if command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command); err == nil {
 		resolvedInfo.Command = command
@@ -226,17 +241,7 @@ func (s *Server) resolveWorkerSessionRuntime(info session.Info, _ string) (*work
 	if resolved == nil {
 		return nil, nil
 	}
-	mcpServers, err := s.sessionMCPServers(
-		info.Template,
-		firstNonEmptyString(info.Provider, resolved.Name),
-		info.Alias,
-		firstNonEmptyString(workDir, info.WorkDir),
-		transport,
-		s.sessionKind(info.ID),
-	)
-	if err != nil {
-		return nil, err
-	}
+	mcpServers := s.resumeSessionMCPServers(info, resolved, firstNonEmptyString(workDir, info.WorkDir), transport)
 	command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command)
 	if err != nil {
 		return nil, err

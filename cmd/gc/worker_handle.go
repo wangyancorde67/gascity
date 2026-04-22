@@ -116,6 +116,43 @@ func resolvedRuntimeMCPServersWithConfig(
 	return materialize.RuntimeMCPServers(catalog.Servers), nil
 }
 
+func resumeRuntimeMCPServersWithConfig(
+	cityPath string,
+	cfg *config.City,
+	info session.Info,
+	resolved *config.ResolvedProvider,
+	transport string,
+) []runtime.MCPServerConfig {
+	if cfg == nil || resolved == nil {
+		return nil
+	}
+	workDir := strings.TrimSpace(info.WorkDir)
+	if workDir == "" {
+		workDir = cityPath
+	}
+	var metadata map[string]string
+	if agentName := strings.TrimSpace(info.AgentName); agentName != "" {
+		metadata = map[string]string{"agent_name": agentName}
+	}
+	// Existing ACP sessions resume from stored provider state. Current MCP
+	// catalog materialization only seeds session/new and should not block
+	// resume if the catalog on disk is currently broken.
+	mcpServers, err := resolvedRuntimeMCPServersWithConfig(
+		cityPath,
+		cfg,
+		info.Alias,
+		info.Template,
+		firstNonEmptyGCString(info.Provider, resolved.Name, info.Template),
+		workDir,
+		transport,
+		metadata,
+	)
+	if err != nil {
+		return nil
+	}
+	return mcpServers
+}
+
 func newWorkerSessionHandleForResolvedRuntimeWithConfig(
 	cityPath string,
 	store beads.Store,
@@ -393,19 +430,7 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 	if workDir == "" {
 		workDir = cityPath
 	}
-	mcpServers, err := resolvedRuntimeMCPServersWithConfig(
-		cityPath,
-		cfg,
-		info.Alias,
-		info.Template,
-		firstNonEmptyGCString(info.Provider, resolved.Name, info.Template),
-		workDir,
-		transport,
-		nil,
-	)
-	if err != nil {
-		return nil, err
-	}
+	mcpServers := resumeRuntimeMCPServersWithConfig(cityPath, cfg, info, resolved, transport)
 	return &worker.ResolvedRuntime{
 		Command:    command,
 		WorkDir:    workDir,
