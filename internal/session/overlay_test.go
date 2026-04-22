@@ -20,7 +20,7 @@ func TestOverlay_BannedKeys(t *testing.T) {
 	for _, key := range []string{
 		"command", "provider", "session_key", "state",
 		"generation", "continuation_epoch", "continuation_reset_pending", "instance_token",
-		"wait_hold", "sleep_intent", "resume_flag", "resume_style",
+		"wait_hold", "sleep_intent", "resume_flag", "resume_command", "resume_style", "session_id_flag",
 	} {
 		err := ValidateOverlay(
 			map[string]string{key: "value"},

@@ -29,7 +29,9 @@ var bannedOverlayKeys = map[string]bool{
 	"wait_hold":                  true,
 	"sleep_intent":               true,
 	"resume_flag":                true,
+	"resume_command":             true,
 	"resume_style":               true,
+	"session_id_flag":            true,
 }
 
 // ValidateOverlay checks that all keys in overrides are permitted by the
