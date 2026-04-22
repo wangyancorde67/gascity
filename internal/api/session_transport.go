@@ -17,12 +17,18 @@ func validateSessionTransport(resolved *config.ResolvedProvider, transport strin
 	if transport != "acp" {
 		return transport, nil
 	}
-	if transportSupportsACP(sp) {
-		return transport, nil
-	}
 	providerName := ""
 	if resolved != nil {
 		providerName = resolved.Name
+		if !resolved.SupportsACP {
+			if providerName == "" {
+				providerName = transport
+			}
+			return "", fmt.Errorf("provider %q does not support ACP transport", providerName)
+		}
+	}
+	if transportSupportsACP(sp) {
+		return transport, nil
 	}
 	if providerName == "" {
 		providerName = transport

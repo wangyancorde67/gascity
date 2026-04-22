@@ -192,6 +192,10 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 	}
 
 	sp := newSessionProvider()
+	if err := validateResolvedSessionTransport(resolved, found.Session, sp); err != nil {
+		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
 
 	// Build the work directory.
 	sessionQualifiedName := workdirutil.SessionQualifiedName(cityPath, found, cfg.Rigs, requestedAlias, explicitName)
@@ -399,6 +403,37 @@ func maybeAutoTitle(store beads.Store, beadID, userTitle, titleHint string, prov
 	return api.MaybeGenerateTitleAsync(store, beadID, userTitle, titleHint, provider, workDir, func(format string, args ...any) {
 		fmt.Fprintf(stderr, "session %s: "+format+"\n", append([]any{beadID}, args...)...) //nolint:errcheck // best-effort stderr
 	})
+}
+
+type acpRouteRegistrar interface {
+	RouteACP(name string)
+}
+
+func validateResolvedSessionTransport(resolved *config.ResolvedProvider, transport string, sp runtime.Provider) error {
+	transport = strings.TrimSpace(transport)
+	if transport != "acp" {
+		return nil
+	}
+	providerName := ""
+	if resolved != nil {
+		providerName = resolved.Name
+		if !resolved.SupportsACP {
+			if providerName == "" {
+				providerName = transport
+			}
+			return fmt.Errorf("provider %q does not support ACP transport", providerName)
+		}
+	}
+	if provider, ok := sp.(runtime.TransportCapabilityProvider); ok && provider.SupportsTransport("acp") {
+		return nil
+	}
+	if _, ok := sp.(acpRouteRegistrar); ok {
+		return nil
+	}
+	if providerName == "" {
+		providerName = transport
+	}
+	return fmt.Errorf("provider %q requires ACP transport but the session provider cannot route ACP sessions", providerName)
 }
 
 func resolvedSessionCommand(cityPath string, resolved *config.ResolvedProvider, optionOverrides map[string]string, transport string) (string, error) {

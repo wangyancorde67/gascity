@@ -18,6 +18,7 @@ import (
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/sessionlog"
 	workdirutil "github.com/gastownhall/gascity/internal/workdir"
+	"github.com/gastownhall/gascity/internal/worker"
 )
 
 // Command-side session handlers (create, patch, submit, message, stop, kill,
@@ -78,12 +79,6 @@ func (s *Server) humaHandleSessionCreate(ctx context.Context, input *SessionCrea
 		title = template
 	}
 
-	resume := session.ProviderResume{
-		ResumeFlag:    resolved.ResumeFlag,
-		ResumeStyle:   resolved.ResumeStyle,
-		ResumeCommand: resolved.ResumeCommand,
-		SessionIDFlag: resolved.SessionIDFlag,
-	}
 	alias, err := session.ValidateAlias(body.Alias)
 	if err != nil {
 		return nil, humaSessionManagerError(err)
@@ -115,8 +110,11 @@ func (s *Server) humaHandleSessionCreate(ctx context.Context, input *SessionCrea
 	}
 	command := launchCommand.Command
 	extraMeta := sessionTemplateOverridesMetadata(body.Options, body.Message)
+	mcpServers, err := s.sessionMCPServers(template, resolved.Name, firstNonEmptyString(alias, template), workDir, transport, kind)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
 
-	mgr := s.sessionManager(store)
 	var info session.Info
 	reservationIDs := []string{alias, explicitName}
 	reserveConcreteIdentity := agentCfg.SupportsMultipleSessions() && strings.TrimSpace(workDirQualifiedName) != ""
@@ -140,19 +138,27 @@ func (s *Server) humaHandleSessionCreate(ctx context.Context, input *SessionCrea
 		}
 		extraMeta["agent_name"] = workDirQualifiedName
 		extraMeta["session_origin"] = "manual"
-		var createErr error
-		info, createErr = mgr.CreateAliasedBeadOnlyNamedWithMetadata(
+		resolvedCfg, cfgErr := resolvedSessionConfigForProvider(
 			alias,
 			explicitName,
 			template,
 			title,
+			transport,
+			extraMeta,
+			resolved,
 			command,
 			workDir,
-			resolved.Name,
-			transport,
-			resume,
-			extraMeta,
+			mcpServers,
 		)
+		if cfgErr != nil {
+			return cfgErr
+		}
+		handle, handleErr := s.newResolvedWorkerSessionHandle(store, resolvedCfg)
+		if handleErr != nil {
+			return handleErr
+		}
+		var createErr error
+		info, createErr = handle.Create(ctx, worker.CreateModeDeferred)
 		return createErr
 	})
 	if err != nil {
