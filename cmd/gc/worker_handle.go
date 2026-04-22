@@ -336,6 +336,20 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 	if workDir == "" {
 		workDir = cityPath
 	}
+	resume := session.ProviderResume{
+		ResumeFlag:    firstNonEmptyGCString(resolved.ResumeFlag, info.ResumeFlag),
+		ResumeStyle:   firstNonEmptyGCString(resolved.ResumeStyle, info.ResumeStyle),
+		ResumeCommand: firstNonEmptyGCString(resolved.ResumeCommand, info.ResumeCommand),
+		SessionIDFlag: firstNonEmptyGCString(resolved.SessionIDFlag, info.SessionIDFlag),
+	}
+	if resolvedProviderExplicitClear(resolved) {
+		resume = session.ProviderResume{
+			ResumeFlag:    strings.TrimSpace(resolved.ResumeFlag),
+			ResumeStyle:   strings.TrimSpace(resolved.ResumeStyle),
+			ResumeCommand: strings.TrimSpace(resolved.ResumeCommand),
+			SessionIDFlag: strings.TrimSpace(resolved.SessionIDFlag),
+		}
+	}
 	return &worker.ResolvedRuntime{
 		Command:    command,
 		WorkDir:    workDir,
@@ -348,12 +362,7 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 			ProcessNames:           resolved.ProcessNames,
 			EmitsPermissionWarning: resolved.EmitsPermissionWarning,
 		},
-		Resume: session.ProviderResume{
-			ResumeFlag:    firstNonEmptyGCString(resolved.ResumeFlag, info.ResumeFlag),
-			ResumeStyle:   firstNonEmptyGCString(resolved.ResumeStyle, info.ResumeStyle),
-			ResumeCommand: firstNonEmptyGCString(resolved.ResumeCommand, info.ResumeCommand),
-			SessionIDFlag: firstNonEmptyGCString(resolved.SessionIDFlag, info.SessionIDFlag),
-		},
+		Resume: resume,
 	}
 }
 

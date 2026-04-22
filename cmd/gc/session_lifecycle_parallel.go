@@ -927,87 +927,40 @@ func recoverRunningPendingCreate(
 		if tp.ResolvedProvider != nil {
 			desiredProviderName = strings.TrimSpace(tp.ResolvedProvider.Name)
 		}
-		if confirmPendingStart(session.Metadata["state"]) {
-			// Unstaged pending-create beads predate the stage-before-start
-			// contract. They do not retain enough input state to prove the full
-			// provider-aware core hash, so fail closed once and let the restart
-			// stamp authoritative metadata.
-			decision := "pending_create_unstaged_missing_fingerprint"
-			if !pendingCreateRecoveryMatchesDesired(session.Metadata, tp) {
-				decision = "pending_create_unstaged_drift"
-			}
-			batch := map[string]string{
-				"restart_requested": "true",
-			}
-			clearPendingStartFingerprintMetadata(batch)
-			if err := store.SetMetadataBatch(session.ID, batch); err != nil {
-				if trace != nil {
-					trace.recordDecision("reconciler.session.pending_create", tp.TemplateName, tp.SessionName, decision+"_write_failed", "failed", traceRecordPayload{
-						"error":            err.Error(),
-						"stored_command":   strings.TrimSpace(session.Metadata["command"]),
-						"desired_command":  strings.TrimSpace(tp.Command),
-						"stored_provider":  strings.TrimSpace(session.Metadata["provider"]),
-						"desired_provider": desiredProviderName,
-					}, nil, "")
-				}
-				return false
-			}
-			applySessionMetadataBatch(session, batch)
-			if trace != nil {
-				trace.recordDecision("reconciler.session.pending_create", tp.TemplateName, tp.SessionName, decision, "restart_requested", traceRecordPayload{
-					"stored_command":   strings.TrimSpace(session.Metadata["command"]),
-					"desired_command":  strings.TrimSpace(tp.Command),
-					"stored_provider":  strings.TrimSpace(session.Metadata["provider"]),
-					"desired_provider": desiredProviderName,
-				}, nil, "")
-			}
-			return true
-		}
+		// Unstaged pending-create beads predate the stage-before-start
+		// contract. They do not retain enough input state to prove the full
+		// provider-aware core hash, so fail closed once and let the restart
+		// stamp authoritative metadata.
+		decision := "pending_create_unstaged_missing_fingerprint"
 		if !pendingCreateRecoveryMatchesDesired(session.Metadata, tp) {
-			batch := map[string]string{
-				"restart_requested": "true",
-			}
-			clearPendingStartFingerprintMetadata(batch)
-			if err := store.SetMetadataBatch(session.ID, batch); err != nil {
-				if trace != nil {
-					trace.recordDecision("reconciler.session.pending_create", tp.TemplateName, tp.SessionName, "pending_create_unstaged_drift_write_failed", "failed", traceRecordPayload{
-						"error":            err.Error(),
-						"stored_command":   strings.TrimSpace(session.Metadata["command"]),
-						"desired_command":  strings.TrimSpace(tp.Command),
-						"stored_provider":  strings.TrimSpace(session.Metadata["provider"]),
-						"desired_provider": desiredProviderName,
-					}, nil, "")
-				}
-				return false
-			}
-			applySessionMetadataBatch(session, batch)
+			decision = "pending_create_unstaged_drift"
+		}
+		batch := map[string]string{
+			"restart_requested": "true",
+		}
+		clearPendingStartFingerprintMetadata(batch)
+		if err := store.SetMetadataBatch(session.ID, batch); err != nil {
 			if trace != nil {
-				trace.recordDecision("reconciler.session.pending_create", tp.TemplateName, tp.SessionName, "pending_create_unstaged_drift", "restart_requested", traceRecordPayload{
+				trace.recordDecision("reconciler.session.pending_create", tp.TemplateName, tp.SessionName, decision+"_write_failed", "failed", traceRecordPayload{
+					"error":            err.Error(),
 					"stored_command":   strings.TrimSpace(session.Metadata["command"]),
 					"desired_command":  strings.TrimSpace(tp.Command),
 					"stored_provider":  strings.TrimSpace(session.Metadata["provider"]),
 					"desired_provider": desiredProviderName,
-				}, nil, "")
-			}
-			return true
-		}
-		prepared, err := buildPreparedStart(startCandidate{session: session, tp: tp}, cfg, store)
-		if err != nil {
-			if trace != nil {
-				trace.recordDecision("reconciler.session.pending_create", tp.TemplateName, tp.SessionName, "pending_create_rebuild_failed", "failed", traceRecordPayload{
-					"error": err.Error(),
 				}, nil, "")
 			}
 			return false
 		}
-		fingerprint = pendingStartFingerprint{
-			coreHash:       prepared.coreHash,
-			liveHash:       prepared.liveHash,
-			providerFamily: strings.TrimSpace(prepared.cfg.Env["GC_PROVIDER"]),
+		applySessionMetadataBatch(session, batch)
+		if trace != nil {
+			trace.recordDecision("reconciler.session.pending_create", tp.TemplateName, tp.SessionName, decision, "restart_requested", traceRecordPayload{
+				"stored_command":   strings.TrimSpace(session.Metadata["command"]),
+				"desired_command":  strings.TrimSpace(tp.Command),
+				"stored_provider":  strings.TrimSpace(session.Metadata["provider"]),
+				"desired_provider": desiredProviderName,
+			}, nil, "")
 		}
-		if bdj, err := json.Marshal(prepared.coreBreakdown); err == nil {
-			fingerprint.coreBreakdown = string(bdj)
-		}
+		return true
 	}
 	sessionName := strings.TrimSpace(session.Metadata["session_name"])
 	if sessionName == "" {

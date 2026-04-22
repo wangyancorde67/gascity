@@ -649,16 +649,17 @@ func reconcileSessionBeadsTraced(
 					if match.matches && match.legacyProviderFallback {
 						liveProvider, liveProviderErr := liveSessionProviderFamily(sp, name)
 						expectedProvider := expectedProviderFamilyForTemplate(session, tp)
-						if liveProviderErr == nil {
-							if liveProvider != "" && liveProvider != expectedProvider {
-								match.matches = false
-							} else if liveProvider == "" && expectedProvider != "" && sessionProviderFamily(*session) == "" {
-								// A legacy hash with no stored provider identity and no
-								// live GC_PROVIDER signal is impossible to validate
-								// against provider-family drift. Fail closed once so the
-								// session restarts and stamps authoritative metadata.
-								match.matches = false
-							}
+						if liveProviderErr != nil {
+							fmt.Fprintf(stderr, "session reconciler: reading GC_PROVIDER for %s: %v\n", name, liveProviderErr) //nolint:errcheck
+							match.matches = false
+						} else if liveProvider != "" && liveProvider != expectedProvider {
+							match.matches = false
+						} else if liveProvider == "" && expectedProvider != "" && sessionProviderFamily(*session) == "" {
+							// A legacy hash with no stored provider identity and no
+							// live GC_PROVIDER signal is impossible to validate
+							// against provider-family drift. Fail closed once so the
+							// session restarts and stamps authoritative metadata.
+							match.matches = false
 						}
 					}
 					if !match.matches {

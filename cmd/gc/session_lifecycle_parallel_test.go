@@ -1060,14 +1060,11 @@ func TestExecutePlannedStartsClearsLegacyDrainAckAfterProviderStartBeforeMetadat
 	}
 }
 
-// recoverRunningPendingCreate heals an already-active bead whose runtime
-// is alive but whose pending_create_claim flag was left set (typically
-// after a partial write on a prior tick). The heal MUST stamp a fresh
-// creation_complete_at alongside the claim clear, otherwise the sweep's
-// post-create guard treats the healed bead as stale and the bead can be
-// closed on the next tick if the runtime briefly dies — re-opening the
-// spin loop this PR is meant to close.
-func TestRecoverRunningPendingCreate_StampsCreationCompleteAtForAlreadyActive(t *testing.T) {
+// Unstaged pending-create metadata no longer attempts to "heal" an active
+// session with a freshly rebuilt hash. The controller cannot prove the full
+// fingerprint that launched the runtime, so it requests a restart and leaves
+// the claim in place until the authoritative start path runs again.
+func TestRecoverRunningPendingCreate_SetsRestartRequestedForAlreadyActiveWithoutStagedFingerprint(t *testing.T) {
 	store := beads.NewMemStore()
 	bead, err := store.Create(beads.Bead{
 		Title:  "helper",
@@ -1101,16 +1098,17 @@ func TestRecoverRunningPendingCreate_StampsCreationCompleteAtForAlreadyActive(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Metadata["pending_create_claim"] != "" {
-		t.Fatalf("pending_create_claim = %q, want cleared", got.Metadata["pending_create_claim"])
+	if got.Metadata["restart_requested"] != "true" {
+		t.Fatalf("restart_requested = %q, want true", got.Metadata["restart_requested"])
 	}
-	if got.Metadata["creation_complete_at"] != clkTime.Format(time.RFC3339) {
-		t.Fatalf("creation_complete_at = %q, want %q — sweep guard would treat healed bead as stale without this stamp",
-			got.Metadata["creation_complete_at"], clkTime.Format(time.RFC3339))
+	if got.Metadata["pending_create_claim"] != "true" {
+		t.Fatalf("pending_create_claim = %q, want preserved until restart", got.Metadata["pending_create_claim"])
 	}
-	wantStartedHash := coreFingerprintForTemplateParams(tp, nil)
-	if got.Metadata["started_config_hash"] != wantStartedHash {
-		t.Fatalf("started_config_hash = %q, want %q", got.Metadata["started_config_hash"], wantStartedHash)
+	if got.Metadata["creation_complete_at"] != "" {
+		t.Fatalf("creation_complete_at = %q, want empty until restarted", got.Metadata["creation_complete_at"])
+	}
+	if got.Metadata["started_config_hash"] != "" {
+		t.Fatalf("started_config_hash = %q, want empty until restarted", got.Metadata["started_config_hash"])
 	}
 }
 

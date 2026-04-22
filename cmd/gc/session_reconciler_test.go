@@ -1695,7 +1695,7 @@ func TestReconcileSessionBeads_LegacyStartedHashWithoutProviderMetadataDrainsWhe
 	}
 }
 
-func TestReconcileSessionBeads_LegacyStartedHashWithoutProviderMetadataDoesNotDrainWhenLiveProviderProbeErrors(t *testing.T) {
+func TestReconcileSessionBeads_LegacyStartedHashWithoutProviderMetadataDrainsWhenLiveProviderProbeErrors(t *testing.T) {
 	store := beads.NewMemStore()
 	sp := &getMetaErrorProvider{Fake: runtime.NewFake()}
 	cfg := &config.City{Agents: []config.Agent{{Name: "worker"}}}
@@ -1758,8 +1758,15 @@ func TestReconcileSessionBeads_LegacyStartedHashWithoutProviderMetadataDoesNotDr
 		&stderr,
 	)
 
-	if ds := dt.get(session.ID); ds != nil {
-		t.Fatalf("expected no drain when live provider probe errors, got %+v", ds)
+	ds := dt.get(session.ID)
+	if ds == nil {
+		t.Fatalf("expected drain when live provider probe errors (stderr=%s)", stderr.String())
+	}
+	if ds.reason != "config-drift" {
+		t.Fatalf("drain reason = %q, want config-drift", ds.reason)
+	}
+	if !strings.Contains(stderr.String(), "reading GC_PROVIDER") {
+		t.Fatalf("stderr = %q, want GC_PROVIDER probe error", stderr.String())
 	}
 }
 
