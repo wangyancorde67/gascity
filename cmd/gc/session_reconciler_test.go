@@ -1644,7 +1644,31 @@ func TestReconcileSessionBeads_LegacyStartedHashWithMatchingProviderMetadataDoes
 	}
 }
 
-func TestReconcileSessionBeads_LegacyStartedHashWithoutProviderMetadataDoesNotDrain(t *testing.T) {
+func TestReconcileSessionBeads_LegacyStartedHashWithRawProviderMetadataDoesNotDrain(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
+	env.desiredState["worker"] = TemplateParams{
+		Command:          "test-cmd",
+		SessionName:      "worker",
+		TemplateName:     "worker",
+		ResolvedProvider: &config.ResolvedProvider{Name: "claude-wrapper", Kind: "claude", BuiltinAncestor: "claude"},
+	}
+	_ = env.sp.Start(context.Background(), "worker", runtime.Config{Command: "test-cmd"})
+	session := env.createSessionBead("worker", "worker")
+	env.markSessionActive(&session)
+	env.setSessionMetadata(&session, map[string]string{
+		"started_config_hash": runtime.CoreFingerprint(runtime.Config{Command: "test-cmd"}),
+		"provider":            "claude-wrapper",
+	})
+
+	env.reconcile([]beads.Bead{session})
+
+	if ds := env.dt.get(session.ID); ds != nil {
+		t.Fatalf("expected no drain for legacy started hash with raw provider metadata, got %+v", ds)
+	}
+}
+
+func TestReconcileSessionBeads_LegacyStartedHashWithoutProviderMetadataDrainsWhenProviderIdentityUnknown(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
 	env.desiredState["worker"] = TemplateParams{
@@ -1662,8 +1686,12 @@ func TestReconcileSessionBeads_LegacyStartedHashWithoutProviderMetadataDoesNotDr
 
 	env.reconcile([]beads.Bead{session})
 
-	if ds := env.dt.get(session.ID); ds != nil {
-		t.Fatalf("expected no drain for legacy started hash without provider metadata, got %+v", ds)
+	ds := env.dt.get(session.ID)
+	if ds == nil {
+		t.Fatalf("expected drain when provider identity is unknown for legacy started hash (stderr=%s)", env.stderr.String())
+	}
+	if ds.reason != "config-drift" {
+		t.Fatalf("drain reason = %q, want config-drift", ds.reason)
 	}
 }
 

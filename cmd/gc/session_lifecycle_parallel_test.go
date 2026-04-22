@@ -1396,6 +1396,59 @@ func TestRecoverRunningPendingCreate_SetsRestartRequestedWhenDesiredProviderChan
 	}
 }
 
+func TestRecoverRunningPendingCreate_DoesNotRestartWhenResolvedProviderUnavailableWithoutStagedFingerprint(t *testing.T) {
+	store := beads.NewMemStore()
+	bead, err := store.Create(beads.Bead{
+		Title:  "helper",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name":         "sky",
+			"pending_create_claim": "true",
+			"state":                "creating",
+			"command":              "test-cmd",
+			"provider":             "claude-wrapper-a",
+			"provider_kind":        "claude",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp := runtime.NewFake()
+	if err := sp.Start(context.Background(), "sky", runtime.Config{Command: "test-cmd"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := sp.SetMeta("sky", "GC_SESSION_ID", bead.ID); err != nil {
+		t.Fatalf("SetMeta(GC_SESSION_ID): %v", err)
+	}
+	if err := sp.SetMeta("sky", "GC_PROVIDER", "claude"); err != nil {
+		t.Fatalf("SetMeta(GC_PROVIDER): %v", err)
+	}
+	tp := TemplateParams{
+		Command:      "test-cmd",
+		SessionName:  "sky",
+		TemplateName: "helper",
+	}
+
+	if !recoverRunningPendingCreate(&bead, tp, &config.City{Agents: []config.Agent{{Name: "helper"}}}, store, sp, &clock.Fake{Time: time.Date(2026, 4, 22, 12, 13, 45, 0, time.UTC)}, nil) {
+		t.Fatal("recoverRunningPendingCreate returned false, want true")
+	}
+
+	got, err := store.Get(bead.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata["restart_requested"] != "" {
+		t.Fatalf("restart_requested = %q, want empty", got.Metadata["restart_requested"])
+	}
+	if got.Metadata["pending_create_claim"] != "" {
+		t.Fatalf("pending_create_claim = %q, want cleared", got.Metadata["pending_create_claim"])
+	}
+	if got.Metadata["started_config_hash"] == "" {
+		t.Fatal("started_config_hash = empty, want healed hash")
+	}
+}
+
 func TestPrepareStartCandidate_RollsBackPreWakeMetadataWhenPendingFingerprintStageFails(t *testing.T) {
 	store := &failNthMetadataBatchStore{MemStore: beads.NewMemStore(), failOn: 2}
 	clk := &clock.Fake{Time: time.Date(2026, 4, 22, 12, 14, 0, 0, time.UTC)}

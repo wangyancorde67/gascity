@@ -252,7 +252,7 @@ func pendingCreateRecoveryMatchesDesired(meta map[string]string, tp TemplatePara
 		return true
 	}
 	if !desiredProviderKnown {
-		return false
+		return true
 	}
 	if maps.Equal(storedProviderMeta, desiredProviderMeta) {
 		return true

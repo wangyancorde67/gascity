@@ -651,6 +651,12 @@ func reconcileSessionBeadsTraced(
 						expectedProvider := expectedProviderFamilyForTemplate(session, tp)
 						if liveProvider != "" && liveProvider != expectedProvider {
 							match.matches = false
+						} else if liveProvider == "" && expectedProvider != "" && sessionProviderFamily(*session) == "" {
+							// A legacy hash with no stored provider identity and no
+							// live GC_PROVIDER signal is impossible to validate
+							// against provider-family drift. Fail closed once so the
+							// session restarts and stamps authoritative metadata.
+							match.matches = false
 						}
 					}
 					if !match.matches {
