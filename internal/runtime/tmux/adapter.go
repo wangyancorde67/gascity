@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/overlay"
@@ -572,7 +573,7 @@ type startOps interface {
 	sendKeys(name, text string) error
 	setRemainOnExit(name string) error
 	runSetupCommand(ctx context.Context, cmd string, env map[string]string, timeout time.Duration) error
-	runPreLaunchCommand(ctx context.Context, cmd string, env map[string]string, timeout time.Duration) (string, string, error)
+	runPreLaunchCommand(ctx context.Context, cmd string, env map[string]string, timeout time.Duration) (string, string, bool, bool, error)
 }
 
 // tmuxStartOps adapts [*Tmux] to the [startOps] interface.
@@ -640,10 +641,12 @@ func (o *tmuxStartOps) runSetupCommand(ctx context.Context, cmd string, env map[
 	return c.Run()
 }
 
-func (o *tmuxStartOps) runPreLaunchCommand(ctx context.Context, cmd string, env map[string]string, timeout time.Duration) (string, string, error) {
+func (o *tmuxStartOps) runPreLaunchCommand(ctx context.Context, cmd string, env map[string]string, timeout time.Duration) (string, string, bool, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	c := exec.CommandContext(ctx, "sh", "-c", cmd)
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	c.WaitDelay = 2 * time.Second
 	if workDir := strings.TrimSpace(env["GC_DIR"]); workDir != "" {
 		c.Dir = workDir
 	}
@@ -658,8 +661,17 @@ func (o *tmuxStartOps) runPreLaunchCommand(ctx context.Context, cmd string, env 
 	stderr := &limitedBuffer{max: maxPreLaunchStderr}
 	c.Stdout = stdout
 	c.Stderr = stderr
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = runtime.SignalProcessGroup(c, syscall.SIGKILL)
+		case <-done:
+		}
+	}()
 	err := c.Run()
-	return stdout.String(), stderr.String(), err
+	return stdout.String(), stderr.String(), stdout.Overflowed(), stderr.Overflowed(), err
 }
 
 // doStartSession is the pure startup orchestration logic.
@@ -886,23 +898,34 @@ const (
 )
 
 type limitedBuffer struct {
-	buf bytes.Buffer
-	max int
+	buf        bytes.Buffer
+	max        int
+	overflowed bool
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
-	remaining := b.max + 1 - b.buf.Len()
-	if remaining > 0 {
-		if remaining > len(p) {
-			remaining = len(p)
+	remaining := b.max - b.buf.Len()
+	if remaining <= 0 {
+		if len(p) > 0 {
+			b.overflowed = true
 		}
-		_, _ = b.buf.Write(p[:remaining])
+		return len(p), nil
+	}
+	if remaining > len(p) {
+		remaining = len(p)
+	}
+	_, _ = b.buf.Write(p[:remaining])
+	if len(p) > remaining {
+		b.overflowed = true
 	}
 	return len(p), nil
 }
 
 func (b *limitedBuffer) String() string { return b.buf.String() }
 func (b *limitedBuffer) Len() int       { return b.buf.Len() }
+func (b *limitedBuffer) Overflowed() bool {
+	return b.overflowed
+}
 
 func runPreLaunch(ctx context.Context, ops startOps, name string, cfg runtime.Config, setupTimeout time.Duration) (runtime.Config, error) {
 	if len(cfg.PreLaunch) == 0 {
@@ -915,30 +938,23 @@ func runPreLaunch(ctx context.Context, ops startOps, name string, cfg runtime.Co
 		}
 		cfg.Env = copied
 	}
-	ctx, cancel := context.WithTimeout(ctx, setupTimeout)
-	defer cancel()
 	env := make(map[string]string, len(cfg.Env)+1)
 	for k, v := range cfg.Env {
 		env[k] = v
 	}
 	env["GC_SESSION"] = name
 	for i, cmd := range cfg.PreLaunch {
-		stdout, stderr, err := ops.runPreLaunchCommand(ctx, cmd, env, setupTimeout)
+		stdout, _, stdoutTooBig, stderrTooBig, err := ops.runPreLaunchCommand(ctx, cmd, env, setupTimeout)
 		if err != nil {
-			stage := "script_exit"
-			if errors.Is(err, context.DeadlineExceeded) {
-				stage = "timeout"
-			} else if errors.Is(err, context.Canceled) {
-				stage = "context_canceled"
-			}
+			reason, stage := preLaunchCommandFailure(err)
 			return cfg, fmt.Errorf("pre_launch[%d]: %w", i, &runtime.PreLaunchDecisionError{
 				Err:    runtime.ErrPreLaunchAborted,
 				Action: "abort",
-				Reason: strings.TrimSpace(err.Error()),
+				Reason: reason,
 				Stage:  stage,
 			})
 		}
-		if len(stdout) > maxPreLaunchStdout {
+		if stdoutTooBig {
 			return cfg, fmt.Errorf("pre_launch[%d]: %w", i, &runtime.PreLaunchDecisionError{
 				Err:    runtime.ErrPreLaunchAborted,
 				Action: "abort",
@@ -946,7 +962,7 @@ func runPreLaunch(ctx context.Context, ops startOps, name string, cfg runtime.Co
 				Stage:  "stdout_too_large",
 			})
 		}
-		if len(stderr) > maxPreLaunchStderr {
+		if stderrTooBig {
 			return cfg, fmt.Errorf("pre_launch[%d]: %w", i, &runtime.PreLaunchDecisionError{
 				Err:    runtime.ErrPreLaunchAborted,
 				Action: "abort",
@@ -1020,6 +1036,17 @@ func runPreLaunch(ctx context.Context, ops startOps, name string, cfg runtime.Co
 		}
 	}
 	return cfg, nil
+}
+
+func preLaunchCommandFailure(err error) (reason, stage string) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout", "timeout"
+	case errors.Is(err, context.Canceled):
+		return "context_canceled", "context_canceled"
+	default:
+		return "script_failed", "script_exit"
+	}
 }
 
 func parsePreLaunchResult(stdout string) (preLaunchCommandResult, error) {

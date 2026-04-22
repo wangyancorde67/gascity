@@ -675,6 +675,7 @@ func commitStartResultTraced(
 			reason = strings.TrimSpace(result.preLaunchDecision.Reason)
 		}
 		metadata := sessionpkg.ArchivePatch(clk.Now(), "pre_launch_drained", true)
+		metadata["last_woke_at"] = ""
 		if result.preLaunchDecision != nil {
 			for key, value := range result.preLaunchDecision.Metadata {
 				metadata[key] = value
@@ -718,6 +719,9 @@ func commitStartResultTraced(
 		metadata["gc.pre_launch.failure_stage"] = stage
 		metadata["gc.pre_launch.at"] = clk.Now().UTC().Format(time.RFC3339)
 		metadata["gc.pre_launch.provider_started"] = "false"
+		metadata["state"] = string(sessionpkg.StateAsleep)
+		metadata["state_reason"] = "pre_launch_aborted"
+		metadata["last_woke_at"] = ""
 		metadata["pending_create_claim"] = ""
 		if err := store.SetMetadataBatch(session.ID, metadata); err != nil {
 			fmt.Fprintf(stderr, "session reconciler: recording pre_launch abort for %s: %v\n", name, err) //nolint:errcheck
@@ -729,15 +733,6 @@ func commitStartResultTraced(
 				session.Metadata[key] = value
 			}
 		}
-		if err := store.SetMetadata(session.ID, "last_woke_at", ""); err != nil {
-			fmt.Fprintf(stderr, "session reconciler: clearing last_woke_at for %s: %v\n", name, err) //nolint:errcheck
-		} else {
-			if session.Metadata == nil {
-				session.Metadata = make(map[string]string)
-			}
-			session.Metadata["last_woke_at"] = ""
-		}
-		recordWakeFailure(session, store, clk)
 		logLifecycleOutcome(stderr, "start", wave, name, tp.TemplateName, result.outcome, result.started, result.finished, result.err)
 		return false
 	}

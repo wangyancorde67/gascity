@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -61,6 +63,8 @@ type fakeStartOps struct {
 	runSetupCommandErr       error
 	runPreLaunchStdout       string
 	runPreLaunchStderr       string
+	runPreLaunchStdoutTooBig bool
+	runPreLaunchStderrTooBig bool
 	runPreLaunchErr          error
 }
 
@@ -181,14 +185,35 @@ func (f *fakeStartOps) runSetupCommand(_ context.Context, cmd string, env map[st
 	return nil
 }
 
-func (f *fakeStartOps) runPreLaunchCommand(_ context.Context, cmd string, env map[string]string, timeout time.Duration) (string, string, error) {
+func (f *fakeStartOps) runPreLaunchCommand(_ context.Context, cmd string, env map[string]string, timeout time.Duration) (string, string, bool, bool, error) {
 	f.calls = append(f.calls, startCall{
 		method:  "runPreLaunchCommand",
 		command: cmd,
 		env:     env,
 		timeout: timeout,
 	})
-	return f.runPreLaunchStdout, f.runPreLaunchStderr, f.runPreLaunchErr
+	return f.runPreLaunchStdout, f.runPreLaunchStderr, f.runPreLaunchStdoutTooBig, f.runPreLaunchStderrTooBig, f.runPreLaunchErr
+}
+
+type timingPreLaunchOps struct {
+	fakeStartOps
+	sleeps []time.Duration
+}
+
+func (o *timingPreLaunchOps) runPreLaunchCommand(ctx context.Context, cmd string, env map[string]string, timeout time.Duration) (string, string, bool, bool, error) {
+	o.calls = append(o.calls, startCall{
+		method:  "runPreLaunchCommand",
+		command: cmd,
+		env:     env,
+		timeout: timeout,
+	})
+	sleep := o.sleeps[len(o.calls)-1]
+	select {
+	case <-time.After(sleep):
+		return `{"action":"continue"}`, "", false, false, nil
+	case <-ctx.Done():
+		return "", "", false, false, ctx.Err()
+	}
 }
 
 // callMethods returns just the method names for sequence assertions.
@@ -1159,6 +1184,106 @@ func TestDoStartSession_PreLaunchNullJSONAborts(t *testing.T) {
 	}
 
 	assertCallSequence(t, ops, []string{"runPreLaunchCommand"})
+}
+
+func TestDoStartSession_PreLaunchScriptFailureSanitizesReason(t *testing.T) {
+	ops := &fakeStartOps{
+		runPreLaunchErr: errors.New(`sh: export SECRET_TOKEN=topsecret: command not found`),
+	}
+
+	cfg := runtime.Config{
+		Command:   "claude",
+		PreLaunch: []string{"broken-hook"},
+		PreLaunchMetadataSink: func(_, _, _ string, _ map[string]string) error {
+			return nil
+		},
+	}
+
+	err := doStartSession(context.Background(), ops, "test", cfg, DefaultConfig().SetupTimeout)
+	if err == nil {
+		t.Fatal("expected pre_launch abort")
+	}
+	var decision *runtime.PreLaunchDecisionError
+	if !errors.As(err, &decision) {
+		t.Fatalf("error = %v, want PreLaunchDecisionError", err)
+	}
+	if decision.Reason != "script_failed" {
+		t.Fatalf("decision.Reason = %q, want script_failed", decision.Reason)
+	}
+	if strings.Contains(decision.Reason, "SECRET_TOKEN") {
+		t.Fatalf("decision.Reason leaked secret: %q", decision.Reason)
+	}
+}
+
+func TestDoStartSession_PreLaunchStdoutOverflowAborts(t *testing.T) {
+	ops := &fakeStartOps{
+		runPreLaunchStdout:       `{"action":"continue"}`,
+		runPreLaunchStdoutTooBig: true,
+	}
+
+	cfg := runtime.Config{
+		Command:   "claude",
+		PreLaunch: []string{"overflow-hook"},
+		PreLaunchMetadataSink: func(_, _, _ string, _ map[string]string) error {
+			return nil
+		},
+	}
+
+	err := doStartSession(context.Background(), ops, "test", cfg, DefaultConfig().SetupTimeout)
+	if err == nil {
+		t.Fatal("expected pre_launch abort")
+	}
+	var decision *runtime.PreLaunchDecisionError
+	if !errors.As(err, &decision) {
+		t.Fatalf("error = %v, want PreLaunchDecisionError", err)
+	}
+	if decision.Stage != "stdout_too_large" {
+		t.Fatalf("decision.Stage = %q, want stdout_too_large", decision.Stage)
+	}
+}
+
+func TestRunPreLaunchUsesPerCommandTimeoutWithoutSharedOuterBudget(t *testing.T) {
+	ops := &timingPreLaunchOps{
+		sleeps: []time.Duration{25 * time.Millisecond, 25 * time.Millisecond},
+	}
+	cfg := runtime.Config{
+		PreLaunch: []string{"first", "second"},
+		PreLaunchMetadataSink: func(_, _, _ string, _ map[string]string) error {
+			return nil
+		},
+	}
+
+	_, err := runPreLaunch(context.Background(), ops, "test", cfg, 30*time.Millisecond)
+	if err != nil {
+		t.Fatalf("runPreLaunch returned error with per-command budgeting: %v", err)
+	}
+	assertCallSequence(t, &ops.fakeStartOps, []string{"runPreLaunchCommand", "runPreLaunchCommand"})
+}
+
+func TestTmuxStartOpsRunPreLaunchCommandKillsProcessGroupOnTimeout(t *testing.T) {
+	ops := &tmuxStartOps{tm: &Tmux{}}
+	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Millisecond)
+	defer cancel()
+
+	stdout, _, stdoutTooBig, stderrTooBig, err := ops.runPreLaunchCommand(ctx, "sleep 30 & child=$!; echo $child; wait $child", map[string]string{}, time.Second)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if stdoutTooBig || stderrTooBig {
+		t.Fatalf("unexpected overflow flags stdout=%v stderr=%v", stdoutTooBig, stderrTooBig)
+	}
+	childPID, convErr := strconv.Atoi(strings.TrimSpace(stdout))
+	if convErr != nil {
+		t.Fatalf("stdout = %q, want child pid: %v", stdout, convErr)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if killErr := syscall.Kill(childPID, 0); killErr == syscall.ESRCH {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("child process %d still alive after timeout kill", childPID)
 }
 
 func TestDoStartSession_SetupEnvPassthrough(t *testing.T) {

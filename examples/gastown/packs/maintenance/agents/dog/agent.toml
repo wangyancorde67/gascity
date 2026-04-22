@@ -1,6 +1,6 @@
 scope = "city"
 fallback = true
-pre_launch = ["gc work claim-next --template {{.Agent}} --assignee {{.Session}} --json"]
+pre_launch = ["gc work claim-next --json"]
 nudge = "Check your hook for work assignments."
 idle_timeout = "2h"
 min_active_sessions = 0

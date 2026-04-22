@@ -1784,6 +1784,156 @@ func TestCommitStartResult_SanitizesMultilineError(t *testing.T) {
 	}
 }
 
+func TestCommitStartResult_PreLaunchAbortedDoesNotRecordWakeFailure(t *testing.T) {
+	store := beads.NewMemStore()
+	bead, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":             "worker",
+			"session_name":         "worker",
+			"state":                "creating",
+			"pending_create_claim": "true",
+			"last_woke_at":         "2026-03-18T12:00:00Z",
+			"wake_attempts":        "4",
+			"session_key":          "session-key-1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := startResult{
+		prepared: preparedStart{
+			candidate: startCandidate{
+				session: &bead,
+				tp:      TemplateParams{TemplateName: "worker", InstanceName: "worker"},
+			},
+		},
+		err: &runtime.PreLaunchDecisionError{
+			Err:    runtime.ErrPreLaunchAborted,
+			Action: "abort",
+			Reason: "script_failed",
+			Stage:  "script_exit",
+			Metadata: map[string]string{
+				"claimed_bead": "ga-123",
+			},
+		},
+		outcome:           "pre_launch_aborted",
+		preLaunchDecision: &runtime.PreLaunchDecisionError{Reason: "script_failed", Stage: "script_exit", Metadata: map[string]string{"claimed_bead": "ga-123"}},
+		started:           time.Unix(1, 0),
+		finished:          time.Unix(2, 0),
+	}
+	var stderr bytes.Buffer
+	ok := commitStartResult(result, store, &clock.Fake{Time: time.Unix(3, 0)}, events.Discard, 0, ioDiscard{}, &stderr)
+	if ok {
+		t.Fatal("commitStartResult returned true for pre_launch abort")
+	}
+
+	got, err := store.Get(bead.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata["state"] != string(sessionpkg.StateAsleep) {
+		t.Fatalf("state = %q, want %q", got.Metadata["state"], sessionpkg.StateAsleep)
+	}
+	if got.Metadata["pending_create_claim"] != "" {
+		t.Fatalf("pending_create_claim = %q, want cleared", got.Metadata["pending_create_claim"])
+	}
+	if got.Metadata["last_woke_at"] != "" {
+		t.Fatalf("last_woke_at = %q, want cleared", got.Metadata["last_woke_at"])
+	}
+	if got.Metadata["wake_attempts"] != "4" {
+		t.Fatalf("wake_attempts = %q, want preserved", got.Metadata["wake_attempts"])
+	}
+	if got.Metadata["quarantined_until"] != "" {
+		t.Fatalf("quarantined_until = %q, want empty", got.Metadata["quarantined_until"])
+	}
+	if got.Metadata["gc.pre_launch.action"] != "abort" {
+		t.Fatalf("gc.pre_launch.action = %q, want abort", got.Metadata["gc.pre_launch.action"])
+	}
+	if got.Metadata["gc.pre_launch.reason"] != "script_failed" {
+		t.Fatalf("gc.pre_launch.reason = %q, want script_failed", got.Metadata["gc.pre_launch.reason"])
+	}
+	if got.Metadata["gc.pre_launch.failure_stage"] != "script_exit" {
+		t.Fatalf("gc.pre_launch.failure_stage = %q, want script_exit", got.Metadata["gc.pre_launch.failure_stage"])
+	}
+	if got.Metadata["claimed_bead"] != "ga-123" {
+		t.Fatalf("claimed_bead = %q, want ga-123", got.Metadata["claimed_bead"])
+	}
+	if got.Metadata["session_key"] != "session-key-1" {
+		t.Fatalf("session_key = %q, want preserved", got.Metadata["session_key"])
+	}
+}
+
+func TestCommitStartResult_PreLaunchDrainedClearsWakeMarker(t *testing.T) {
+	store := beads.NewMemStore()
+	bead, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":             "worker",
+			"session_name":         "worker",
+			"state":                "creating",
+			"pending_create_claim": "true",
+			"last_woke_at":         "2026-03-18T12:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := startResult{
+		prepared: preparedStart{
+			candidate: startCandidate{
+				session: &bead,
+				tp:      TemplateParams{TemplateName: "worker", InstanceName: "worker"},
+			},
+		},
+		outcome: "pre_launch_drained",
+		preLaunchDecision: &runtime.PreLaunchDecisionError{
+			Err:    runtime.ErrPreLaunchDrained,
+			Action: "drain",
+			Reason: "no work",
+			Metadata: map[string]string{
+				"claimed_bead": "ga-123",
+			},
+		},
+		started:  time.Unix(1, 0),
+		finished: time.Unix(2, 0),
+	}
+	ok := commitStartResult(result, store, &clock.Fake{Time: time.Unix(3, 0)}, events.Discard, 0, ioDiscard{}, ioDiscard{})
+	if !ok {
+		t.Fatal("commitStartResult returned false for pre_launch drain")
+	}
+
+	got, err := store.Get(bead.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata["state"] != string(sessionpkg.StateArchived) {
+		t.Fatalf("state = %q, want %q", got.Metadata["state"], sessionpkg.StateArchived)
+	}
+	if got.Metadata["state_reason"] != "pre_launch_drained" {
+		t.Fatalf("state_reason = %q, want pre_launch_drained", got.Metadata["state_reason"])
+	}
+	if got.Metadata["pending_create_claim"] != "" {
+		t.Fatalf("pending_create_claim = %q, want cleared", got.Metadata["pending_create_claim"])
+	}
+	if got.Metadata["last_woke_at"] != "" {
+		t.Fatalf("last_woke_at = %q, want cleared", got.Metadata["last_woke_at"])
+	}
+	if got.Metadata["gc.pre_launch.action"] != "drain" {
+		t.Fatalf("gc.pre_launch.action = %q, want drain", got.Metadata["gc.pre_launch.action"])
+	}
+	if got.Metadata["gc.pre_launch.reason"] != "no work" {
+		t.Fatalf("gc.pre_launch.reason = %q, want no work", got.Metadata["gc.pre_launch.reason"])
+	}
+	if got.Metadata["claimed_bead"] != "ga-123" {
+		t.Fatalf("claimed_bead = %q, want ga-123", got.Metadata["claimed_bead"])
+	}
+}
+
 func TestInterruptTargetsBounded_LogsSuccessOutcome(t *testing.T) {
 	sp := runtime.NewFake()
 	if err := sp.Start(context.Background(), "worker", runtime.Config{}); err != nil {
