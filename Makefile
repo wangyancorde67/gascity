@@ -163,7 +163,7 @@ TEST_ENV = env -i \
 
 ## test: run fast unit tests (skip integration-tagged and GC_FAST_UNIT-gated process tests)
 ## The skipped cmd/gc process-backed scenarios remain covered by
-## `make test-cmd-gc-process` locally and the CI `test-integration-packages` shard.
+## `make test-cmd-gc-process` locally and the CI `cmd/gc process suite` job.
 ## Wrapped in $(TEST_ENV) — see comment above for why.
 test:
 	$(TEST_ENV) GC_FAST_UNIT=1 go test ./...
@@ -171,7 +171,7 @@ test:
 ## test-cmd-gc-process: run the full non-short cmd/gc suite, including the
 ## process-backed lifecycle coverage routed out of the default fast loop
 test-cmd-gc-process:
-	$(TEST_ENV) GC_FAST_UNIT=0 go test ./cmd/gc
+	$(TEST_ENV) GC_FAST_UNIT=0 go test -timeout 20m ./cmd/gc
 
 ## test-worker-core: run deterministic worker transcript and continuation conformance
 test-worker-core:
@@ -348,7 +348,7 @@ UNIT_COVER_PKGS := $(shell go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Im
 
 ## test-cover: run fast unit-test coverage without the integration-tagged package sweep
 ## The skipped cmd/gc process-backed scenarios remain covered by
-## `make test-cmd-gc-process` locally and the CI `test-integration-packages` shard.
+## `make test-cmd-gc-process` locally and the CI `cmd/gc process suite` job.
 test-cover:
 	$(TEST_ENV) GC_FAST_UNIT=1 go test -timeout 8m -coverprofile=coverage.txt $(UNIT_COVER_PKGS)
 

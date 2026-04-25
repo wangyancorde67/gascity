@@ -286,6 +286,7 @@ func TestDoltGCNudgeDefaultCallTimeoutMatchesOrderBudget(t *testing.T) {
 }
 
 func TestDoltGCNudgeBoundsGCCall(t *testing.T) {
+	skipSlowCmdGCTest(t, "runs dolt GC nudge shell timeout coverage; run make test-cmd-gc-process for full coverage")
 	if _, err := exec.LookPath("timeout"); err != nil {
 		if _, gtimeoutErr := exec.LookPath("gtimeout"); gtimeoutErr != nil {
 			t.Skip("timeout/gtimeout not available")
@@ -344,6 +345,7 @@ func TestDoltGCNudgeFailsClosedWithoutBoundedRunner(t *testing.T) {
 }
 
 func TestDoltGCNudgeFallbackLockHonorsFlockHolder(t *testing.T) {
+	skipSlowCmdGCTest(t, "runs dolt GC nudge shell lock contention coverage; run make test-cmd-gc-process for full coverage")
 	cityPath := writeDoltGCNudgeCity(t)
 	sleepPath, err := exec.LookPath("sleep")
 	if err != nil {
@@ -396,6 +398,7 @@ func TestDoltGCNudgeFallbackLockHonorsFlockHolder(t *testing.T) {
 }
 
 func TestDoltGCNudgeLockNormalizesLocalHostAliases(t *testing.T) {
+	skipSlowCmdGCTest(t, "runs dolt GC nudge shell lock contention coverage; run make test-cmd-gc-process for full coverage")
 	cityPath := writeDoltGCNudgeCity(t)
 	sleepPath, err := exec.LookPath("sleep")
 	if err != nil {
@@ -453,6 +456,7 @@ func TestDoltGCNudgeLockNormalizesLocalHostAliases(t *testing.T) {
 }
 
 func TestDoltGCNudgeLockIgnoresDifferentTmpDirs(t *testing.T) {
+	skipSlowCmdGCTest(t, "runs dolt GC nudge shell lock contention coverage; run make test-cmd-gc-process for full coverage")
 	cityPath := writeDoltGCNudgeCity(t)
 	sleepPath, err := exec.LookPath("sleep")
 	if err != nil {

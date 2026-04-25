@@ -215,7 +215,7 @@ func TestRegisterCityWithSupervisorRetriesControllerLockInitFailure(t *testing.T
 }
 
 func TestRegisterCityWithSupervisorKeepsRegistrationWhenReloadFails(t *testing.T) {
-	skipSlowCmdGCTest(t, "exercises supervisor registration retry behavior; run without -short for scenario coverage")
+	skipSlowCmdGCTest(t, "exercises supervisor registration retry behavior; run make test-cmd-gc-process for scenario coverage")
 	gcHome := t.TempDir()
 	t.Setenv("GC_HOME", gcHome)
 

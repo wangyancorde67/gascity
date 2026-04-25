@@ -148,6 +148,30 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
 
+  cmd-gc-process:
+    name: cmd/gc process suite
+    needs: changes
+    if: >-
+      needs.changes.outputs.worker_phase2 == 'true' ||
+      needs.changes.outputs.beads == 'true' ||
+      needs.changes.outputs.packs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOLT_VERSION: "1.86.1"
+      BD_VERSION: "v1.0.0"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: ./.github/actions/setup-gascity-ubuntu
+        with:
+          dolt-version: ${{ env.DOLT_VERSION }}
+          bd-version: ${{ env.BD_VERSION }}
+          install-claude-cli: "true"
+      - name: Install tools
+        run: make install-tools
+      - name: Run cmd/gc process suite
+        run: make test-cmd-gc-process
+
   # Runs always, but remains non-blocking while integration/provider paths are still stabilizing.
   integration-shards:
     name: Integration / ${{ matrix.shard_name }}
