@@ -139,6 +139,34 @@ func TestBuiltinProvidersGemini(t *testing.T) {
 	}
 }
 
+func TestBuiltinProvidersCursor(t *testing.T) {
+	p := BuiltinProviders()["cursor"]
+	if p.Command != "cursor-agent" {
+		t.Errorf("Command = %q, want %q", p.Command, "cursor-agent")
+	}
+	if len(p.Args) != 1 || p.Args[0] != "-f" {
+		t.Errorf("Args = %v, want [-f]", p.Args)
+	}
+	if p.PromptMode != "arg" {
+		t.Errorf("PromptMode = %q, want %q", p.PromptMode, "arg")
+	}
+	if p.ReadyPromptPrefix != "\u2192 " {
+		t.Errorf("ReadyPromptPrefix = %q, want %q", p.ReadyPromptPrefix, "\u2192 ")
+	}
+	if p.ReadyDelayMs != 10000 {
+		t.Errorf("ReadyDelayMs = %d, want 10000", p.ReadyDelayMs)
+	}
+	if len(p.ProcessNames) != 1 || p.ProcessNames[0] != "cursor-agent" {
+		t.Errorf("ProcessNames = %v, want [cursor-agent]", p.ProcessNames)
+	}
+	if !derefBool(p.SupportsHooks) {
+		t.Error("SupportsHooks = false, want true")
+	}
+	if p.InstructionsFile != "AGENTS.md" {
+		t.Errorf("InstructionsFile = %q, want %q", p.InstructionsFile, "AGENTS.md")
+	}
+}
+
 func TestBuiltinProvidersReturnsNewMap(t *testing.T) {
 	a := BuiltinProviders()
 	b := BuiltinProviders()
