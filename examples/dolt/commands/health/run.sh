@@ -235,6 +235,9 @@ fi
 # positives from processes that merely mention "dolt" in their args
 # (e.g., Claude sessions whose prompt text contains "dolt sql-server").
 #
+# Rig-local Dolt servers (configured via dolt.port in config.yaml)
+# are legitimate — exclude any PID listening on a known rig port.
+#
 # GC_HEALTH_SKIP_ZOMBIE_SCAN is a test-only escape hatch. Zombie
 # enumeration spawns one `ps` per matching process, which on shared
 # dev machines with many accumulated dolt processes dominates the
@@ -244,8 +247,22 @@ fi
 zombie_count=0
 zombie_pids=""
 if [ "${GC_HEALTH_SKIP_ZOMBIE_SCAN:-0}" != "1" ]; then
+  # Collect PIDs of legitimate rig-local Dolt servers.
+  rig_dolt_pids=""
+  while IFS= read -r meta; do
+    [ -f "$meta" ] || continue
+    config_file="$(dirname "$meta")/config.yaml"
+    [ -f "$config_file" ] || continue
+    rig_port=$(grep '^dolt\.port:' "$config_file" 2>/dev/null | sed "s/^dolt\\.port:[[:space:]]*//; s/[[:space:]]*#.*$//; s/['\\\"]//g; s/[[:space:]]*$//" | head -1)
+    case "$rig_port" in ''|*[!0-9]*) continue ;; esac
+    [ "$rig_port" = "$GC_DOLT_PORT" ] && continue
+    rig_pid=$(managed_runtime_listener_pid "$rig_port" || true)
+    [ -n "$rig_pid" ] && rig_dolt_pids="$rig_dolt_pids $rig_pid "
+  done < "$_meta_cache"
+
   for p in $(pgrep -x dolt 2>/dev/null || true); do
     [ "$p" = "$server_pid" ] && continue
+    case "$rig_dolt_pids" in *" $p "*) continue ;; esac
     cmd=$(ps -p "$p" -o args= 2>/dev/null || true)
     case "$cmd" in
       *sql-server*) ;;
