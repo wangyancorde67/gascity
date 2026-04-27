@@ -4773,6 +4773,12 @@ func TestDoPrimeFormulaV2GraphWorkerPromptClaimsRoutedWork(t *testing.T) {
 	if err := materializeBuiltinPrompts(dir); err != nil {
 		t.Fatalf("materializeBuiltinPrompts: %v", err)
 	}
+	t.Setenv("GC_CITY", "")
+	t.Setenv("GC_CITY_PATH", "")
+	t.Setenv("GC_CITY_ROOT", "")
+	t.Setenv("GC_DIR", "")
+	t.Setenv("GC_RIG", "")
+	t.Setenv("GC_RIG_ROOT", "")
 	tomlContent := `[workspace]
 name = "test-city"
 
