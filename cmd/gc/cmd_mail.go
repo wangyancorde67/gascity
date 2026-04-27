@@ -808,6 +808,8 @@ Use -s/--subject for the reply subject and -m/--message for the reply body.`,
 	cmd.Flags().StringVarP(&subject, "subject", "s", "", "reply subject line")
 	cmd.Flags().StringVarP(&message, "message", "m", "", "reply body text")
 	cmd.Flags().BoolVar(&notify, "notify", false, "nudge the recipient after replying")
+	cmd.Flags().BoolVar(&notify, "nudge", false, "alias for --notify")
+	_ = cmd.Flags().MarkHidden("nudge")
 	return cmd
 }
 
@@ -1206,20 +1208,20 @@ func cmdMailReply(args []string, subject, message string, notify bool, stdout, s
 	rec := openCityRecorder(stderr)
 
 	sender := defaultMailIdentity()
-	var hasStore bool
-	if sender != "human" {
-		if !isStorelessMailProvider() {
-			hasStore = true
-			store, storeCode := openCityStore(stderr, "gc mail reply")
-			if store == nil {
-				return storeCode
-			}
-			cityPath, err := resolveCity()
-			if err != nil {
-				fmt.Fprintf(stderr, "gc mail reply: %v\n", err) //nolint:errcheck // best-effort stderr
-				return 1
-			}
-			cfg, _ := loadCityConfig(cityPath, stderr)
+	var store beads.Store
+	if !isStorelessMailProvider() && (sender != "human" || notify) {
+		var storeCode int
+		store, storeCode = openCityStore(stderr, "gc mail reply")
+		if store == nil {
+			return storeCode
+		}
+		cityPath, err := resolveCity()
+		if err != nil {
+			fmt.Fprintf(stderr, "gc mail reply: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		cfg, _ := loadCityConfig(cityPath, stderr)
+		if sender != "human" {
 			resolved, ok := resolveDefaultMailSenderForCommand(cityPath, cfg, store, stderr, "gc mail reply")
 			if !ok {
 				return 1
@@ -1235,7 +1237,7 @@ func cmdMailReply(args []string, subject, message string, notify bool, stdout, s
 	}
 
 	var nf nudgeFunc
-	if notify && hasStore {
+	if notify && store != nil {
 		nf = newMailNudgeFunc(sender)
 	}
 

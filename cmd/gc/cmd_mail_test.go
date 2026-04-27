@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/beadmail"
+	"github.com/gastownhall/gascity/internal/nudgequeue"
 	"github.com/gastownhall/gascity/internal/session"
 )
 
@@ -1401,6 +1403,84 @@ func TestCmdMailReply_FallsBackToGCSessionIDWhenAliasMissing(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "to alice") {
 		t.Fatalf("stdout = %q, want reply addressed to alice", stdout.String())
+	}
+}
+
+func TestCmdMailReplyHumanNotifyQueuesNudge(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_MAIL", "")
+	t.Setenv("GC_SESSION", "fake")
+	t.Setenv("GC_ALIAS", "")
+	t.Setenv("GC_SESSION_ID", "")
+	t.Setenv("GC_AGENT", "")
+
+	cityPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
+	t.Setenv("GC_CITY", cityPath)
+
+	store, err := openCityStoreAt(cityPath)
+	if err != nil {
+		t.Fatalf("openCityStoreAt: %v", err)
+	}
+	sessionBead, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":        "alice",
+			"session_name": "alice-session",
+			"provider":     "fake",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create(session): %v", err)
+	}
+
+	mp := beadmail.New(store)
+	original, err := mp.Send("alice", "human", "Hello", "first")
+	if err != nil {
+		t.Fatalf("mp.Send(): %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := cmdMailReply([]string{original.ID, "reply body"}, "", "", true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("cmdMailReply() = %d, want 0; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "to alice") {
+		t.Fatalf("stdout = %q, want reply addressed to alice", stdout.String())
+	}
+
+	state, err := nudgequeue.LoadState(cityPath)
+	if err != nil {
+		t.Fatalf("LoadState(): %v", err)
+	}
+	if len(state.Pending) != 1 {
+		t.Fatalf("pending nudges = %d, want 1; state=%+v stderr=%s", len(state.Pending), state, stderr.String())
+	}
+	nudge := state.Pending[0]
+	if nudge.Agent != "alice" {
+		t.Fatalf("nudge.Agent = %q, want alice", nudge.Agent)
+	}
+	if nudge.SessionID != sessionBead.ID {
+		t.Fatalf("nudge.SessionID = %q, want %q", nudge.SessionID, sessionBead.ID)
+	}
+	if nudge.Source != "mail" {
+		t.Fatalf("nudge.Source = %q, want mail", nudge.Source)
+	}
+	if nudge.Message != "You have mail from human" {
+		t.Fatalf("nudge.Message = %q", nudge.Message)
+	}
+}
+
+func TestMailReplyAcceptsNudgeAlias(t *testing.T) {
+	cmd := newMailReplyCmd(io.Discard, io.Discard)
+	if cmd.Flags().Lookup("nudge") == nil {
+		t.Fatal("reply command missing --nudge alias")
+	}
+	if err := cmd.Flags().Set("nudge", "true"); err != nil {
+		t.Fatalf("set --nudge: %v", err)
 	}
 }
 
