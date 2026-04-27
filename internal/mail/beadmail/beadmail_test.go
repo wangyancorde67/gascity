@@ -7,6 +7,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // noListScanStore errors when List is called without a filter, proving that
@@ -182,6 +183,42 @@ func TestSend(t *testing.T) {
 	}
 	if hasLabel(b.Labels, "gc:message") {
 		t.Error("bead should no longer carry the legacy gc:message label")
+	}
+}
+
+func TestSendCanonicalizesSessionSender(t *testing.T) {
+	store := beads.NewMemStore()
+	p := New(store)
+
+	sender, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":        "gascity/workflows.codex-min-9",
+			"session_name": "workflows__codex-min-mc-sender",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create session: %v", err)
+	}
+
+	msg, err := p.Send("gascity/workflows.codex-min-9", "human", "Approval", "please approve")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if msg.From != sender.ID {
+		t.Fatalf("message From = %q, want sender session ID %q", msg.From, sender.ID)
+	}
+	b, err := store.Get(msg.ID)
+	if err != nil {
+		t.Fatalf("Get message: %v", err)
+	}
+	if b.Metadata[fromSessionIDMetadataKey] != sender.ID {
+		t.Fatalf("%s = %q, want %q", fromSessionIDMetadataKey, b.Metadata[fromSessionIDMetadataKey], sender.ID)
+	}
+	if b.Metadata[fromDisplayMetadataKey] != "gascity/workflows.codex-min-9" {
+		t.Fatalf("%s = %q, want original display alias", fromDisplayMetadataKey, b.Metadata[fromDisplayMetadataKey])
 	}
 }
 
@@ -696,6 +733,47 @@ func TestReplyAgainstBdStoreValidatesTitle(t *testing.T) {
 	}
 	if reply.Subject != "Re: Hello" {
 		t.Errorf("Reply Subject = %q, want %q", reply.Subject, "Re: Hello")
+	}
+}
+
+func TestReplyPrefersStoredSenderSessionID(t *testing.T) {
+	store := beads.NewMemStore()
+	p := New(store)
+
+	sender, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":        "gascity/workflows.codex-min-9",
+			"session_name": "workflows__codex-min-mc-sender",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create session: %v", err)
+	}
+	original, err := store.Create(beads.Bead{
+		Title:       "Approval needed",
+		Description: "please approve",
+		Type:        "message",
+		Assignee:    "human",
+		From:        "gascity/workflows.codex-min-9",
+		Labels:      []string{"thread:stable-route"},
+		Metadata: map[string]string{
+			fromSessionIDMetadataKey: sender.ID,
+			fromDisplayMetadataKey:   "gascity/workflows.codex-min-9",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create original message: %v", err)
+	}
+
+	reply, err := p.Reply(original.ID, "human", "approved", "approved")
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+
+	if reply.To != sender.ID {
+		t.Fatalf("reply To = %q, want stable sender session ID %q", reply.To, sender.ID)
 	}
 }
 

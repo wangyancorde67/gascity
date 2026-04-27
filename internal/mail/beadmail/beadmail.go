@@ -12,6 +12,12 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/session"
+)
+
+const (
+	fromSessionIDMetadataKey = "mail.from_session_id"
+	fromDisplayMetadataKey   = "mail.from_display"
 )
 
 // Provider implements [mail.Provider] using [beads.Store] as the backend.
@@ -31,6 +37,7 @@ func (p *Provider) Send(from, to, subject, body string) (mail.Message, error) {
 	if to == "" {
 		return mail.Message{}, fmt.Errorf("beadmail send: recipient is required")
 	}
+	from, metadata := p.resolveSenderRoute(from)
 	threadID := generateThreadID()
 	labels := []string{"thread:" + threadID}
 
@@ -49,11 +56,28 @@ func (p *Provider) Send(from, to, subject, body string) (mail.Message, error) {
 		Assignee:    to,
 		From:        from,
 		Labels:      labels,
+		Metadata:    metadata,
 	})
 	if err != nil {
 		return mail.Message{}, fmt.Errorf("beadmail send: %w", err)
 	}
 	return beadToMessage(b), nil
+}
+
+func (p *Provider) resolveSenderRoute(from string) (string, map[string]string) {
+	from = strings.TrimSpace(from)
+	if from == "" || from == "human" || p.store == nil {
+		return from, nil
+	}
+	sessionID, err := session.ResolveSessionID(p.store, from)
+	if err != nil {
+		return from, nil
+	}
+	metadata := map[string]string{fromSessionIDMetadataKey: sessionID}
+	if sessionID != from {
+		metadata[fromDisplayMetadataKey] = from
+	}
+	return sessionID, metadata
 }
 
 // Inbox returns all unread messages for the recipient.
@@ -148,7 +172,11 @@ func (p *Provider) Reply(id, from, subject, body string) (mail.Message, error) {
 	if err != nil {
 		return mail.Message{}, fmt.Errorf("beadmail reply: %w", err)
 	}
-	if original.From == "" {
+	to := strings.TrimSpace(original.Metadata[fromSessionIDMetadataKey])
+	if to == "" {
+		to = strings.TrimSpace(original.From)
+	}
+	if to == "" {
 		return mail.Message{}, fmt.Errorf("beadmail reply: original message %s has no sender to reply to", id)
 	}
 
@@ -163,7 +191,7 @@ func (p *Provider) Reply(id, from, subject, body string) (mail.Message, error) {
 		Title:       deriveReplyTitle(subject, original.Title, body),
 		Description: body,
 		Type:        "message",
-		Assignee:    original.From, // reply goes back to sender
+		Assignee:    to, // reply goes back to sender
 		From:        from,
 		Labels:      labels,
 	})
