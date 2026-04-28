@@ -2028,9 +2028,10 @@ func (a *Agent) EffectiveOnDeath() string {
 	// invisible to every work_query tier (Tier 1 needs assignee match, Tiers
 	// 2/3 only match "ready" status). The next worker re-claims via Tier 3
 	// (gc.routed_to + --unassigned).
-	return `bd list --assignee=` + a.QualifiedName() +
-		` --status=in_progress --json 2>/dev/null | ` +
-		`jq -r '.[].id' 2>/dev/null | ` +
+	return `for id in "$GC_SESSION_ID" "$GC_SESSION_NAME" "$GC_ALIAS" "` + a.QualifiedName() +
+		`"; do [ -z "$id" ] && continue; ` +
+		`bd list --assignee="$id" --status=in_progress --json 2>/dev/null | ` +
+		`jq -r '.[].id' 2>/dev/null; done | sort -u | ` +
 		`xargs -rI{} bd update {} --assignee "" --status open 2>/dev/null`
 }
 
@@ -2045,11 +2046,13 @@ func (a *Agent) EffectiveOnBoot() string {
 	if a.PoolName != "" {
 		template = a.PoolName
 	}
-	// Reset both assignee and status; see EffectiveOnDeath for rationale.
+	// Only repair already-unassigned in-progress work. Assigned work may still
+	// be owned by a healthy live session after controller restart; orphaned
+	// assigned work is handled by the controller's live ownership checks.
 	return `bd list --metadata-field gc.routed_to=` + template +
-		` --status=in_progress --json 2>/dev/null | ` +
+		` --status=in_progress --no-assignee --json 2>/dev/null | ` +
 		`jq -r '.[].id' 2>/dev/null | ` +
-		`xargs -rI{} bd update {} --assignee "" --status open 2>/dev/null`
+		`xargs -rI{} bd update {} --status open 2>/dev/null`
 }
 
 // InjectImplicitAgents adds on-demand agents for each configured provider at

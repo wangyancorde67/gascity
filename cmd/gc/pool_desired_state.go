@@ -6,6 +6,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	sessionpkg "github.com/gastownhall/gascity/internal/session"
 )
 
 // SessionRequest represents a single session the reconciler should start.
@@ -94,12 +95,8 @@ func computePoolDesiredStates(
 		if template != "" {
 			sessionBeadTemplate[sb.ID] = template
 		}
-		assigneeToSessionBeadID[sb.ID] = sb.ID
-		if sn := strings.TrimSpace(sb.Metadata["session_name"]); sn != "" {
-			assigneeToSessionBeadID[sn] = sb.ID
-		}
-		if ni := strings.TrimSpace(sb.Metadata["configured_named_identity"]); ni != "" {
-			assigneeToSessionBeadID[ni] = sb.ID
+		for _, identifier := range sessionpkg.AssigneeIdentifiers(sb) {
+			assigneeToSessionBeadID[identifier] = sb.ID
 		}
 	}
 

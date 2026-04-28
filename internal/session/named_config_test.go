@@ -8,6 +8,52 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 )
 
+func TestAssigneeIdentifiersIncludesAliasAndPoolAgentName(t *testing.T) {
+	got := AssigneeIdentifiers(beads.Bead{
+		ID: "session-id",
+		Metadata: map[string]string{
+			"session_name":               "runtime-session",
+			"alias":                      "myrig/worker-1",
+			"agent_name":                 "myrig/worker-1",
+			NamedSessionIdentityMetadata: "configured-worker",
+			"pool_managed":               "true",
+			"pool_slot":                  "1",
+		},
+	})
+	want := []string{"session-id", "runtime-session", "myrig/worker-1", "configured-worker"}
+	if !sameStrings(got, want) {
+		t.Fatalf("AssigneeIdentifiers() = %#v, want %#v", got, want)
+	}
+}
+
+func TestAssigneeIdentifiersOmitsTemplateAgentNameForNamedSession(t *testing.T) {
+	got := AssigneeIdentifiers(beads.Bead{
+		ID: "session-id",
+		Metadata: map[string]string{
+			"session_name":               "runtime-session",
+			"alias":                      "named-reviewer",
+			"agent_name":                 "shared-template",
+			NamedSessionIdentityMetadata: "named-reviewer",
+		},
+	})
+	want := []string{"session-id", "runtime-session", "named-reviewer"}
+	if !sameStrings(got, want) {
+		t.Fatalf("AssigneeIdentifiers() = %#v, want %#v", got, want)
+	}
+}
+
+func sameStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestNamedSessionContinuityEligible_ArchivedRequiresExplicitContinuity(t *testing.T) {
 	tests := []struct {
 		name string

@@ -272,7 +272,7 @@ func reconcileSessionBeadsTraced(
 			}
 		}
 		sessions = retireDuplicateConfiguredNamedSessionBeads(
-			store, sp, cfg, cityName, sessions, bySessionName, indexBySessionName, clk.Now().UTC(), stderr,
+			store, sp, cfg, cityName, sessions, bySessionName, indexBySessionName, clk.Now().UTC(), stderr, rigStores,
 		)
 	}
 
@@ -486,7 +486,7 @@ func reconcileSessionBeadsTraced(
 			if trace != nil {
 				trace.recordDecision("reconciler.session.pending_create", tp.TemplateName, name, "pending_create_rollback", "rollback", nil, nil, "")
 			}
-			rollbackPendingCreate(session, store, clk.Now().UTC(), stderr)
+			rollbackPendingCreateWithRigStores(session, store, clk.Now().UTC(), stderr, rigStores)
 			continue
 		}
 
@@ -1076,11 +1076,10 @@ func reconcileSessionBeadsTraced(
 			}
 		}
 		if poolFreeable && !hasAssignedWork {
-			// Close directly rather than via closeSessionBeadIfUnassigned.
-			// That helper also runs a live sessionHasOpenAssignedWork query
-			// and would redundantly re-query a store we just hit — skip the
-			// duplicate I/O and pass through the preserved sleep_reason as
-			// the close_reason below.
+			// Close directly after the live sessionHasOpenAssignedWork query
+			// above; closeSessionBeadIfUnassigned and closeBead would
+			// redundantly re-query the same stores. Preserve the sleep_reason
+			// as the close_reason below.
 			//
 			// Preserve the original sleep_reason (idle / idle-timeout / drained)
 			// on the closed bead for forensic fidelity; fall back to "drained"
@@ -1090,7 +1089,7 @@ func reconcileSessionBeadsTraced(
 			if closeReason == "" {
 				closeReason = "drained"
 			}
-			closeBead(store, target.session.ID, closeReason, clk.Now().UTC(), stderr)
+			closeBeadAfterAssignedWorkCheck(store, target.session.ID, closeReason, clk.Now().UTC(), stderr)
 		}
 	}
 
@@ -1098,6 +1097,7 @@ func reconcileSessionBeadsTraced(
 		ctx, startCandidates, cfg, desiredState, sp, store, cityName,
 		cityPath,
 		clk, rec, startupTimeout, stdout, stderr, trace,
+		rigStores,
 	)
 
 	// Phase 2: Advance all in-flight drains.
@@ -1166,50 +1166,20 @@ func resolvePreservedConfiguredNamedSessionTemplate(
 // any individual store failure fails the whole check closed so
 // transient errors cannot cause premature close.
 func sessionHasOpenAssignedWork(store beads.Store, rigStores map[string]beads.Store, session beads.Bead) (bool, error) {
-	if has, err := sessionHasOpenAssignedWorkInStore(store, session); err != nil || has {
-		return has, err
-	}
+	stores := make([]beads.Store, 0, 1+len(rigStores))
+	stores = append(stores, store)
 	for _, rs := range rigStores {
-		if has, err := sessionHasOpenAssignedWorkInStore(rs, session); err != nil || has {
-			return has, err
-		}
+		stores = append(stores, rs)
 	}
-	return false, nil
+	return sessionHasOpenAssignedWorkInStores(stores, session)
+}
+
+func sessionHasOpenAssignedWorkInStores(stores []beads.Store, session beads.Bead) (bool, error) {
+	return hasNonSessionAssignedWorkForIdentifiers(stores, sessionpkg.AssigneeIdentifiers(session))
 }
 
 func sessionHasOpenAssignedWorkInStore(store beads.Store, session beads.Bead) (bool, error) {
-	if store == nil {
-		return false, nil
-	}
-	identifiers := []string{
-		strings.TrimSpace(session.ID),
-		strings.TrimSpace(session.Metadata["session_name"]),
-		strings.TrimSpace(session.Metadata[namedSessionIdentityMetadata]),
-	}
-	seen := make(map[string]struct{}, len(identifiers))
-	for _, status := range []string{"open", "in_progress"} {
-		for _, assignee := range identifiers {
-			if assignee == "" {
-				continue
-			}
-			key := status + "\x00" + assignee
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			items, err := store.List(beads.ListQuery{Assignee: assignee, Status: status, Live: true})
-			if err != nil {
-				return false, err
-			}
-			for _, item := range items {
-				if sessionpkg.IsSessionBeadOrRepairable(item) {
-					continue
-				}
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+	return hasNonSessionAssignedWorkInStore(store, sessionpkg.AssigneeIdentifiers(session))
 }
 
 // namedSessionActivityThreshold is the maximum age of the last reliable

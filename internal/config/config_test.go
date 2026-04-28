@@ -3553,7 +3553,7 @@ func TestEffectiveOnDeathDefault(t *testing.T) {
 		MinActiveSessions: ptrInt(0), MaxActiveSessions: ptrInt(5),
 	}
 	got := a.EffectiveOnDeath()
-	for _, want := range []string{"bd list --assignee=myrig/dog", "--status=in_progress", `--assignee "" --status open`} {
+	for _, want := range []string{`"$GC_SESSION_ID" "$GC_SESSION_NAME" "$GC_ALIAS" "myrig/dog"`, `--status=in_progress`, `--assignee "" --status open`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("EffectiveOnDeath() = %q, want %q", got, want)
 		}
@@ -3574,7 +3574,7 @@ func TestEffectiveOnDeathCustom(t *testing.T) {
 func TestEffectiveOnDeathFixedAgent(t *testing.T) {
 	a := Agent{Name: "mayor"}
 	got := a.EffectiveOnDeath()
-	for _, want := range []string{"bd list --assignee=mayor", "--status=in_progress", `--assignee "" --status open`} {
+	for _, want := range []string{`"$GC_SESSION_ID" "$GC_SESSION_NAME" "$GC_ALIAS" "mayor"`, "--status=in_progress", `--assignee "" --status open`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("EffectiveOnDeath() = %q, want %q", got, want)
 		}
@@ -3588,10 +3588,13 @@ func TestEffectiveOnBootDefault(t *testing.T) {
 		MinActiveSessions: ptrInt(0), MaxActiveSessions: ptrInt(5),
 	}
 	got := a.EffectiveOnBoot()
-	for _, want := range []string{"bd list --metadata-field gc.routed_to=myrig/dog", "--status=in_progress", `--assignee "" --status open`} {
+	for _, want := range []string{"bd list --metadata-field gc.routed_to=myrig/dog", "--status=in_progress", "--no-assignee", `--status open`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("EffectiveOnBoot() = %q, want %q", got, want)
 		}
+	}
+	if strings.Contains(got, `--assignee ""`) {
+		t.Errorf("EffectiveOnBoot() = %q, should not clear live assigned work by default", got)
 	}
 }
 
@@ -3604,7 +3607,7 @@ func TestEffectiveOnBootDefaultPoolName(t *testing.T) {
 		PoolName: "myrig/dog",
 	}
 	got := a.EffectiveOnBoot()
-	for _, want := range []string{"bd list --metadata-field gc.routed_to=myrig/dog", "--status=in_progress", `--assignee "" --status open`} {
+	for _, want := range []string{"bd list --metadata-field gc.routed_to=myrig/dog", "--status=in_progress", "--no-assignee", `--status open`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("EffectiveOnBoot() = %q, want %q", got, want)
 		}
@@ -3625,7 +3628,7 @@ func TestEffectiveOnBootCustom(t *testing.T) {
 func TestEffectiveOnBootNonPool(t *testing.T) {
 	a := Agent{Name: "mayor"}
 	got := a.EffectiveOnBoot()
-	for _, want := range []string{"bd list --metadata-field gc.routed_to=mayor", "--status=in_progress", `--assignee "" --status open`} {
+	for _, want := range []string{"bd list --metadata-field gc.routed_to=mayor", "--status=in_progress", "--no-assignee", `--status open`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("EffectiveOnBoot() = %q, want %q", got, want)
 		}

@@ -503,6 +503,44 @@ func TestComputePoolDesiredStates_OpenAssignedWorkResumes(t *testing.T) {
 	}
 }
 
+func TestComputePoolDesiredStates_AliasOwnedPoolWorkResumes(t *testing.T) {
+	cfg := &config.City{
+		Agents: []config.Agent{poolAgent("worker", "myrig", intPtr(2), 0)},
+	}
+	work := []beads.Bead{
+		workBead("w1", "myrig/worker", "myrig/worker-1", "in_progress", 5),
+	}
+	sessions := []beads.Bead{{
+		ID:     "s1",
+		Type:   sessionBeadType,
+		Status: "open",
+		Metadata: map[string]string{
+			"template":             "myrig/worker",
+			"session_name":         "worker-runtime",
+			"alias":                "myrig/worker-1",
+			"agent_name":           "myrig/worker-1",
+			"pool_slot":            "1",
+			poolManagedMetadataKey: boolMetadata(true),
+		},
+	}}
+
+	result := ComputePoolDesiredStates(cfg, work, sessions, nil)
+
+	if len(result) != 1 || len(result[0].Requests) != 1 {
+		t.Fatalf("expected 1 resume request, got %#v", result)
+	}
+	req := result[0].Requests[0]
+	if req.Tier != "resume" {
+		t.Fatalf("tier = %q, want resume", req.Tier)
+	}
+	if req.SessionBeadID != "s1" {
+		t.Fatalf("session = %q, want s1", req.SessionBeadID)
+	}
+	if req.WorkBeadID != "w1" {
+		t.Fatalf("work bead = %q, want w1", req.WorkBeadID)
+	}
+}
+
 // --- Regression tests: these define the consolidated demand behavior ---
 
 // Regression: resume preserves assigned session even when scale_check is 0.

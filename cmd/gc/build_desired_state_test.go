@@ -2582,6 +2582,65 @@ func TestRealizePoolDesiredSessions_NewSpawnSkipsSlotHeldByOpenSessionBead(t *te
 	}
 }
 
+func TestRealizePoolDesiredSessions_ReusedActiveKeepsExistingPoolSlot(t *testing.T) {
+	store := beads.NewMemStore()
+	cityDir := t.TempDir()
+	cfgAgent := config.Agent{Name: "codex-max", Dir: cityDir, MinActiveSessions: intPtr(0), StartCommand: "/bin/true"}
+	template := cfgAgent.QualifiedName()
+	active, err := store.Create(beads.Bead{
+		Title:  "codex-max",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":     template,
+			"agent_name":   template,
+			"session_name": "codex-max-1-live",
+			"pool_slot":    "1",
+			"state":        "active",
+			"pool_managed": "true",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := newSessionBeadSnapshot([]beads.Bead{active})
+	cfg := &config.City{Agents: []config.Agent{cfgAgent}}
+	bp := &agentBuildParams{
+		city:         cfg,
+		cityPath:     cityDir,
+		workspace:    &cfg.Workspace,
+		beadStore:    store,
+		sessionBeads: snapshot,
+		agents:       []config.Agent{cfgAgent},
+		providers:    cfg.Providers,
+		lookPath:     func(string) (string, error) { return "/bin/true", nil },
+		fs:           fsys.OSFS{},
+	}
+
+	poolState := PoolDesiredState{
+		Template: "codex-max",
+		Requests: []SessionRequest{
+			{Template: "codex-max", Tier: "new"},
+		},
+	}
+
+	desired := make(map[string]TemplateParams)
+	var stderr strings.Builder
+	realizePoolDesiredSessions(bp, &cfgAgent, poolState, desired, &stderr)
+
+	if len(desired) != 1 {
+		t.Fatalf("realize produced %d desired entries, want 1; stderr=%s", len(desired), stderr.String())
+	}
+	for _, tp := range desired {
+		if tp.PoolSlot != 1 {
+			t.Fatalf("reused active session got pool_slot=%d, want existing pool_slot=1", tp.PoolSlot)
+		}
+		if tp.Alias != cfgAgent.QualifiedInstanceName("codex-max-1") {
+			t.Fatalf("reused active session alias = %q, want %q", tp.Alias, cfgAgent.QualifiedInstanceName("codex-max-1"))
+		}
+	}
+}
+
 func TestSelectOrCreatePoolSessionBead_SkipsAsleepBeads(t *testing.T) {
 	// An asleep pool session should NOT be reused for new demand.
 	// The reconciler should create a fresh session instead.

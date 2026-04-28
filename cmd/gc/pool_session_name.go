@@ -9,6 +9,7 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	sessionpkg "github.com/gastownhall/gascity/internal/session"
 )
 
 type releasedPoolAssignment struct {
@@ -65,19 +66,13 @@ func releaseOrphanedPoolAssignments(
 		log.Printf("releaseOrphanedPoolAssignments: assigned work/store length mismatch: work=%d stores=%d", len(assignedWorkBeads), len(assignedWorkStores))
 	}
 
-	openIdentifiers := make(map[string]struct{}, len(openSessionBeads)*3)
+	openIdentifiers := make(map[string]struct{}, len(openSessionBeads)*4)
 	for _, sb := range openSessionBeads {
 		if sb.Status == "closed" {
 			continue
 		}
-		if id := strings.TrimSpace(sb.ID); id != "" {
-			openIdentifiers[id] = struct{}{}
-		}
-		if sn := strings.TrimSpace(sb.Metadata["session_name"]); sn != "" {
-			openIdentifiers[sn] = struct{}{}
-		}
-		if ni := strings.TrimSpace(sb.Metadata["configured_named_identity"]); ni != "" {
-			openIdentifiers[ni] = struct{}{}
+		for _, identifier := range sessionpkg.AssigneeIdentifiers(sb) {
+			openIdentifiers[identifier] = struct{}{}
 		}
 	}
 

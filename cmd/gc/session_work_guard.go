@@ -35,5 +35,5 @@ func closeSessionBeadIfUnassigned(
 	if hasAssignedWork {
 		return false
 	}
-	return closeBead(store, session.ID, reason, now, stderr)
+	return closeBeadAfterAssignedWorkCheck(store, session.ID, reason, now, stderr)
 }

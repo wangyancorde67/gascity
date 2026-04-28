@@ -993,6 +993,33 @@ func TestComputePoolDeathHandlers(t *testing.T) {
 	}
 }
 
+func TestComputePoolDeathHandlersDefaultOnDeathUsesRuntimeIdentifiers(t *testing.T) {
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test"},
+		Agents: []config.Agent{
+			{Name: "dog", Dir: "myrig", MinActiveSessions: intPtr(0), MaxActiveSessions: intPtr(2)},
+		},
+	}
+
+	handlers := computePoolDeathHandlers(cfg, "test", t.TempDir(), runtime.NewFake(), nil)
+	sessionName := startupSessionName("test", "myrig/dog-1", cfg.Workspace.SessionTemplate)
+	info, ok := handlers[sessionName]
+	if !ok {
+		t.Fatalf("missing handler for %s (have keys: %v)", sessionName, handlerKeys(handlers))
+	}
+	for _, want := range []string{`"$GC_SESSION_ID" "$GC_SESSION_NAME" "$GC_ALIAS" "myrig/dog-1"`, `bd list --assignee="$id"`, `--status=in_progress`} {
+		if !strings.Contains(info.Command, want) {
+			t.Fatalf("handler command = %q, want %q", info.Command, want)
+		}
+	}
+	if info.Env["GC_SESSION_NAME"] != sessionName {
+		t.Fatalf("GC_SESSION_NAME env = %q, want %q", info.Env["GC_SESSION_NAME"], sessionName)
+	}
+	if info.Env["GC_ALIAS"] != "myrig/dog-1" {
+		t.Fatalf("GC_ALIAS env = %q, want myrig/dog-1", info.Env["GC_ALIAS"])
+	}
+}
+
 func TestComputePoolDeathHandlersUsesRigRootForRigScopedPools(t *testing.T) {
 	rigRoot := filepath.Join(t.TempDir(), "demo-rig")
 	cfg := &config.City{

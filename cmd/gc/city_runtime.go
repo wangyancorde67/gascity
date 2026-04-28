@@ -402,7 +402,7 @@ func (cr *CityRuntime) run(ctx context.Context) {
 
 		// Reap stale session beads from a previous run before building desired
 		// state, so desired state does not reference already-closed beads (#742).
-		if reapStaleSessionBeads(cr.cityBeadStore(), cr.sp, cr.sessionDrains, clock.Real{}, cr.stderr) > 0 {
+		if reapStaleSessionBeads(cr.cityBeadStore(), cr.sp, cr.sessionDrains, clock.Real{}, cr.stderr, cr.rigBeadStores()) > 0 {
 			sessionBeads = cr.loadSessionBeadSnapshot()
 		}
 		result := cr.buildDesiredState(sessionBeads, startupTrace)
@@ -618,9 +618,15 @@ func (cr *CityRuntime) tick(
 			for _, name := range currentRunning {
 				currentSet[name] = true
 			}
+			for sn, info := range cr.poolDeathHandlers {
+				if currentSet[sn] {
+					cr.poolDeathHandlers[sn] = refreshPoolDeathHandlerRuntimeEnv(info, sn, cr.sp, sessionBeads)
+				}
+			}
 			if *prevPoolRunning != nil {
 				for sn, info := range cr.poolDeathHandlers {
 					if (*prevPoolRunning)[sn] && !currentSet[sn] {
+						info = refreshPoolDeathHandlerRuntimeEnv(info, sn, cr.sp, sessionBeads)
 						if _, err := shellRunHook(info.Command, info.Dir, info.Env); err != nil {
 							fmt.Fprintf(cr.stderr, "on_death %s: %v\n", sn, err) //nolint:errcheck // best-effort stderr
 						}
@@ -683,7 +689,7 @@ func (cr *CityRuntime) tick(
 	// the reconciler to read/write hashes during reconciliation.
 	// Reap open session beads whose tmux session is dead before loading demand
 	// so stale names cannot block desired-state computation (#742).
-	if reapStaleSessionBeads(cr.cityBeadStore(), cr.sp, cr.sessionDrains, clock.Real{}, cr.stderr) > 0 {
+	if reapStaleSessionBeads(cr.cityBeadStore(), cr.sp, cr.sessionDrains, clock.Real{}, cr.stderr, cr.rigBeadStores()) > 0 {
 		sessionBeads = cr.loadSessionBeadSnapshot()
 	}
 	demand := cr.loadDemandSnapshot(sessionBeads, trace, trigger, configChanged)
@@ -759,6 +765,39 @@ func (cr *CityRuntime) tick(
 	}
 	completion = TraceCompletionCompleted
 	tickCompleted = true
+}
+
+func refreshPoolDeathHandlerRuntimeEnv(info poolDeathInfo, sessionName string, sp runtime.Provider, sessionBeads *sessionBeadSnapshot) poolDeathInfo {
+	sessionID := ""
+	if sp != nil {
+		if liveID, err := sp.GetMeta(sessionName, "GC_SESSION_ID"); err == nil {
+			sessionID = strings.TrimSpace(liveID)
+		}
+	}
+	if sessionID == "" {
+		sessionID = sessionIDForRuntimeName(sessionBeads, sessionName)
+	}
+	if sessionID == "" {
+		return info
+	}
+	if info.Env == nil {
+		info.Env = make(map[string]string)
+	}
+	info.Env["GC_SESSION_ID"] = sessionID
+	return info
+}
+
+func sessionIDForRuntimeName(sessionBeads *sessionBeadSnapshot, sessionName string) string {
+	sessionName = strings.TrimSpace(sessionName)
+	if sessionName == "" || sessionBeads == nil {
+		return ""
+	}
+	for _, bead := range sessionBeads.Open() {
+		if strings.TrimSpace(bead.Metadata["session_name"]) == sessionName {
+			return strings.TrimSpace(bead.ID)
+		}
+	}
+	return ""
 }
 
 func (cr *CityRuntime) dispatchOrders(ctx context.Context, cityRoot string) {
@@ -1565,6 +1604,7 @@ func (cr *CityRuntime) controlDispatcherTick(ctx context.Context) {
 		cr.stderr,
 		true,
 		sessionBeads,
+		cr.rigBeadStores(),
 	)
 	open := filterSessionBeadsByName(updated, cfgNames)
 	poolDesired := PoolDesiredCounts(ComputePoolDesiredStates(
@@ -1607,7 +1647,7 @@ func (cr *CityRuntime) syncBeadsAndUpdateIndex(desiredState map[string]TemplateP
 	store := cr.cityBeadStore()
 	cfgNames := configuredSessionNamesWithSnapshot(cr.cfg, cr.cityName, sessionBeads)
 	_, updated := syncSessionBeadsWithSnapshot(
-		cr.cityPath, store, desiredState, cr.sp, cfgNames, cr.cfg, clock.Real{}, cr.stderr, cr.sessionDrains != nil, sessionBeads,
+		cr.cityPath, store, desiredState, cr.sp, cfgNames, cr.cfg, clock.Real{}, cr.stderr, cr.sessionDrains != nil, sessionBeads, cr.rigBeadStores(),
 	)
 	return updated
 }

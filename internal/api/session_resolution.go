@@ -184,8 +184,9 @@ func (s *Server) reassignContinuityIneligibleNamedSessionState(ctx context.Conte
 		return nil
 	}
 	now := time.Now().UTC()
+	ownershipStores := s.ownershipStores(store)
 	for _, b := range retired {
-		if err := reassignOpenWorkAssignedToSession(store, b.ID, replacementID); err != nil {
+		if err := reassignOpenWorkAssignedToSessionInStores(ownershipStores, b, replacementID); err != nil {
 			return err
 		}
 		if err := session.ReassignWaits(store, b.ID, replacementID); err != nil {
@@ -198,25 +199,65 @@ func (s *Server) reassignContinuityIneligibleNamedSessionState(ctx context.Conte
 	return nil
 }
 
-func reassignOpenWorkAssignedToSession(store beads.Store, oldID, newID string) error {
-	if store == nil || strings.TrimSpace(oldID) == "" || strings.TrimSpace(newID) == "" {
+func reassignOpenWorkAssignedToSession(store beads.Store, oldSession beads.Bead, newID string) error {
+	return reassignOpenWorkAssignedToSessionInStores([]beads.Store{store}, oldSession, newID)
+}
+
+func reassignOpenWorkAssignedToSessionInStores(stores []beads.Store, oldSession beads.Bead, newID string) error {
+	identifiers := session.AssigneeIdentifiers(oldSession)
+	if len(stores) == 0 {
 		return nil
 	}
-	for _, status := range []string{"open", "in_progress"} {
-		work, err := store.List(beads.ListQuery{Assignee: oldID, Status: status, Live: true})
-		if err != nil {
-			return fmt.Errorf("listing work assigned to retired session %s: %w", oldID, err)
+	for _, store := range stores {
+		if err := reassignOpenWorkAssignedToSessionInStore(store, identifiers, newID); err != nil {
+			return err
 		}
-		for _, item := range work {
-			if session.IsSessionBeadOrRepairable(item) {
-				continue
+	}
+	return nil
+}
+
+func reassignOpenWorkAssignedToSessionInStore(store beads.Store, identifiers []string, newID string) error {
+	if store == nil || len(identifiers) == 0 || strings.TrimSpace(newID) == "" {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	for _, status := range []string{"open", "in_progress"} {
+		for _, assignee := range identifiers {
+			work, err := store.List(beads.ListQuery{Assignee: assignee, Status: status, Live: true})
+			if err != nil {
+				return fmt.Errorf("listing work assigned to retired session %s: %w", assignee, err)
 			}
-			if err := store.Update(item.ID, beads.UpdateOpts{Assignee: &newID}); err != nil {
-				return fmt.Errorf("reassign work %s from retired session %s to %s: %w", item.ID, oldID, newID, err)
+			for _, item := range work {
+				if session.IsSessionBeadOrRepairable(item) {
+					continue
+				}
+				if _, ok := seen[item.ID]; ok {
+					continue
+				}
+				seen[item.ID] = struct{}{}
+				if err := store.Update(item.ID, beads.UpdateOpts{Assignee: &newID}); err != nil {
+					return fmt.Errorf("reassign work %s from retired session %s to %s: %w", item.ID, assignee, newID, err)
+				}
 			}
 		}
 	}
 	return nil
+}
+
+func (s *Server) ownershipStores(primary beads.Store) []beads.Store {
+	stores := make([]beads.Store, 0, 1)
+	if primary != nil {
+		stores = append(stores, primary)
+	}
+	if s == nil || s.state == nil {
+		return stores
+	}
+	for _, store := range s.state.BeadStores() {
+		if store != nil {
+			stores = append(stores, store)
+		}
+	}
+	return stores
 }
 
 func (s *Server) resolveConfiguredNamedSessionIDWithContext(ctx context.Context, store beads.Store, identifier string, opts apiSessionResolveOptions) (string, bool, error) {

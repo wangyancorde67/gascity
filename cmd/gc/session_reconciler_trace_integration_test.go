@@ -352,6 +352,7 @@ func TestSessionReconcilerTraceStartAndDrainSubOps(t *testing.T) {
 		io.Discard,
 		io.Discard,
 		cycle,
+		nil,
 	)
 	if wakeCount != 1 {
 		t.Fatalf("wakeCount = %d, want 1", wakeCount)

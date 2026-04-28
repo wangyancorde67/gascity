@@ -1456,6 +1456,69 @@ func TestCityRuntimeTickRunsOnDeathWithCanonicalRigEnv(t *testing.T) {
 	}
 }
 
+func TestCityRuntimeTickRunsOnDeathWithSessionIDFromSessionBead(t *testing.T) {
+	cityPath := t.TempDir()
+	outFile := filepath.Join(cityPath, "on-death-id.txt")
+	sessionName := "worker-runtime"
+	store := beads.NewMemStore()
+	session, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Status: "open",
+		Labels: []string{sessionBeadLabel, "template:demo/worker"},
+		Metadata: map[string]string{
+			"session_name":         sessionName,
+			"template":             "demo/worker",
+			"alias":                "demo/worker-1",
+			"agent_name":           "demo/worker-1",
+			"pool_slot":            "1",
+			poolManagedMetadataKey: boolMetadata(true),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create session bead: %v", err)
+	}
+
+	prevPoolRunning := map[string]bool{sessionName: true}
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cityPath:            cityPath,
+		cityName:            "my-city",
+		cfg:                 &config.City{},
+		sp:                  runtime.NewFake(),
+		standaloneCityStore: store,
+		sessionDrains:       newDrainTracker(),
+		poolDeathHandlers: map[string]poolDeathInfo{
+			sessionName: {
+				Command: "printf '%s' \"$GC_SESSION_ID\" > " + shellQuotePath(outFile),
+				Dir:     cityPath,
+				Env: map[string]string{
+					"GC_SESSION_NAME": sessionName,
+					"GC_ALIAS":        "demo/worker-1",
+				},
+			},
+		},
+		rec:    events.Discard,
+		stdout: io.Discard,
+		stderr: &stderr,
+		buildFnWithSessionBeads: func(_ *config.City, _ runtime.Provider, _ beads.Store, _ map[string]beads.Store, _ *sessionBeadSnapshot, _ *sessionReconcilerTraceCycle) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+	}
+
+	dirty := &atomic.Bool{}
+	var lastProviderName string
+	cr.tick(context.Background(), dirty, &lastProviderName, cityPath, &prevPoolRunning, "test")
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v\nstderr=%s", outFile, err, stderr.String())
+	}
+	if got := strings.TrimSpace(string(data)); got != session.ID {
+		t.Fatalf("GC_SESSION_ID = %q, want %q", got, session.ID)
+	}
+}
+
 func TestCityRuntimeTickSkipsOnDeathWhenSessionListingIsPartial(t *testing.T) {
 	cityPath := t.TempDir()
 	outFile := filepath.Join(cityPath, "on-death.txt")

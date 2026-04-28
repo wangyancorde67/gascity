@@ -92,11 +92,15 @@ func TestPhase0ConfigDefaults_OnBootUnclaimsRoutedWorkByDefault(t *testing.T) {
 	for _, want := range []string{
 		"bd list --metadata-field gc.routed_to=myrig/worker",
 		"--status=in_progress",
-		"--assignee \"\"",
+		"--no-assignee",
+		"--status open",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("EffectiveOnBoot() = %q, want %q", got, want)
 		}
+	}
+	if strings.Contains(got, "--assignee \"\"") {
+		t.Fatalf("EffectiveOnBoot() = %q, should not clear live assigned work by default", got)
 	}
 }
 
@@ -105,7 +109,7 @@ func TestPhase0ConfigDefaults_OnDeathUnclaimsAssignedWorkByDefault(t *testing.T)
 
 	got := a.EffectiveOnDeath()
 	for _, want := range []string{
-		"bd list --assignee=myrig/worker",
+		`"$GC_SESSION_ID" "$GC_SESSION_NAME" "$GC_ALIAS" "myrig/worker"`,
 		"--status=in_progress",
 		"--assignee \"\"",
 	} {

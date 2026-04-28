@@ -17,6 +17,37 @@ const (
 	NamedSessionModeMetadata = "configured_named_mode"
 )
 
+// AssigneeIdentifiers returns every bead assignee identity that may refer to a session.
+func AssigneeIdentifiers(b beads.Bead) []string {
+	agentName := ""
+	if strings.TrimSpace(b.Metadata["pool_managed"]) == "true" || strings.TrimSpace(b.Metadata["pool_slot"]) != "" {
+		agentName = strings.TrimSpace(b.Metadata["agent_name"])
+	}
+	return dedupeNonEmpty(
+		strings.TrimSpace(b.ID),
+		strings.TrimSpace(b.Metadata["session_name"]),
+		strings.TrimSpace(b.Metadata["alias"]),
+		strings.TrimSpace(b.Metadata[NamedSessionIdentityMetadata]),
+		agentName,
+	)
+}
+
+func dedupeNonEmpty(values ...string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
 // NamedSessionSpec is the resolved runtime view of a configured named session.
 type NamedSessionSpec struct {
 	Named       *config.NamedSession

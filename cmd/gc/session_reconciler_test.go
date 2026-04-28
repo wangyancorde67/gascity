@@ -3464,6 +3464,105 @@ func TestReconcileSessionBeads_FileStoreAlwaysNamedRecoversWithLeakedDuplicateOp
 	}
 }
 
+func TestReconcileSessionBeads_DuplicateConfiguredNamedSessionReassignsRigStoreWork(t *testing.T) {
+	store := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+	sp := runtime.NewFake()
+	clk := &clock.Fake{Time: time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)}
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{
+			{Name: "reviewer", StartCommand: "true"},
+		},
+		NamedSessions: []config.NamedSession{
+			{Name: "mayor", Template: "reviewer", Mode: "on_demand"},
+		},
+	}
+	canonicalName := config.NamedSessionRuntimeName("test-city", cfg.Workspace, "mayor")
+	oldName := "old-mayor-runtime"
+	loser, err := store.Create(beads.Bead{
+		Title:  "mayor old",
+		Type:   sessionBeadType,
+		Status: "open",
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name":               oldName,
+			"template":                   "reviewer",
+			"generation":                 "1",
+			"state":                      "active",
+			namedSessionMetadataKey:      "true",
+			namedSessionIdentityMetadata: "mayor",
+			namedSessionModeMetadata:     "on_demand",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create loser: %v", err)
+	}
+	winner, err := store.Create(beads.Bead{
+		Title:  "mayor",
+		Type:   sessionBeadType,
+		Status: "open",
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name":               canonicalName,
+			"template":                   "reviewer",
+			"generation":                 "2",
+			"state":                      "active",
+			namedSessionMetadataKey:      "true",
+			namedSessionIdentityMetadata: "mayor",
+			namedSessionModeMetadata:     "on_demand",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create winner: %v", err)
+	}
+	work, err := rigStore.Create(beads.Bead{
+		Title:    "rig work",
+		Type:     "task",
+		Status:   "in_progress",
+		Assignee: oldName,
+	})
+	if err != nil {
+		t.Fatalf("create rig work: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	reconcileSessionBeadsAtPath(
+		context.Background(),
+		"",
+		[]beads.Bead{loser, winner},
+		nil,
+		map[string]bool{canonicalName: true},
+		cfg,
+		sp,
+		store,
+		nil,
+		nil,
+		map[string]beads.Store{"myrig": rigStore},
+		nil,
+		newDrainTracker(),
+		nil,
+		false,
+		nil,
+		"test-city",
+		nil,
+		clk,
+		nil,
+		0,
+		defaultDrainTimeout,
+		io.Discard,
+		&stderr,
+	)
+
+	gotWork, err := rigStore.Get(work.ID)
+	if err != nil {
+		t.Fatalf("get rig work: %v", err)
+	}
+	if gotWork.Assignee != winner.ID {
+		t.Fatalf("rig work assignee = %q, want winner %q; stderr=%s", gotWork.Assignee, winner.ID, stderr.String())
+	}
+}
+
 func TestReconcileSessionBeads_FreshAlwaysNamedWithPoolDemandMaterializesNamedDespitePoolBead(t *testing.T) {
 	cityPath := t.TempDir()
 	store := beads.NewMemStore()

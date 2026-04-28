@@ -147,7 +147,16 @@ func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string, sp ru
 			cmd = expandAgentCommandTemplate(cityPath, cityName, &instance, cfg.Rigs, "on_death", cmd, stderr)
 			dir := agentCommandDir(cityPath, &a, cfg.Rigs)
 			sn := startupSessionName(cityName, qualifiedInstance, st)
-			handlers[sn] = poolDeathInfo{Command: cmd, Dir: dir, Env: agentEnv}
+			env := make(map[string]string, len(agentEnv)+3)
+			for k, v := range agentEnv {
+				env[k] = v
+			}
+			env["GC_SESSION_NAME"] = sn
+			env["GC_ALIAS"] = qualifiedInstance
+			if liveID, err := sp.GetMeta(sn, "GC_SESSION_ID"); err == nil && strings.TrimSpace(liveID) != "" {
+				env["GC_SESSION_ID"] = strings.TrimSpace(liveID)
+			}
+			handlers[sn] = poolDeathInfo{Command: cmd, Dir: dir, Env: env}
 		}
 	}
 	return handlers
@@ -579,6 +588,7 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		// Beads won't be persisted, but the reconciler still manages lifecycle.
 		oneShotStore = beads.NewMemStore()
 	}
+	oneShotRigStores := buildStandaloneRigStores(cfg, cityPath, stderr)
 
 	// One-shot bead reconciliation: same code path as the daemon.
 	sessionBeads, err := loadSessionBeadSnapshot(oneShotStore)
@@ -586,11 +596,11 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		fmt.Fprintf(stderr, "gc start: loading session beads: %v\n", err) //nolint:errcheck
 		sessionBeads = nil
 	}
-	dsResult := buildDesiredStateWithSessionBeads(cityName, cityPath, beaconTime, cfg, sp, oneShotStore, nil, sessionBeads, nil, stderr)
+	dsResult := buildDesiredStateWithSessionBeads(cityName, cityPath, beaconTime, cfg, sp, oneShotStore, oneShotRigStores, sessionBeads, nil, stderr)
 	ds := dsResult.State
 	cfgNames := configuredSessionNamesWithSnapshot(cfg, cityName, sessionBeads)
 	_, sessionBeads = syncSessionBeadsWithSnapshot(
-		cityPath, oneShotStore, ds, sp, cfgNames, cfg, clock.Real{}, stderr, true, sessionBeads,
+		cityPath, oneShotStore, ds, sp, cfgNames, cfg, clock.Real{}, stderr, true, sessionBeads, oneShotRigStores,
 	)
 
 	open := sessionBeads.Open()
@@ -603,7 +613,7 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 	mergeNamedSessionDemand(poolDesired, dsResult.NamedSessionDemand, cfg)
 	reconcileSessionBeadsAtPath(
 		sigCtx, cityPath, open, ds, cfgNames, cfg, sp, oneShotStore,
-		nil, nil, nil, nil, dt, poolDesired,
+		nil, dsResult.AssignedWorkBeads, oneShotRigStores, nil, dt, poolDesired,
 		dsResult.StoreQueryPartial,
 		nil, cityName,
 		nil, clock.Real{}, recorder, cfg.Session.StartupTimeoutDuration(), 0,
@@ -616,10 +626,10 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		fmt.Fprintf(stderr, "gc start: loading session beads: %v\n", err) //nolint:errcheck
 		sessionBeads = nil
 	}
-	dsResult = buildDesiredStateWithSessionBeads(cityName, cityPath, beaconTime, cfg, sp, oneShotStore, nil, sessionBeads, nil, stderr)
+	dsResult = buildDesiredStateWithSessionBeads(cityName, cityPath, beaconTime, cfg, sp, oneShotStore, oneShotRigStores, sessionBeads, nil, stderr)
 	ds = dsResult.State
 	cfgNames = configuredSessionNamesWithSnapshot(cfg, cityName, sessionBeads)
-	syncSessionBeadsWithSnapshot(cityPath, oneShotStore, ds, sp, cfgNames, cfg, clock.Real{}, stderr, false, sessionBeads)
+	syncSessionBeadsWithSnapshot(cityPath, oneShotStore, ds, sp, cfgNames, cfg, clock.Real{}, stderr, false, sessionBeads, oneShotRigStores)
 
 	fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 	return 0

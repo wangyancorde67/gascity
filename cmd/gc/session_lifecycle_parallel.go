@@ -665,7 +665,7 @@ func commitStartResult(
 	wave int, //nolint:unparam // always 0 here but passed through to commitStartResultTraced which uses it
 	stdout, stderr io.Writer,
 ) bool {
-	return commitStartResultTraced(result, store, clk, rec, wave, stdout, stderr, nil)
+	return commitStartResultTraced(result, store, clk, rec, wave, stdout, stderr, nil, nil)
 }
 
 // confirmPendingStart reports whether a session in the given metadata
@@ -691,6 +691,7 @@ func commitStartResultTraced(
 	wave int,
 	stdout, stderr io.Writer,
 	trace *sessionReconcilerTraceCycle,
+	rigStores map[string]beads.Store,
 ) bool {
 	session := result.prepared.candidate.session
 	name := result.prepared.candidate.name()
@@ -709,7 +710,7 @@ func commitStartResultTraced(
 					"error": formatLifecycleError(result.err),
 				}, "")
 			}
-			rollbackPendingCreate(session, store, clk.Now().UTC(), stderr)
+			rollbackPendingCreateWithRigStores(session, store, clk.Now().UTC(), stderr, rigStores)
 			logLifecycleOutcome(stderr, "start", wave, name, tp.TemplateName, result.outcome, result.started, result.finished, result.err)
 			return false
 		}
@@ -905,7 +906,7 @@ func runningSessionMatchesPendingCreate(session *beads.Bead, sessionName string,
 	return strings.TrimSpace(liveToken) == expectedToken
 }
 
-func rollbackPendingCreate(session *beads.Bead, store beads.Store, now time.Time, stderr io.Writer) {
+func rollbackPendingCreateWithRigStores(session *beads.Bead, store beads.Store, now time.Time, stderr io.Writer, rigStores map[string]beads.Store) {
 	if session == nil || store == nil {
 		return
 	}
@@ -917,7 +918,7 @@ func rollbackPendingCreate(session *beads.Bead, store beads.Store, now time.Time
 			session.Metadata["session_name"] = ""
 		}
 	}
-	closeBead(store, session.ID, "failed-create", now, stderr)
+	closeBead(store, session.ID, "failed-create", now, stderr, rigStores)
 }
 
 func executePlannedStarts(
@@ -933,7 +934,7 @@ func executePlannedStarts(
 	startupTimeout time.Duration,
 	stdout, stderr io.Writer,
 ) int {
-	return executePlannedStartsTraced(ctx, candidates, cfg, desiredState, sp, store, cityName, "", clk, rec, startupTimeout, stdout, stderr, nil)
+	return executePlannedStartsTraced(ctx, candidates, cfg, desiredState, sp, store, cityName, "", clk, rec, startupTimeout, stdout, stderr, nil, nil)
 }
 
 func executePlannedStartsTraced(
@@ -950,6 +951,7 @@ func executePlannedStartsTraced(
 	startupTimeout time.Duration,
 	stdout, stderr io.Writer,
 	trace *sessionReconcilerTraceCycle,
+	rigStores map[string]beads.Store,
 ) int {
 	if len(candidates) == 0 {
 		return 0
@@ -1026,7 +1028,7 @@ func executePlannedStartsTraced(
 				if result.err == nil && result.outcome != "session_initializing" {
 					clearReconcilerDrainAckMetadata(sp, result.prepared.candidate.name())
 				}
-				if commitStartResultTraced(result, store, clk, rec, wave, stdout, stderr, trace) {
+				if commitStartResultTraced(result, store, clk, rec, wave, stdout, stderr, trace, rigStores) {
 					wakeCount++
 				}
 			}

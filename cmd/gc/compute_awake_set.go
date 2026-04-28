@@ -50,6 +50,10 @@ type AwakeSessionBead struct {
 	ID               string
 	SessionName      string
 	Template         string
+	Alias            string
+	AgentName        string
+	PoolManaged      bool
+	PoolSlot         string
 	State            string // "creating", "active", "asleep", "drained", "closed"
 	SleepReason      string
 	ManualSession    bool
@@ -199,9 +203,7 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 	}
 
 	// Sessions with assigned work — a session that has open or in_progress
-	// work assigned to it must stay awake. Compatibility-only readers still
-	// accept current session_name and exact configured named identity tokens,
-	// but normal targeting surfaces write the concrete bead ID.
+	// work assigned to any of its public or concrete identities must stay awake.
 	for _, bead := range input.SessionBeads {
 		if bead.State == "closed" {
 			continue
@@ -212,12 +214,13 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 		if agent, ok := agentsByName[bead.Template]; ok && agent.Suspended {
 			continue
 		}
+		identifiers := awakeSessionAssigneeIdentifierSet(bead)
 		for _, wb := range input.WorkBeads {
 			assignee := strings.TrimSpace(wb.Assignee)
 			if assignee == "" || (wb.Status != "open" && wb.Status != "in_progress") {
 				continue
 			}
-			if assignee == bead.ID || assignee == bead.SessionName || (bead.NamedIdentity != "" && assignee == bead.NamedIdentity) {
+			if _, ok := identifiers[assignee]; ok {
 				desired[bead.SessionName] = "assigned-work"
 				break
 			}
@@ -328,6 +331,31 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 	}
 
 	return result
+}
+
+func awakeSessionAssigneeIdentifierSet(bead AwakeSessionBead) map[string]struct{} {
+	agentName := ""
+	if bead.PoolManaged || strings.TrimSpace(bead.PoolSlot) != "" {
+		agentName = strings.TrimSpace(bead.AgentName)
+	}
+	return nonEmptyStringSet(
+		strings.TrimSpace(bead.ID),
+		strings.TrimSpace(bead.SessionName),
+		strings.TrimSpace(bead.Alias),
+		strings.TrimSpace(bead.NamedIdentity),
+		agentName,
+	)
+}
+
+func nonEmptyStringSet(values ...string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		out[value] = struct{}{}
+	}
+	return out
 }
 
 func findNamedSessionName(beads []AwakeSessionBead, identity string) string {

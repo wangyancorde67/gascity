@@ -935,6 +935,26 @@ func TestRegression_SessionWithWorkByAlias_DoesNotWake(t *testing.T) {
 	assertAsleep(t, result, "polecat-mc-p1")
 }
 
+func TestRegression_AliasOwnedPoolWorkKeepsSessionAwake(t *testing.T) {
+	result := ComputeAwakeSet(AwakeInput{
+		Agents: []AwakeAgent{{QualifiedName: "myrig/worker"}},
+		SessionBeads: []AwakeSessionBead{{
+			ID:          "s1",
+			SessionName: "worker-runtime",
+			Template:    "myrig/worker",
+			State:       "asleep",
+			Alias:       "myrig/worker-1",
+			AgentName:   "myrig/worker-1",
+			PoolManaged: true,
+			PoolSlot:    "1",
+		}},
+		WorkBeads: []AwakeWorkBead{{ID: "w1", Assignee: "myrig/worker-1", Status: "in_progress"}},
+		Now:       now,
+	})
+	assertAwake(t, result, "worker-runtime")
+	assertReason(t, result, "worker-runtime", "assigned-work")
+}
+
 // ---------------------------------------------------------------------------
 // Asleep ephemeral with assigned work (e2e regression)
 // ---------------------------------------------------------------------------
