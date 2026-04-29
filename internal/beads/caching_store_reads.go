@@ -267,7 +267,7 @@ func (c *CachingStore) Get(id string) (Bead, error) {
 // Ready returns open beads whose blocking deps are all closed.
 func (c *CachingStore) Ready() ([]Bead, error) {
 	c.mu.RLock()
-	if c.state == cacheLive {
+	if c.state == cacheLive && c.depsComplete {
 		if len(c.dirty) > 0 {
 			c.mu.RUnlock()
 			return c.backing.Ready()

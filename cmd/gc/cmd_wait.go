@@ -587,8 +587,15 @@ func prepareWaitWakeStateForCityWithSnapshot(cityPath string, store beads.Store,
 		}
 		sessionBead, ok := sessionBeads.FindByID(sessionID)
 		if !ok {
-			if anySessionBead, found := sessionBeads.findByIDIncludingClosed(sessionID); found {
-				sessionBead = anySessionBead
+			if wait.Metadata["registered_epoch"] != "" {
+				var found bool
+				sessionBead, found, err = lookupSessionBeadIncludingClosed(store, sessionBeads, sessionID)
+				if err != nil {
+					return nil, err
+				}
+				if !found {
+					continue
+				}
 			} else {
 				continue
 			}
@@ -668,6 +675,28 @@ func prepareWaitWakeStateForCityWithSnapshot(cityPath string, store beads.Store,
 		}
 	}
 	return readyWaitSet, nil
+}
+
+func lookupSessionBeadIncludingClosed(store beads.Store, sessionBeads *sessionBeadSnapshot, id string) (beads.Bead, bool, error) {
+	if sessionBeads != nil {
+		if bead, ok := sessionBeads.findByIDIncludingClosed(id); ok {
+			return bead, true, nil
+		}
+	}
+	if store == nil || strings.TrimSpace(id) == "" {
+		return beads.Bead{}, false, nil
+	}
+	bead, err := store.Get(id)
+	if err != nil {
+		if errors.Is(err, beads.ErrNotFound) {
+			return beads.Bead{}, false, nil
+		}
+		return beads.Bead{}, false, err
+	}
+	if !sessionpkg.IsSessionBeadOrRepairable(bead) {
+		return beads.Bead{}, false, nil
+	}
+	return bead, true, nil
 }
 
 func dispatchReadyWaitNudges(cityPath string, store beads.Store, _ runtime.Provider, now time.Time) error {

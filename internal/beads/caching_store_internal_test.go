@@ -780,3 +780,50 @@ func TestCachingStoreRunReconciliationDoesNotEmitBeadClosedForAlreadyClosedCache
 		}
 	}
 }
+
+func TestCachingStoreBdPrimeAndReconcileSkipFullDepScan(t *testing.T) {
+	t.Parallel()
+
+	var depListCalls int
+	var readyCalls int
+	issueJSON := []byte(`[{
+		"id":"bd-1",
+		"title":"task",
+		"status":"open",
+		"issue_type":"task",
+		"created_at":"2026-01-01T00:00:00Z",
+		"labels":["task"],
+		"metadata":{}
+	}]`)
+	runner := func(_, name string, args ...string) ([]byte, error) {
+		if name != "bd" {
+			t.Fatalf("command name = %q, want bd", name)
+		}
+		if len(args) > 0 && args[0] == "dep" {
+			depListCalls++
+			t.Fatalf("unexpected dep scan command: %v", args)
+		}
+		if len(args) > 0 && args[0] == "ready" {
+			readyCalls++
+			return issueJSON, nil
+		}
+		if len(args) > 0 && args[0] == "list" {
+			return issueJSON, nil
+		}
+		return []byte(`[]`), nil
+	}
+	cache := NewCachingStore(NewBdStore("/city", runner), nil)
+	if err := cache.Prime(context.Background()); err != nil {
+		t.Fatalf("Prime: %v", err)
+	}
+	cache.runReconciliation()
+	if depListCalls != 0 {
+		t.Fatalf("dep list calls = %d, want 0", depListCalls)
+	}
+	if _, err := cache.Ready(); err != nil {
+		t.Fatalf("Ready: %v", err)
+	}
+	if readyCalls != 1 {
+		t.Fatalf("Ready calls = %d, want backing Ready fallback when deps are incomplete", readyCalls)
+	}
+}

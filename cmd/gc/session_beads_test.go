@@ -32,6 +32,16 @@ type sessionGetSpyStore struct {
 	getIDs []string
 }
 
+type sessionSnapshotListSpyStore struct {
+	beads.Store
+	queries []beads.ListQuery
+}
+
+func (s *sessionSnapshotListSpyStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	s.queries = append(s.queries, query)
+	return s.Store.List(query)
+}
+
 type failingCloseStore struct {
 	*beads.MemStore
 }
@@ -2734,6 +2744,55 @@ func TestLoadSessionBeads_SkipsClosedBeads(t *testing.T) {
 	}
 	if len(result) != 0 {
 		t.Errorf("expected 0 beads (closed), got %d", len(result))
+	}
+}
+
+func TestLoadSessionBeadSnapshotUsesActiveOnlyQuery(t *testing.T) {
+	base := beads.NewMemStore()
+	store := &sessionSnapshotListSpyStore{Store: base}
+	open, err := store.Create(beads.Bead{
+		Title:  "open",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name": "worker",
+			"state":        string(session.StateActive),
+		},
+	})
+	if err != nil {
+		t.Fatalf("create open session bead: %v", err)
+	}
+	closed, err := store.Create(beads.Bead{
+		Title:  "closed",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name": "old-worker",
+			"state":        string(session.StateClosed),
+		},
+	})
+	if err != nil {
+		t.Fatalf("create closed session bead: %v", err)
+	}
+	if err := store.Close(closed.ID); err != nil {
+		t.Fatalf("close session bead: %v", err)
+	}
+
+	snapshot, err := loadSessionBeadSnapshot(store)
+	if err != nil {
+		t.Fatalf("loadSessionBeadSnapshot: %v", err)
+	}
+	if len(store.queries) != 1 {
+		t.Fatalf("List query count = %d, want 1", len(store.queries))
+	}
+	if store.queries[0].IncludeClosed {
+		t.Fatalf("loadSessionBeadSnapshot used IncludeClosed query: %+v", store.queries[0])
+	}
+	if _, ok := snapshot.FindByID(open.ID); !ok {
+		t.Fatalf("snapshot missing open session bead %s", open.ID)
+	}
+	if _, ok := snapshot.findByIDIncludingClosed(closed.ID); ok {
+		t.Fatalf("snapshot retained closed session bead %s", closed.ID)
 	}
 }
 

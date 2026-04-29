@@ -8,9 +8,11 @@ import (
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
 )
 
-// sessionBeadSnapshot caches session-bead state for a single reconcile cycle.
-// Open-session lookups stay open-only; closed records are retained by ID for
-// lifecycle guards such as stale wait epoch cancellation.
+// sessionBeadSnapshot caches active session-bead state for a single reconcile
+// cycle. Closed-session history is intentionally not loaded here: the
+// reconciler calls this several times per tick, and closed history grows
+// without bound. Callers that need a closed record must fetch that one ID
+// explicitly.
 type sessionBeadSnapshot struct {
 	open                      []beads.Bead
 	recordByID                map[string]beads.Bead
@@ -23,8 +25,7 @@ func loadSessionBeadSnapshot(store beads.Store) (*sessionBeadSnapshot, error) {
 		return newSessionBeadSnapshot(nil), nil
 	}
 	all, err := store.List(beads.ListQuery{
-		Label:         sessionBeadLabel,
-		IncludeClosed: true,
+		Label: sessionBeadLabel,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing session beads: %w", err)

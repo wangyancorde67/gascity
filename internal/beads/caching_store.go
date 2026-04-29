@@ -24,15 +24,16 @@ import (
 type CachingStore struct {
 	backing Store // runtime: always *BdStore; tests may use MemStore
 
-	mu          sync.RWMutex
-	beads       map[string]Bead
-	deps        map[string][]Dep
-	dirty       map[string]struct{}
-	beadSeq     map[string]uint64
-	deletedSeq  map[string]uint64
-	state       cacheState
-	lastFreshAt time.Time
-	mutationSeq uint64
+	mu           sync.RWMutex
+	beads        map[string]Bead
+	deps         map[string][]Dep
+	depsComplete bool
+	dirty        map[string]struct{}
+	beadSeq      map[string]uint64
+	deletedSeq   map[string]uint64
+	state        cacheState
+	lastFreshAt  time.Time
+	mutationSeq  uint64
 
 	reconciling  atomic.Bool
 	syncFailures int
@@ -190,7 +191,7 @@ func (c *CachingStore) Prime(_ context.Context) error {
 		beadMap[b.ID] = cloneBead(b)
 	}
 
-	depMap, depErr := c.fetchDepsForIDs(beadIDs(beadMap))
+	depMap, depsComplete, depErr := c.fetchDepsForIDs(beadIDs(beadMap))
 	if depErr != nil {
 		c.recordProblem("prime dep cache", depErr)
 	}
@@ -201,6 +202,7 @@ func (c *CachingStore) Prime(_ context.Context) error {
 	if c.mutationSeq == startSeq {
 		c.beads = beadMap
 		c.deps = depMap
+		c.depsComplete = depsComplete && depErr == nil
 		c.dirty = make(map[string]struct{})
 		c.beadSeq = make(map[string]uint64)
 		c.deletedSeq = make(map[string]uint64)
@@ -219,6 +221,7 @@ func (c *CachingStore) Prime(_ context.Context) error {
 				c.deps[id] = deps
 			}
 		}
+		c.depsComplete = false
 	}
 	c.state = cacheLive
 	c.syncFailures = 0
@@ -316,31 +319,24 @@ func beadIDs(beadMap map[string]Bead) []string {
 	return ids
 }
 
-func (c *CachingStore) fetchDepsForIDs(ids []string) (map[string][]Dep, error) {
+func (c *CachingStore) fetchDepsForIDs(ids []string) (map[string][]Dep, bool, error) {
 	depMap := make(map[string][]Dep)
 	if len(ids) == 0 {
-		return depMap, nil
+		return depMap, true, nil
 	}
 
-	if bdStore, ok := c.backing.(*BdStore); ok {
-		batchDeps, err := bdStore.DepListBatch(ids)
-		if err != nil {
-			return depMap, err
-		}
-		for id, deps := range batchDeps {
-			depMap[id] = cloneDeps(deps)
-		}
-		return depMap, nil
+	if _, ok := c.backing.(*BdStore); ok {
+		return depMap, false, nil
 	}
 
 	for _, id := range ids {
 		deps, err := c.backing.DepList(id, "down")
 		if err != nil {
-			return depMap, fmt.Errorf("listing deps for %s: %w", id, err)
+			return depMap, false, fmt.Errorf("listing deps for %s: %w", id, err)
 		}
 		depMap[id] = cloneDeps(deps)
 	}
-	return depMap, nil
+	return depMap, true, nil
 }
 
 func cloneDeps(deps []Dep) []Dep {

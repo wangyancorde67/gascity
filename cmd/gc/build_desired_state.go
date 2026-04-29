@@ -529,26 +529,50 @@ func collectAssignedWorkBeadsWithStores(
 		}
 	}
 
+	type storeAssignedWorkResult struct {
+		beads  []beads.Bead
+		stores []beads.Store
+		errs   []error
+	}
+	results := make([]storeAssignedWorkResult, len(stores))
+	var wg sync.WaitGroup
+	for idx, s := range stores {
+		idx, s := idx, s
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var result []beads.Bead
+			var resultStores []beads.Store
+			var errs []error
+			seen := make(map[string]struct{})
+			// In-progress beads with an assignee (active work), plus stranded
+			// unassigned pool work that needs to be reopened.
+			if inProgress, err := s.List(beads.ListQuery{Status: "in_progress", Live: true}); err == nil {
+				appendInProgressWorkUnique(cfg, &result, &resultStores, inProgress, seen, s)
+			} else {
+				errs = append(errs, fmt.Errorf("List(in_progress): %w", err))
+			}
+			// Ready beads with an assignee (queued direct handoff work that is
+			// actually runnable, not merely open). This is a lifecycle gate, so
+			// bypass the cache when a CachingStore wrapper is present.
+			if ready, err := beads.ReadyLive(s); err == nil {
+				appendAssignedUnique(&result, &resultStores, ready, seen, s)
+			} else {
+				errs = append(errs, fmt.Errorf("Ready(): %w", err))
+			}
+			results[idx] = storeAssignedWorkResult{beads: result, stores: resultStores, errs: errs}
+		}()
+	}
+	wg.Wait()
+
 	var result []beads.Bead
 	var resultStores []beads.Store
 	var partial bool
-	for _, s := range stores {
-		seen := make(map[string]struct{})
-		// In-progress beads with an assignee (active work), plus stranded
-		// unassigned pool work that needs to be reopened.
-		if inProgress, err := s.List(beads.ListQuery{Status: "in_progress", Live: true}); err == nil {
-			appendInProgressWorkUnique(cfg, &result, &resultStores, inProgress, seen, s)
-		} else {
-			log.Printf("collectAssignedWorkBeads: List(in_progress) failed: %v", err)
-			partial = true
-		}
-		// Ready beads with an assignee (queued direct handoff work that is
-		// actually runnable, not merely open). This is a lifecycle gate, so
-		// bypass the cache when a CachingStore wrapper is present.
-		if ready, err := beads.ReadyLive(s); err == nil {
-			appendAssignedUnique(&result, &resultStores, ready, seen, s)
-		} else {
-			log.Printf("collectAssignedWorkBeads: Ready() failed: %v", err)
+	for _, r := range results {
+		result = append(result, r.beads...)
+		resultStores = append(resultStores, r.stores...)
+		for _, err := range r.errs {
+			log.Printf("collectAssignedWorkBeads: %v", err)
 			partial = true
 		}
 	}
