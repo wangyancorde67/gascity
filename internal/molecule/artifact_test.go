@@ -202,3 +202,42 @@ func TestRemoveDir_AbsolutePathRootID(t *testing.T) {
 		t.Errorf("sentinel file was destroyed: %v", statErr)
 	}
 }
+
+// validateIDSegment rejects the literal ".." even when no path
+// separator is present, because filepath.Join would otherwise let it
+// climb out of the molecules directory. The other path-traversal
+// tests pass IDs containing "/" (e.g. "../escape", "../"), which trip
+// the separator check first; this one isolates the parent-reference
+// branch.
+func TestEnsureArtifactDir_LiteralDotDotRootID(t *testing.T) {
+	fake := fsys.NewFake()
+	_, err := EnsureArtifactDir(fake, "/city", "..", "step-7")
+	if err == nil {
+		t.Fatal("expected error for literal \"..\" rootID")
+	}
+	if len(fake.Calls) != 0 {
+		t.Errorf("MkdirAll should not be called for unsafe rootID, got %d calls", len(fake.Calls))
+	}
+}
+
+// RemoveDir's containment check rejects a rootID of "." because
+// filepath.Join collapses it, leaving absDir == absRoot (rel = ".")
+// which would otherwise wipe the entire molecules root. validateIDSegment
+// allows "." (single dot is not a parent reference); the containment
+// check is the second line of defense.
+func TestRemoveDir_DotRootIDRejectedByContainment(t *testing.T) {
+	cityPath := t.TempDir()
+	moleculesRoot := filepath.Join(cityPath, ".gc", "molecules", "real-root")
+	if err := os.MkdirAll(moleculesRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RemoveDir(cityPath, "."); err == nil {
+		t.Fatal("expected error for \".\" rootID (would wipe molecules root)")
+	}
+
+	// The molecules root and its children must still exist.
+	if _, err := os.Stat(moleculesRoot); err != nil {
+		t.Errorf("molecules root was destroyed by \".\" rootID: %v", err)
+	}
+}
