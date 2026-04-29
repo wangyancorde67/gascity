@@ -1446,10 +1446,33 @@ func TestHealState_PreservesCreatingWhileStartRequested(t *testing.T) {
 		"state":                "creating",
 		"pending_create_claim": "true",
 	})
+	// #1460: pending_create_claim only short-circuits while the create
+	// lease is fresh. Pin CreatedAt to "now" so the bead is within the
+	// lease window — without this the zero CreatedAt is treated as stale
+	// and the bead correctly heals to asleep (covered by the test below).
+	session.CreatedAt = clk.Now().Add(-30 * time.Second)
 
 	healState(&session, false, store, clk)
 	if session.Metadata["state"] != "creating" {
 		t.Fatalf("state = %q, want creating", session.Metadata["state"])
+	}
+}
+
+// #1460: stale-creating + pending_create_claim must heal to asleep so a
+// crashed creator does not strand the pool slot indefinitely.
+func TestHealState_StaleCreatingWithPendingClaimHealsToAsleep(t *testing.T) {
+	store := newTestStore()
+	clk := &clock.Fake{Time: time.Date(2026, 3, 29, 4, 0, 0, 0, time.UTC)}
+
+	session := makeBead("b1", map[string]string{
+		"state":                "creating",
+		"pending_create_claim": "true",
+	})
+	session.CreatedAt = clk.Now().Add(-2 * time.Minute)
+
+	healState(&session, false, store, clk)
+	if session.Metadata["state"] != "asleep" {
+		t.Fatalf("state = %q, want asleep", session.Metadata["state"])
 	}
 }
 

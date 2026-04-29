@@ -1558,7 +1558,10 @@ func sweepUndesiredPoolSessionBeads(
 		// sessionStartRequested (session_reconcile.go) exactly so the two
 		// loops agree about ownership:
 		//   - pending_create_claim=true: in-flight create claim, protected
-		//     regardless of age until the lifecycle clears it.
+		//     while the create lease (staleCreatingStateTimeout) is fresh.
+		//     #1460: once the lease has elapsed with no live runtime, the
+		//     claim no longer protects — a crashed creator must not strand
+		//     the slot forever.
 		//   - state=creating: protected until staleCreatingState would
 		//     return true (i.e., until staleCreatingStateTimeout has
 		//     elapsed; zero CreatedAt is treated as stale, matching
@@ -1567,7 +1570,7 @@ func sweepUndesiredPoolSessionBeads(
 		// on the same tick it's created (no work assigned →
 		// GCSweepSessionBeads closes it), spinning the pool in a rapid
 		// create→sweep→recreate loop.
-		if strings.TrimSpace(bead.Metadata["pending_create_claim"]) == "true" {
+		if strings.TrimSpace(bead.Metadata["pending_create_claim"]) == "true" && !isStaleCreating(bead.CreatedAt) {
 			continue
 		}
 		if strings.TrimSpace(bead.Metadata["state"]) == "creating" && !isStaleCreating(bead) {

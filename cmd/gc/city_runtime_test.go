@@ -1150,11 +1150,12 @@ func TestSweepUndesiredPoolSessionBeads_SkipsPendingCreateClaim(t *testing.T) {
 	}
 }
 
-// pending_create_claim is an authoritative ownership flag for the lifecycle
-// reconciler (sessionStartRequested in session_reconcile.go). The sweep must
-// honor that contract regardless of age — expiring it here would let the
-// sweep close a bead the reconciler still considers live.
-func TestSweepUndesiredPoolSessionBeads_SkipsStalePendingCreateClaim(t *testing.T) {
+// #1460: pending_create_claim is an in-flight ownership flag, but the
+// lease must expire. After the create lease elapses with no live runtime,
+// the claim no longer protects — otherwise a crashed creator strands the
+// pool slot indefinitely. The sweep aligns with the lifecycle projection,
+// which now heals stale-creating-with-claim to StateAsleep.
+func TestSweepUndesiredPoolSessionBeads_SweepsStalePendingCreateClaim(t *testing.T) {
 	store := beads.NewMemStore()
 	bead, err := store.Create(beads.Bead{
 		Title:  "worker",
@@ -1186,8 +1187,8 @@ func TestSweepUndesiredPoolSessionBeads_SkipsStalePendingCreateClaim(t *testing.
 		runtime.NewFake(),
 		false,
 	)
-	if closed != 0 {
-		t.Fatalf("closed = %d, want 0 — pending_create_claim must remain authoritative regardless of age", closed)
+	if closed != 1 {
+		t.Fatalf("closed = %d, want 1 — stale pending_create_claim must be reaped", closed)
 	}
 }
 
