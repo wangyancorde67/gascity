@@ -42,3 +42,56 @@ func TestShippedExamplesDoNotHardcodeShortRoutedToPools(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestExamplePoolScriptsUseCanonicalGCTemplateRoutes(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	root := filepath.Dir(filename)
+
+	checks := []struct {
+		rel      string
+		required []string
+		banned   []string
+	}{
+		{
+			rel: "hyperscale/packs/hyperscale/assets/scripts/mock-worker.sh",
+			required: []string{
+				`POOL_LABEL="${GC_TEMPLATE:?`,
+				`gc.routed_to=$POOL_LABEL`,
+			},
+			banned: []string{
+				`POOL_LABEL="${GC_TEMPLATE:-worker}"`,
+			},
+		},
+		{
+			rel: "lifecycle/packs/lifecycle/assets/scripts/mock-polecat.sh",
+			required: []string{
+				`POOL_LABEL="${GC_TEMPLATE:?`,
+				`REFINERY="${GC_TEMPLATE%polecat}refinery"`,
+				`gc.routed_to=$POOL_LABEL`,
+			},
+			banned: []string{
+				`POOL_LABEL="$GC_AGENT"`,
+				`REFINERY="${GC_AGENT%/*}/refinery"`,
+			},
+		},
+	}
+
+	for _, check := range checks {
+		path := filepath.Join(root, check.rel)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", check.rel, err)
+		}
+		body := string(data)
+		for _, required := range check.required {
+			if !strings.Contains(body, required) {
+				t.Errorf("%s missing canonical route pattern %q", check.rel, required)
+			}
+		}
+		for _, banned := range check.banned {
+			if strings.Contains(body, banned) {
+				t.Errorf("%s still contains short-form route pattern %q", check.rel, banned)
+			}
+		}
+	}
+}
