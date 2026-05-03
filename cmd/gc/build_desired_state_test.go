@@ -28,6 +28,42 @@ func (s listFailStore) List(_ beads.ListQuery) ([]beads.Bead, error) {
 	return nil, errors.New("list failed")
 }
 
+type partialAssignedWorkStore struct {
+	*beads.MemStore
+	partialInProgress bool
+	partialReady      bool
+}
+
+type acpOnlyDesiredStateProvider struct {
+	*runtime.Fake
+}
+
+func (p *acpOnlyDesiredStateProvider) SupportsTransport(transport string) bool {
+	return transport == config.SessionTransportACP
+}
+
+func (s *partialAssignedWorkStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	rows, err := s.MemStore.List(query)
+	if err != nil {
+		return nil, err
+	}
+	if s.partialInProgress && query.Status == "in_progress" && query.Live {
+		return rows, &beads.PartialResultError{Op: "bd list", Err: errors.New("skipped corrupt in-progress bead")}
+	}
+	return rows, nil
+}
+
+func (s *partialAssignedWorkStore) Ready() ([]beads.Bead, error) {
+	rows, err := s.MemStore.Ready()
+	if err != nil {
+		return nil, err
+	}
+	if s.partialReady {
+		return rows, &beads.PartialResultError{Op: "bd ready", Err: errors.New("skipped corrupt ready bead")}
+	}
+	return rows, nil
+}
+
 func TestCollectAssignedWorkBeads_IncludesReadyOpenAssignedHandoff(t *testing.T) {
 	store := beads.NewMemStore()
 	handoff, err := store.Create(beads.Bead{
@@ -153,6 +189,75 @@ func TestCollectAssignedWorkBeads_ExcludesSessionBeads(t *testing.T) {
 	}
 }
 
+func TestCollectAssignedWorkBeads_PreservesPartialInProgressSurvivors(t *testing.T) {
+	t.Parallel()
+
+	store := &partialAssignedWorkStore{
+		MemStore:          beads.NewMemStore(),
+		partialInProgress: true,
+	}
+	work, err := store.Create(beads.Bead{
+		Title:    "assigned active work",
+		Type:     "task",
+		Assignee: "worker-1",
+	})
+	if err != nil {
+		t.Fatalf("create work bead: %v", err)
+	}
+	if err := store.Update(work.ID, beads.UpdateOpts{Status: stringPtr("in_progress")}); err != nil {
+		t.Fatalf("set work in_progress: %v", err)
+	}
+	work, err = store.Get(work.ID)
+	if err != nil {
+		t.Fatalf("reload work bead: %v", err)
+	}
+
+	got, stores, storeRefs, partial := collectAssignedWorkBeadsWithStores(&config.City{}, store, nil, nil)
+	if !partial {
+		t.Fatal("partial = false, want true")
+	}
+	if len(got) != 1 || got[0].ID != work.ID {
+		t.Fatalf("collectAssignedWorkBeadsWithStores returned %#v, want partial survivor %s", got, work.ID)
+	}
+	if len(stores) != 1 || stores[0] != store {
+		t.Fatalf("stores = %#v, want source store for partial survivor", stores)
+	}
+	if len(storeRefs) != 1 || storeRefs[0] != "" {
+		t.Fatalf("storeRefs = %#v, want city store ref for partial survivor", storeRefs)
+	}
+}
+
+func TestCollectAssignedWorkBeads_PreservesPartialReadySurvivors(t *testing.T) {
+	t.Parallel()
+
+	store := &partialAssignedWorkStore{
+		MemStore:     beads.NewMemStore(),
+		partialReady: true,
+	}
+	work, err := store.Create(beads.Bead{
+		Title:    "assigned ready work",
+		Type:     "task",
+		Assignee: "worker-1",
+	})
+	if err != nil {
+		t.Fatalf("create work bead: %v", err)
+	}
+
+	got, stores, storeRefs, partial := collectAssignedWorkBeadsWithStores(&config.City{}, store, nil, nil)
+	if !partial {
+		t.Fatal("partial = false, want true")
+	}
+	if len(got) != 1 || got[0].ID != work.ID {
+		t.Fatalf("collectAssignedWorkBeadsWithStores returned %#v, want partial ready survivor %s", got, work.ID)
+	}
+	if len(stores) != 1 || stores[0] != store {
+		t.Fatalf("stores = %#v, want source store for partial survivor", stores)
+	}
+	if len(storeRefs) != 1 || storeRefs[0] != "" {
+		t.Fatalf("storeRefs = %#v, want city store ref for partial survivor", storeRefs)
+	}
+}
+
 func TestCollectAssignedWorkBeadsWithStores_TracksRigStore(t *testing.T) {
 	cityStore := beads.NewMemStore()
 	rigStore := beads.NewMemStore()
@@ -173,7 +278,7 @@ func TestCollectAssignedWorkBeadsWithStores_TracksRigStore(t *testing.T) {
 		t.Fatalf("reload rig work bead: %v", err)
 	}
 
-	got, stores, partial := collectAssignedWorkBeadsWithStores(
+	got, stores, storeRefs, partial := collectAssignedWorkBeadsWithStores(
 		&config.City{Rigs: []config.Rig{{Name: "repo", Path: "/repo"}}},
 		cityStore,
 		map[string]beads.Store{"repo": rigStore},
@@ -187,6 +292,9 @@ func TestCollectAssignedWorkBeadsWithStores_TracksRigStore(t *testing.T) {
 	}
 	if len(stores) != 1 || stores[0] != rigStore {
 		t.Fatalf("stores = %#v, want [rig store]", stores)
+	}
+	if len(storeRefs) != 1 || storeRefs[0] != "repo" {
+		t.Fatalf("storeRefs = %#v, want [repo]", storeRefs)
 	}
 }
 
@@ -229,7 +337,7 @@ func TestCollectAssignedWorkBeadsWithStores_PreservesCrossStoreIDCollisions(t *t
 		t.Fatalf("test setup expected overlapping city/rig IDs, got city %q rig %q", cityWork.ID, rigWork.ID)
 	}
 
-	got, stores, partial := collectAssignedWorkBeadsWithStores(
+	got, stores, storeRefs, partial := collectAssignedWorkBeadsWithStores(
 		&config.City{Rigs: []config.Rig{{Name: "repo", Path: "/repo"}}},
 		cityStore,
 		map[string]beads.Store{"repo": rigStore},
@@ -244,11 +352,20 @@ func TestCollectAssignedWorkBeadsWithStores_PreservesCrossStoreIDCollisions(t *t
 	if len(stores) != len(got) {
 		t.Fatalf("stores length = %d, want %d", len(stores), len(got))
 	}
+	if len(storeRefs) != len(got) {
+		t.Fatalf("storeRefs length = %d, want %d", len(storeRefs), len(got))
+	}
 	if got[0].ID != cityWork.ID || stores[0] != cityStore {
 		t.Fatalf("first collected work = (%s, %#v), want city work/store", got[0].ID, stores[0])
 	}
+	if storeRefs[0] != "" {
+		t.Fatalf("first store ref = %q, want city ref", storeRefs[0])
+	}
 	if got[1].ID != rigWork.ID || stores[1] != rigStore {
 		t.Fatalf("second collected work = (%s, %#v), want rig work/store", got[1].ID, stores[1])
+	}
+	if storeRefs[1] != "repo" {
+		t.Fatalf("second store ref = %q, want repo", storeRefs[1])
 	}
 }
 
@@ -278,6 +395,49 @@ func TestBuildDesiredState_UsesAgentHookOverride(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cityPath, ".gemini", "settings.json")); !os.IsNotExist(err) {
 		t.Fatalf("workspace gemini hook should not be installed for agent override: %v", err)
+	}
+}
+
+func TestBuildDesiredStateRejectsExplicitTmuxAgentWhenSessionProviderCannotRouteTmux(t *testing.T) {
+	cityPath := t.TempDir()
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city", Provider: "opencode"},
+		Session:   config.SessionConfig{Provider: config.SessionTransportACP},
+		Providers: map[string]config.ProviderSpec{
+			"opencode": {
+				Command:     "echo",
+				Args:        []string{"provider"},
+				ACPCommand:  "echo",
+				ACPArgs:     []string{"acp"},
+				PromptMode:  "none",
+				SupportsACP: boolPtr(true),
+			},
+		},
+		Agents: []config.Agent{{
+			Name:              "worker",
+			Provider:          "opencode",
+			Session:           config.SessionTransportTmux,
+			MaxActiveSessions: intPtr(1),
+			ScaleCheck:        "printf 1",
+		}},
+	}
+	store := beads.NewMemStore()
+	sp := &acpOnlyDesiredStateProvider{Fake: runtime.NewFake()}
+	var stderr strings.Builder
+
+	dsResult := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, sp, store, &stderr)
+	if len(dsResult.State) != 0 {
+		t.Fatalf("desired state size = %d, want 0: %#v", len(dsResult.State), dsResult.State)
+	}
+	beads, err := store.ListByLabel(sessionBeadLabel, 0)
+	if err != nil {
+		t.Fatalf("ListByLabel(%q): %v", sessionBeadLabel, err)
+	}
+	if len(beads) != 0 {
+		t.Fatalf("session bead count = %d, want 0: %#v", len(beads), beads)
+	}
+	if got := stderr.String(); !strings.Contains(got, "cannot route tmux sessions") {
+		t.Fatalf("stderr = %q, want tmux routing rejection", got)
 	}
 }
 
@@ -670,6 +830,169 @@ func TestBuildDesiredState_OnDemandNamedSession_DirectAssigneeMaterializes(t *te
 	}
 	if !found {
 		t.Fatal("direct assignee should materialize on-demand named session")
+	}
+}
+
+func TestBuildDesiredState_OnDemandNamedSession_IgnoresUnreachableAssignedWork(t *testing.T) {
+	cityPath := t.TempDir()
+	rigPath := filepath.Join(cityPath, "riga")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatalf("create rig dir: %v", err)
+	}
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+	if _, err := cityStore.Create(beads.Bead{
+		Title:    "assigned mayor work in city store",
+		Type:     "task",
+		Status:   "open",
+		Assignee: "riga/mayor",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Rigs:      []config.Rig{{Name: "riga", Path: rigPath}},
+		Agents: []config.Agent{{
+			Name:              "mayor",
+			Dir:               "riga",
+			StartCommand:      "true",
+			MaxActiveSessions: intPtr(1),
+			WorkQuery:         "printf ''",
+		}},
+		NamedSessions: []config.NamedSession{{
+			Template: "mayor",
+			Dir:      "riga",
+			Mode:     "on_demand",
+		}},
+	}
+
+	dsResult := buildDesiredStateWithSessionBeads(
+		"test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(),
+		cityStore, map[string]beads.Store{"riga": rigStore}, nil, nil, io.Discard,
+	)
+	for _, tp := range dsResult.State {
+		if tp.TemplateName == "riga/mayor" || tp.ConfiguredNamedIdentity == "riga/mayor" {
+			t.Fatalf("unreachable city-store assignee should not materialize rig named session: %+v", tp)
+		}
+	}
+	if dsResult.NamedSessionDemand["riga/mayor"] {
+		t.Fatal("unreachable city-store assignee should not record named-session demand")
+	}
+}
+
+func TestBuildDesiredState_OnDemandNamedSession_ReachabilityUsesPerBeadSourceNotID(t *testing.T) {
+	cityPath := t.TempDir()
+	rigPath := filepath.Join(cityPath, "riga")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatalf("create rig dir: %v", err)
+	}
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+	cityWork, err := cityStore.Create(beads.Bead{
+		Title:    "phantom city work",
+		Type:     "task",
+		Status:   "open",
+		Assignee: "riga/mayor",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rigWork, err := rigStore.Create(beads.Bead{
+		Title:    "same ID rig work for another session",
+		Type:     "task",
+		Status:   "open",
+		Assignee: "riga/other",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cityWork.ID != rigWork.ID {
+		t.Fatalf("test setup expected overlapping city/rig IDs, got city %q rig %q", cityWork.ID, rigWork.ID)
+	}
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Rigs:      []config.Rig{{Name: "riga", Path: rigPath}},
+		Agents: []config.Agent{{
+			Name:              "mayor",
+			Dir:               "riga",
+			StartCommand:      "true",
+			MaxActiveSessions: intPtr(1),
+			WorkQuery:         "printf ''",
+		}},
+		NamedSessions: []config.NamedSession{{
+			Template: "mayor",
+			Dir:      "riga",
+			Mode:     "on_demand",
+		}},
+	}
+
+	dsResult := buildDesiredStateWithSessionBeads(
+		"test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(),
+		cityStore, map[string]beads.Store{"riga": rigStore}, nil, nil, io.Discard,
+	)
+	if dsResult.NamedSessionDemand["riga/mayor"] {
+		t.Fatal("same-ID rig bead should not make the city-store assignment reachable")
+	}
+}
+
+func TestBuildDesiredState_RigPoolIgnoresAssignedWorkInUnreachableStore(t *testing.T) {
+	cityPath := t.TempDir()
+	rigPath := filepath.Join(cityPath, "riga")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatalf("create rig dir: %v", err)
+	}
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+	sessionBead, err := cityStore.Create(beads.Bead{
+		Title:  "asleep rig worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:riga/worker"},
+		Metadata: map[string]string{
+			"template":     "riga/worker",
+			"session_name": "worker-gc-1",
+			"state":        "asleep",
+			"pool_managed": "true",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session bead: %v", err)
+	}
+	work, err := cityStore.Create(beads.Bead{
+		Title:    "unreachable city work for rig worker",
+		Type:     "task",
+		Assignee: sessionBead.ID,
+		Metadata: map[string]string{"gc.routed_to": "riga/worker"},
+	})
+	if err != nil {
+		t.Fatalf("create work bead: %v", err)
+	}
+	if err := cityStore.Update(work.ID, beads.UpdateOpts{Status: stringPtr("in_progress")}); err != nil {
+		t.Fatalf("set work in_progress: %v", err)
+	}
+	sessionSnapshot, err := loadSessionBeadSnapshot(cityStore)
+	if err != nil {
+		t.Fatalf("load session snapshot: %v", err)
+	}
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Rigs:      []config.Rig{{Name: "riga", Path: rigPath}},
+		Agents: []config.Agent{{
+			Name:              "worker",
+			Dir:               "riga",
+			StartCommand:      "true",
+			MaxActiveSessions: intPtr(5),
+			ScaleCheck:        "printf 0",
+		}},
+	}
+
+	dsResult := buildDesiredStateWithSessionBeads(
+		"test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(),
+		cityStore, map[string]beads.Store{"riga": rigStore}, sessionSnapshot, nil, io.Discard,
+	)
+	for _, tp := range dsResult.State {
+		if tp.TemplateName == "riga/worker" {
+			t.Fatalf("unreachable city-store work should not resume rig pool session: %+v", tp)
+		}
 	}
 }
 
@@ -1431,7 +1754,7 @@ func TestBuildDesiredState_ManualImplicitPoolSessionsStayDesired(t *testing.T) {
 			Labels: []string{sessionBeadLabel, "template:helper"},
 			Metadata: map[string]string{
 				"template":             "helper",
-				"session_name":         "s-mc-4wq",
+				"session_name":         "s-real-world-app-4wq",
 				"state":                "creating",
 				"manual_session":       "true",
 				"pending_create_claim": "true",
@@ -1443,7 +1766,7 @@ func TestBuildDesiredState_ManualImplicitPoolSessionsStayDesired(t *testing.T) {
 			Labels: []string{sessionBeadLabel, "template:helper"},
 			Metadata: map[string]string{
 				"template":             "helper",
-				"session_name":         "s-mc-bmr",
+				"session_name":         "s-real-world-app-bmr",
 				"alias":                "hal",
 				"state":                "suspended",
 				"manual_session":       "true",
@@ -1481,7 +1804,7 @@ func TestBuildDesiredState_ManualImplicitPoolSessionsStayDesired(t *testing.T) {
 
 	dsResult := buildDesiredState("my-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
 	desired := dsResult.State
-	for _, sn := range []string{"s-mc-4wq", "s-mc-bmr"} {
+	for _, sn := range []string{"s-real-world-app-4wq", "s-real-world-app-bmr"} {
 		tp, ok := desired[sn]
 		if !ok {
 			t.Fatalf("expected manual helper session %q in desired state, got keys %v", sn, mapKeys(desired))
@@ -1493,8 +1816,8 @@ func TestBuildDesiredState_ManualImplicitPoolSessionsStayDesired(t *testing.T) {
 			t.Fatalf("desired[%q].ManualSession = false, want true", sn)
 		}
 	}
-	if got := desired["s-mc-bmr"].Alias; got != "hal" {
-		t.Fatalf("desired[s-mc-bmr].Alias = %q, want hal", got)
+	if got := desired["s-real-world-app-bmr"].Alias; got != "hal" {
+		t.Fatalf("desired[s-real-world-app-bmr].Alias = %q, want hal", got)
 	}
 }
 
@@ -2521,7 +2844,7 @@ func TestSelectOrCreatePoolSessionBead_SkipsAsleepBeads(t *testing.T) {
 		Labels: []string{sessionBeadLabel, "template:polecat"},
 		Metadata: map[string]string{
 			"template":     "polecat",
-			"session_name": "polecat-mc-old",
+			"session_name": "polecat-real-world-app-old",
 			"state":        "asleep",
 			"pool_managed": "true",
 		},
@@ -2557,7 +2880,7 @@ func TestSelectOrCreatePoolSessionBead_ReusesActiveBeforeCreatingNew(t *testing.
 		Labels: []string{sessionBeadLabel, "template:polecat"},
 		Metadata: map[string]string{
 			"template":     "polecat",
-			"session_name": "polecat-mc-live",
+			"session_name": "polecat-real-world-app-live",
 			"state":        "active",
 			"pool_managed": "true",
 		},
@@ -2593,7 +2916,7 @@ func TestSelectOrCreatePoolSessionBead_ReusesCreatingBeforeCreatingNew(t *testin
 		Labels: []string{sessionBeadLabel, "template:polecat"},
 		Metadata: map[string]string{
 			"template":     "polecat",
-			"session_name": "polecat-mc-new",
+			"session_name": "polecat-real-world-app-new",
 			"state":        "creating",
 			"pool_managed": "true",
 		},
@@ -2630,7 +2953,7 @@ func TestSelectOrCreatePoolSessionBead_SkipsAsleepButReusesActive(t *testing.T) 
 		Labels: []string{sessionBeadLabel, "template:polecat"},
 		Metadata: map[string]string{
 			"template":     "polecat",
-			"session_name": "polecat-mc-old",
+			"session_name": "polecat-real-world-app-old",
 			"state":        "asleep",
 			"pool_managed": "true",
 		},
@@ -2644,7 +2967,7 @@ func TestSelectOrCreatePoolSessionBead_SkipsAsleepButReusesActive(t *testing.T) 
 		Labels: []string{sessionBeadLabel, "template:polecat"},
 		Metadata: map[string]string{
 			"template":     "polecat",
-			"session_name": "polecat-mc-live",
+			"session_name": "polecat-real-world-app-live",
 			"state":        "active",
 			"pool_managed": "true",
 		},

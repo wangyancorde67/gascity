@@ -77,13 +77,42 @@ func ExecCommandRunnerWithEnv(env map[string]string) CommandRunner {
 			}
 			return out, timeoutErr
 		}
-		if err != nil && stderr.Len() > 0 {
-			trace("error", err)
-			return out, fmt.Errorf("%w: %s", err, stderr.String())
+		if err != nil {
+			// bd writes structured errors to stdout (JSON envelope) when
+			// invoked with --json, while stderr is often empty. Surface
+			// whichever stream has content so supervisor logs become
+			// actionable instead of bare "exit status 1".
+			detail := strings.TrimSpace(stderr.String())
+			if detail == "" && name == "bd" {
+				detail = bdStdoutErrorDetail(out)
+			}
+			if detail != "" {
+				trace("error", err)
+				return out, fmt.Errorf("%w: %s", err, detail)
+			}
 		}
 		trace("done", err)
 		return out, err
 	}
+}
+
+// bdStdoutErrorDetail extracts a human-readable error description from
+// bd's JSON error envelope on stdout. bd writes structured errors as
+// {"error": "...", "schema_version": N} on stdout when invoked with
+// --json, while stderr is often empty. Returns "" when the output does
+// not look like a bd error envelope so callers can fall through.
+func bdStdoutErrorDetail(out []byte) string {
+	trimmed := bytes.TrimSpace(extractJSON(out))
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return ""
+	}
+	var env struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(trimmed, &env); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(env.Error)
 }
 
 // PurgeRunnerFunc executes a bd purge command with custom dir and env.
@@ -104,6 +133,8 @@ type BdStore struct {
 	purgeRunner PurgeRunnerFunc // injectable for testing; nil uses exec default
 	idPrefix    string          // bead ID prefix owned by this store, without trailing "-"
 }
+
+const bdTransientWriteAttempts = 3
 
 // NewBdStore creates a BdStore rooted at dir using the given runner.
 func NewBdStore(dir string, runner CommandRunner) *BdStore {
@@ -327,6 +358,42 @@ type bdIssueDep struct {
 	Type           string `json:"type"`
 	ID             string `json:"id"`
 	DependencyType string `json:"dependency_type"`
+}
+
+// PartialResultError indicates that a list-style bd command returned at least
+// one usable entry but also included entries that failed to parse. The
+// successful entries are still returned alongside this error; callers that can
+// surface partial data may proceed with those rows, while callers that require
+// a complete picture should treat this as a hard failure.
+type PartialResultError struct {
+	// Op identifies the bd subcommand that produced the partial result
+	// (e.g. "bd list", "bd ready").
+	Op string
+	// Err wraps the joined per-entry parse errors from parseIssuesTolerant.
+	Err error
+}
+
+// Error reports the operation and underlying parse failures.
+func (e *PartialResultError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("%s: %v", e.Op, e.Err)
+}
+
+// Unwrap returns the joined parse error so errors.Is / errors.As traversal
+// continues into the underlying causes.
+func (e *PartialResultError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// IsPartialResult reports whether err wraps a PartialResultError.
+func IsPartialResult(err error) bool {
+	var partial *PartialResultError
+	return errors.As(err, &partial)
 }
 
 // parseIssuesTolerant unmarshals a JSON array of bdIssue objects, skipping
@@ -604,7 +671,7 @@ func (s *BdStore) Update(id string, opts UpdateOpts) error {
 
 // SetMetadata sets a key-value metadata pair on a bead via bd update.
 func (s *BdStore) SetMetadata(id, key, value string) error {
-	_, err := s.runner(s.dir, "bd", "update", "--json", id,
+	err := s.runBDTransientWrite("update", "--json", id,
 		"--set-metadata", key+"="+value)
 	if err != nil {
 		if isBdNotFound(err) {
@@ -631,7 +698,7 @@ func (s *BdStore) SetMetadataBatch(id string, kvs map[string]string) error {
 	for _, k := range keys {
 		args = append(args, "--set-metadata", k+"="+kvs[k])
 	}
-	_, err := s.runner(s.dir, "bd", args...)
+	err := s.runBDTransientWrite(args...)
 	if err != nil {
 		if isBdNotFound(err) {
 			return fmt.Errorf("setting metadata on %q: %w", id, ErrNotFound)
@@ -639,6 +706,27 @@ func (s *BdStore) SetMetadataBatch(id string, kvs map[string]string) error {
 		return fmt.Errorf("setting metadata on %q: %w", id, err)
 	}
 	return nil
+}
+
+func (s *BdStore) runBDTransientWrite(args ...string) error {
+	var err error
+	for attempt := 1; attempt <= bdTransientWriteAttempts; attempt++ {
+		_, err = s.runner(s.dir, "bd", args...)
+		if err == nil || !isBdTransientWriteConflict(err) || attempt == bdTransientWriteAttempts {
+			return err
+		}
+		time.Sleep(time.Duration(attempt) * 25 * time.Millisecond)
+	}
+	return err
+}
+
+func isBdTransientWriteConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Error 1213 (40001): serialization failure") ||
+		strings.Contains(msg, "this transaction conflicts with a committed transaction")
 }
 
 // Ping verifies the bd binary is accessible by running a no-op command.
@@ -668,7 +756,7 @@ func (s *BdStore) CloseAll(ids []string, metadata map[string]string) (int, error
 	}
 
 	// Batch close: bd close id1 id2 id3 ...
-	args := append([]string{"close", "--json"}, ids...)
+	args := append([]string{"close", "--force", "--json"}, ids...)
 	_, err := s.runner(s.dir, "bd", args...)
 	if err != nil {
 		// Fall back to individual closes on batch failure.
@@ -692,7 +780,7 @@ func (s *BdStore) CloseAll(ids []string, metadata map[string]string) (int, error
 // Close sets a bead's status to closed via bd close.
 // Idempotent: closing an already-closed bead returns nil.
 func (s *BdStore) Close(id string) error {
-	_, err := s.runner(s.dir, "bd", "close", "--json", id)
+	_, err := s.runner(s.dir, "bd", "close", "--force", "--json", id)
 	if err != nil {
 		// Some bd error paths collapse to a bare exit status without a helpful
 		// not-found string. Re-read the bead to distinguish "already closed" from
@@ -703,6 +791,18 @@ func (s *BdStore) Close(id string) error {
 			return fmt.Errorf("closing bead %q: %w", id, ErrNotFound)
 		}
 		return fmt.Errorf("closing bead %q: %w", id, err)
+	}
+	return nil
+}
+
+// Reopen sets a closed bead's status to open via bd reopen.
+func (s *BdStore) Reopen(id string) error {
+	_, err := s.runner(s.dir, "bd", "reopen", "--json", id)
+	if err != nil {
+		if isBdNotFound(err) {
+			return fmt.Errorf("reopening bead %q: %w", id, ErrNotFound)
+		}
+		return fmt.Errorf("reopening bead %q: %w", id, err)
 	}
 	return nil
 }
@@ -774,10 +874,15 @@ func (s *BdStore) List(query ListQuery) ([]Bead, error) {
 	}
 	filtered := applyListQuery(result, query)
 	if parseErr != nil {
-		if len(filtered) > 0 {
-			return filtered, nil
+		if len(filtered) == 0 {
+			return nil, fmt.Errorf("bd list: %w", parseErr)
 		}
-		return filtered, fmt.Errorf("bd list: %w", parseErr)
+		// Surface partial-parse outcomes so callers can distinguish a complete
+		// list from one that silently dropped entries. Treating a partial list
+		// as authoritative has driven a runaway cache-reconcile loop in the
+		// past (synthesizing bead.closed for beads that were merely dropped
+		// by parseIssuesTolerant).
+		return filtered, &PartialResultError{Op: "bd list", Err: parseErr}
 	}
 	return filtered, nil
 }
@@ -852,10 +957,10 @@ func (s *BdStore) Ready() ([]Bead, error) {
 		result = append(result, bead)
 	}
 	if parseErr != nil {
-		if len(result) > 0 {
-			return result, nil
+		if len(result) == 0 {
+			return nil, fmt.Errorf("bd ready: %w", parseErr)
 		}
-		return result, fmt.Errorf("bd ready: %w", parseErr)
+		return result, &PartialResultError{Op: "bd ready", Err: parseErr}
 	}
 	return result, nil
 }

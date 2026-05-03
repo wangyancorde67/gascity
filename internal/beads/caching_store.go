@@ -27,16 +27,18 @@ type CachingStore struct {
 	backing  Store // runtime: always *BdStore; tests may use MemStore
 	idPrefix string
 
-	mu           sync.RWMutex
-	beads        map[string]Bead
-	deps         map[string][]Dep
-	depsComplete bool
-	dirty        map[string]struct{}
-	beadSeq      map[string]uint64
-	deletedSeq   map[string]uint64
-	state        cacheState
-	lastFreshAt  time.Time
-	mutationSeq  uint64
+	mu              sync.RWMutex
+	beads           map[string]Bead
+	deps            map[string][]Dep
+	depsComplete    bool
+	dirty           map[string]struct{}
+	beadSeq         map[string]uint64
+	localBeadAt     map[string]time.Time
+	deletedSeq      map[string]uint64
+	state           cacheState
+	lastFreshAt     time.Time
+	mutationSeq     uint64
+	primePartialErr error
 
 	reconciling  atomic.Bool
 	syncFailures int
@@ -44,6 +46,8 @@ type CachingStore struct {
 	onChange     func(eventType, beadID string, payload json.RawMessage)
 	cancelFn     context.CancelFunc
 	problemf     func(string)
+
+	applyEventBeforeCommitForTest func()
 }
 
 type cacheState int
@@ -57,19 +61,21 @@ const (
 
 // CacheStats exposes cache freshness, reconciliation, and problem state.
 type CacheStats struct {
-	TotalBeads      int
-	TotalDeps       int
-	LastFreshAt     time.Time
-	LastReconcileAt time.Time
-	LastReconcileMs float64
-	Adds            int64
-	Removes         int64
-	Updates         int64
-	SyncFailures    int
-	ProblemCount    int64
-	LastProblemAt   time.Time
-	LastProblem     string
-	State           string
+	TotalBeads              int
+	TotalDeps               int
+	LastFreshAt             time.Time
+	LastReconcileAt         time.Time
+	LastReconcileMs         float64
+	Adds                    int64
+	Removes                 int64
+	Updates                 int64
+	ReconcileRecoveries     int64
+	ReconcileCloseDeferrals int64
+	SyncFailures            int
+	ProblemCount            int64
+	LastProblemAt           time.Time
+	LastProblem             string
+	State                   string
 }
 
 const (
@@ -113,14 +119,15 @@ func NewCachingStoreForTestWithPrefix(backing Store, idPrefix string, onChange f
 
 func newCachingStore(backing Store, idPrefix string, onChange func(eventType, beadID string, payload json.RawMessage)) *CachingStore {
 	return &CachingStore{
-		backing:    backing,
-		idPrefix:   normalizeIDPrefix(idPrefix),
-		beads:      make(map[string]Bead),
-		deps:       make(map[string][]Dep),
-		dirty:      make(map[string]struct{}),
-		beadSeq:    make(map[string]uint64),
-		deletedSeq: make(map[string]uint64),
-		onChange:   onChange,
+		backing:     backing,
+		idPrefix:    normalizeIDPrefix(idPrefix),
+		beads:       make(map[string]Bead),
+		deps:        make(map[string][]Dep),
+		dirty:       make(map[string]struct{}),
+		beadSeq:     make(map[string]uint64),
+		localBeadAt: make(map[string]time.Time),
+		deletedSeq:  make(map[string]uint64),
+		onChange:    onChange,
 		problemf: func(msg string) {
 			log.Printf("beads cache: %s", msg)
 		},
@@ -151,6 +158,18 @@ func (c *CachingStore) noteMutationLocked(ids ...string) uint64 {
 	return seq
 }
 
+func (c *CachingStore) noteLocalMutationLocked(ids ...string) uint64 {
+	seq := c.noteMutationLocked(ids...)
+	now := time.Now()
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		c.localBeadAt[id] = now
+	}
+	return seq
+}
+
 // PrimeActive loads all non-closed beads (open + in_progress) into the
 // cache. These are fast indexed queries that populate enough data for
 // startup paths without waiting for a full scan. The cache enters
@@ -162,16 +181,22 @@ func (c *CachingStore) PrimeActive() error {
 	c.mu.RUnlock()
 
 	var all []Bead
+	var partialErr error
 	for _, status := range []string{"open", "in_progress"} {
 		beads, err := c.backing.List(ListQuery{Status: status})
 		if err != nil {
-			return fmt.Errorf("prime active (%s): %w", status, err)
+			if !IsPartialResult(err) {
+				return fmt.Errorf("prime active (%s): %w", status, err)
+			}
+			partialErr = errors.Join(partialErr, err)
+			c.recordProblem(fmt.Sprintf("prime active (%s)", status), err)
 		}
 		all = append(all, beads...)
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	now := time.Now()
 	for _, b := range all {
 		if c.mutationSeq != startSeq {
 			if c.deletedSeq[b.ID] > startSeq {
@@ -181,13 +206,21 @@ func (c *CachingStore) PrimeActive() error {
 				continue
 			}
 		}
+		if _, keep := c.recentLocalBeadConflictLocked(b.ID, b, now); keep {
+			continue
+		}
 		c.beads[b.ID] = cloneBead(b)
 		delete(c.deletedSeq, b.ID)
+		if !recentLocalMutation(c.localBeadAt[b.ID], now) {
+			delete(c.beadSeq, b.ID)
+			delete(c.localBeadAt, b.ID)
+		}
 	}
 	if c.state == cacheUninitialized {
 		c.state = cachePartial
 	}
-	c.markFreshLocked(time.Now())
+	c.primePartialErr = partialErr
+	c.markFreshLocked(now)
 	c.updateStatsLocked()
 	return nil
 }
@@ -202,9 +235,16 @@ func (c *CachingStore) Prime(_ context.Context) error {
 
 	var all []Bead
 	var err error
+	var partialErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		all, err = c.backing.List(ListQuery{AllowScan: true}) // active beads only (default)
 		if err == nil {
+			break
+		}
+		if IsPartialResult(err) {
+			c.recordProblem("prime cache: partial list", err)
+			partialErr = err
+			err = nil
 			break
 		}
 		c.recordProblem(fmt.Sprintf("prime cache attempt %d/3", attempt), err)
@@ -230,11 +270,38 @@ func (c *CachingStore) Prime(_ context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.mutationSeq == startSeq {
-		c.beads = beadMap
-		c.deps = depMap
+		nextBeads := beadMap
+		nextDeps := depMap
+		nextDirty := make(map[string]struct{})
+		nextBeadSeq := make(map[string]uint64)
+		nextLocalBeadAt := make(map[string]time.Time)
+		for id, current := range c.beads {
+			if fresh, exists := beadMap[id]; exists {
+				if recentLocalMutation(c.localBeadAt[id], now) {
+					c.carryRecentLocalMutationLocked(id, nextDirty, nextBeadSeq, nextLocalBeadAt)
+				}
+				if _, keep := c.recentLocalBeadConflictLocked(id, fresh, now); keep {
+					nextBeads[id] = cloneBead(current)
+					if deps, ok := c.deps[id]; ok {
+						nextDeps[id] = cloneDeps(deps)
+					}
+				}
+				continue
+			}
+			if current.Status != "closed" && recentLocalMutation(c.localBeadAt[id], now) {
+				nextBeads[id] = cloneBead(current)
+				if deps, ok := c.deps[id]; ok {
+					nextDeps[id] = cloneDeps(deps)
+				}
+				c.carryRecentLocalMutationLocked(id, nextDirty, nextBeadSeq, nextLocalBeadAt)
+			}
+		}
+		c.beads = nextBeads
+		c.deps = nextDeps
 		c.depsComplete = depsComplete && depErr == nil
-		c.dirty = make(map[string]struct{})
-		c.beadSeq = make(map[string]uint64)
+		c.dirty = nextDirty
+		c.beadSeq = nextBeadSeq
+		c.localBeadAt = nextLocalBeadAt
 		c.deletedSeq = make(map[string]uint64)
 	} else {
 		for id, b := range beadMap {
@@ -256,6 +323,7 @@ func (c *CachingStore) Prime(_ context.Context) error {
 	c.state = cacheLive
 	c.syncFailures = 0
 	c.stats.SyncFailures = 0
+	c.primePartialErr = partialErr
 	c.markFreshLocked(now)
 	c.updateStatsLocked()
 	return nil
