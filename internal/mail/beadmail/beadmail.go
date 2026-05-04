@@ -25,13 +25,43 @@ const (
 )
 
 // Provider implements [mail.Provider] using [beads.Store] as the backend.
+//
+// The Provider memoizes its enumeration of gc:session beads for the duration
+// of its lifetime: identity resolution, recipient routing, and historical-
+// alias lookup all need the same set, and a single command invocation creates
+// one Provider. The cache is intentionally not invalidated on Send: a fresh
+// message bead is not a session bead, and stale session-cache vs newly-
+// committed session beads is not a code path mail commands ever exercise.
 type Provider struct {
-	store beads.Store
+	store          beads.Store
+	sessionsCache  []beads.Bead
+	sessionsCached bool
 }
 
 // New returns a beadmail provider backed by the given store.
 func New(store beads.Store) *Provider {
 	return &Provider{store: store}
+}
+
+// cachedSessionBeads returns the full set of session beads (open + closed),
+// fetching once and reusing across the Provider's lifetime. This is the
+// single-source-of-truth for any code path that needs to enumerate sessions
+// to resolve identity, recipient routes, or historical aliases.
+func (p *Provider) cachedSessionBeads() ([]beads.Bead, error) {
+	if p.sessionsCached {
+		return p.sessionsCache, nil
+	}
+	if p.store == nil {
+		p.sessionsCached = true
+		return nil, nil
+	}
+	sessions, err := p.store.List(beads.ListQuery{Label: session.LabelSession, IncludeClosed: true})
+	if err != nil {
+		return nil, err
+	}
+	p.sessionsCache = sessions
+	p.sessionsCached = true
+	return sessions, nil
 }
 
 // Send creates a message bead with subject in Title and body in Description.
@@ -543,7 +573,7 @@ func appendSessionRecipientRoutes(routes []string, b beads.Bead) []string {
 }
 
 func (p *Provider) recipientRoutesByHistoricalAlias(recipient string, routes []string) []string {
-	sessions, err := p.store.List(beads.ListQuery{Label: session.LabelSession, IncludeClosed: true})
+	sessions, err := p.cachedSessionBeads()
 	if err != nil {
 		log.Printf("beadmail: listing sessions for historical recipient route %q: %v", recipient, err)
 		return routes

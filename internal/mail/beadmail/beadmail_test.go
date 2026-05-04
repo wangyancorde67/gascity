@@ -1478,6 +1478,72 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// --- Provider session-list cache (ga-q6ct) ---
+
+// countingSessionListStore counts broad gc:session List calls and forwards
+// the rest. Used to pin that Provider memoizes the gc:session enumeration
+// across multiple Inbox calls in a single command invocation.
+type countingSessionListStore struct {
+	*beads.MemStore
+	sessionListCalls int
+}
+
+func (s *countingSessionListStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	if query.Label == session.LabelSession && len(query.Metadata) == 0 {
+		s.sessionListCalls++
+	}
+	return s.MemStore.List(query)
+}
+
+func TestProvider_BroadSessionListCachedAcrossInboxCalls(t *testing.T) {
+	// Pin: when an Inbox call has to fall back to historical-alias enumeration
+	// (the only path that issues a broad gc:session scan in beadmail), the
+	// scan happens AT MOST ONCE per Provider lifetime — even if multiple
+	// Inbox calls force the fallback. Without the cache, each Inbox call
+	// re-issues the scan, producing the fanout that ga-q6ct tracks.
+	store := &countingSessionListStore{MemStore: beads.NewMemStore()}
+
+	// Two live sessions with alias_history that includes the route we'll
+	// search for. AliasHistory lookup is the path that does the broad scan.
+	if _, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":         "worker-a",
+			"alias_history": "old-route",
+			"session_name":  "wf__a",
+		},
+	}); err != nil {
+		t.Fatalf("Create session A: %v", err)
+	}
+	if _, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":         "worker-b",
+			"alias_history": "old-route-2",
+			"session_name":  "wf__b",
+		},
+	}); err != nil {
+		t.Fatalf("Create session B: %v", err)
+	}
+
+	p := New(store)
+
+	// Exercise three independent Inbox calls that each force the
+	// alias-history fallback (no current alias matches "old-route" or
+	// "old-route-2"). Without the cache: 3 broad scans. With cache: 1.
+	for _, recipient := range []string{"old-route", "old-route-2", "old-route"} {
+		if _, err := p.Inbox(recipient); err != nil {
+			t.Fatalf("Inbox(%q): %v", recipient, err)
+		}
+	}
+
+	if store.sessionListCalls != 1 {
+		t.Errorf("broad gc:session List calls = %d, want 1 (Provider must cache the enumeration)", store.sessionListCalls)
+	}
+}
+
 // --- Compile-time interface check ---
 
 var _ mail.Provider = (*Provider)(nil)
