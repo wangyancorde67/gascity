@@ -1294,3 +1294,268 @@ func mergeTestEnv(overrides map[string]string) []string {
 	}
 	return env
 }
+
+// jsonlExportEnv builds the common env map used by the spike-detection tests
+// below. Callers append per-test overrides on the returned map.
+func jsonlExportEnv(t *testing.T, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog string) map[string]string {
+	t.Helper()
+	return map[string]string{
+		"GC_CALL_LOG":                gcLog,
+		"GC_MAIL_LOG":                mailLog,
+		"GC_CITY":                    cityDir,
+		"GC_CITY_PATH":               cityDir,
+		"GC_PACK_STATE_DIR":          stateDir,
+		"GC_DOLT_HOST":               "127.0.0.1",
+		"GC_DOLT_PORT":               "3307",
+		"GC_DOLT_USER":               "root",
+		"GC_DOLT_PASSWORD":           "",
+		"GC_JSONL_ARCHIVE_REPO":      archiveRepo,
+		"GC_JSONL_MAX_PUSH_FAILURES": "99",
+		"GC_JSONL_SCRUB":             "false",
+		"GIT_CONFIG_GLOBAL":          filepath.Join(t.TempDir(), "gitconfig"),
+		"GIT_CONFIG_NOSYSTEM":        "1",
+		"PATH":                       binDir + string(os.PathListSeparator) + os.Getenv("PATH"),
+	}
+}
+
+// writeJsonlExportGCStub installs a `gc` shim that mirrors mail-send calls into
+// a separate log so tests can assert escalations independently of the noisier
+// nudge stream.
+func writeJsonlExportGCStub(t *testing.T, binDir string) {
+	t.Helper()
+	writeExecutable(t, filepath.Join(binDir, "gc"), `#!/bin/sh
+printf '%s\n' "$*" >> "$GC_CALL_LOG"
+if [ "$1" = "mail" ] && [ "$2" = "send" ]; then
+    printf '%s\n' "$*" >> "$GC_MAIL_LOG"
+fi
+exit 0
+`)
+}
+
+// initSeedArchive builds a git repo at archiveRepo with one committed copy of
+// issues.jsonl whose .rows array length equals prevCount, then returns the
+// resulting commit SHA. The default branch is forced to `main` so the script's
+// later `git push origin main` would target the same ref the test verifies.
+func initSeedArchive(t *testing.T, archiveRepo string, prevCount int) string {
+	t.Helper()
+	dbDir := filepath.Join(archiveRepo, "beads")
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]string, 0, prevCount)
+	for i := 0; i < prevCount; i++ {
+		rows = append(rows, fmt.Sprintf(`{"id":"p%d","title":"prev-%d"}`, i, i))
+	}
+	body := `{"rows":[` + strings.Join(rows, ",") + `]}` + "\n"
+	if err := os.WriteFile(filepath.Join(dbDir, "issues.jsonl"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Persist identity to the repo's local config so the production script's
+	// later `git commit` (no -c flags, no user-level config in the test env)
+	// has a committer.
+	steps := [][]string{
+		{"-c", "init.defaultBranch=main", "init", "-q"},
+		{"config", "user.email", "test@example.invalid"},
+		{"config", "user.name", "test"},
+		{"add", "-A"},
+		{"commit", "-q", "-m", "seed"},
+	}
+	for _, args := range steps {
+		full := append([]string{"-C", archiveRepo}, args...)
+		cmd := exec.Command("git", full...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	cmd := exec.Command("git", "-C", archiveRepo, "rev-parse", "HEAD")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse: %v\n%s", err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// writeMultiRecordDoltStub emits a `dolt` shim that returns a JSON object with
+// the given record count for the issues table and an empty `{"rows":[]}` for
+// the supplemental tables. Crucially the issues output is on a SINGLE physical
+// line — the realistic shape of `dolt sql -r json` — so `wc -l` on it returns
+// 1 regardless of record count.
+func writeMultiRecordDoltStub(t *testing.T, binDir string, currentCount int) {
+	t.Helper()
+	rows := make([]string, 0, currentCount)
+	for i := 0; i < currentCount; i++ {
+		rows = append(rows, fmt.Sprintf(`{"id":"c%d","title":"cur-%d"}`, i, i))
+	}
+	issuesPayload := `{"rows":[` + strings.Join(rows, ",") + `]}`
+	body := "#!/bin/sh\n" +
+		"case \"$*\" in\n" +
+		"  *\"SHOW DATABASES\"*)\n" +
+		"    printf 'Database\\nbeads\\n'\n" +
+		"    ;;\n" +
+		"  *\"FROM \\`beads\\`.issues\"*)\n" +
+		"    printf '%s\\n' '" + issuesPayload + "'\n" +
+		"    ;;\n" +
+		"  *\"SELECT *\"*)\n" +
+		"    printf '{\"rows\":[]}\\n'\n" +
+		"    ;;\n" +
+		"esac\n" +
+		"exit 0\n"
+	writeExecutable(t, filepath.Join(binDir, "dolt"), body)
+}
+
+func TestJsonlExportCountsRecordsViaJq(t *testing.T) {
+	// Bug 1 (#1547): `wc -l` on `dolt -r json` output measures formatting, not
+	// records — the JSON object is one physical line regardless of row count.
+	// Verify CURRENT_COUNT reflects the actual record count (3).
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+
+	writeMultiRecordDoltStub(t, binDir, 3)
+	writeJsonlExportGCStub(t, binDir)
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	gcData, err := os.ReadFile(gcLog)
+	if err != nil {
+		t.Fatalf("ReadFile(gc log): %v", err)
+	}
+	log := string(gcData)
+	if !strings.Contains(log, "records: 3") {
+		t.Fatalf("expected DOG_DONE summary to report records: 3 (jq counted .rows length); got:\n%s", log)
+	}
+}
+
+func TestJsonlExportSkipsSpikeCheckBelowMinPrev(t *testing.T) {
+	// Bug 2 (#1547): percent-delta with no absolute floor escalates on tiny
+	// counts. prev=2, current=1 → 50% delta would cross the 20% threshold.
+	// With the fix, no escalation when prev < GC_JSONL_MIN_PREV_FOR_SPIKE
+	// (default 10).
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+
+	initSeedArchive(t, archiveRepo, 2)
+	writeMultiRecordDoltStub(t, binDir, 1)
+	writeJsonlExportGCStub(t, binDir)
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	mailData, err := os.ReadFile(mailLog)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("ReadFile(mail log): %v", err)
+	}
+	if strings.Contains(string(mailData), "ESCALATION: JSONL spike") {
+		t.Fatalf("spike escalation fired despite prev<MIN_PREV; mail log:\n%s", mailData)
+	}
+}
+
+func TestJsonlExportCommitsOnHaltToAdvanceBaseline(t *testing.T) {
+	// Bug 3 (#1547): HALT path skipped `git commit`, so PREV_COUNT was frozen
+	// and the spike re-fired every cooldown. With the fix, HALT still commits
+	// the new file (baseline advances) and tags the commit `[HALT]`, but skips
+	// `git push`.
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+
+	prevHead := initSeedArchive(t, archiveRepo, 100)
+	writeMultiRecordDoltStub(t, binDir, 10)
+	writeJsonlExportGCStub(t, binDir)
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	// Sanity: the spike (90% drop, prev=100, current=10) was escalated.
+	mailData, err := os.ReadFile(mailLog)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("ReadFile(mail log): %v", err)
+	}
+	if !strings.Contains(string(mailData), "ESCALATION: JSONL spike") {
+		t.Fatalf("expected spike escalation as preconditions for the HALT-baseline test; mail log:\n%s", mailData)
+	}
+
+	// Baseline must advance: HEAD past the seed.
+	revOut, err := exec.Command("git", "-C", archiveRepo, "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse: %v\n%s", err, revOut)
+	}
+	newHead := strings.TrimSpace(string(revOut))
+	if newHead == prevHead {
+		t.Fatalf("HEAD did not advance after HALT; baseline is still frozen at %s", prevHead)
+	}
+
+	// Commit message tagged [HALT] so operators reading the archive log can
+	// distinguish baseline-only commits from full backups.
+	logOut, err := exec.Command("git", "-C", archiveRepo, "log", "-1", "--format=%s").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v\n%s", err, logOut)
+	}
+	headMsg := strings.TrimSpace(string(logOut))
+	if !strings.Contains(headMsg, "HALT") {
+		t.Fatalf("HALT-baseline commit must include HALT marker; got: %q", headMsg)
+	}
+
+	// The DOG_DONE summary on HALT should be the spike-halt nudge, not the
+	// regular exported/records/push summary line.
+	gcData, err := os.ReadFile(gcLog)
+	if err != nil {
+		t.Fatalf("ReadFile(gc log): %v", err)
+	}
+	if !strings.Contains(string(gcData), "HALTED on spike detection") {
+		t.Fatalf("expected HALT nudge in gc log:\n%s", gcData)
+	}
+	if strings.Contains(string(gcData), "DOG_DONE: jsonl — exported") {
+		t.Fatalf("HALT path must not emit the success summary nudge; gc log:\n%s", gcData)
+	}
+}
+
+func TestJsonlExportFirstRunWithDisabledFloorSkipsSpikeCheck(t *testing.T) {
+	// Regression: GC_JSONL_MIN_PREV_FOR_SPIKE=0 is documented as "disable the
+	// floor", but combined with a first run (no archive yet → PREV_COUNT=0)
+	// the spike calculation would divide by zero and `set -e` would kill the
+	// script. The guard must skip the spike check when PREV_COUNT == 0
+	// regardless of the floor setting.
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+
+	// No initSeedArchive call — first run, archive does not yet exist.
+	writeMultiRecordDoltStub(t, binDir, 5)
+	writeJsonlExportGCStub(t, binDir)
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+	env["GC_JSONL_MIN_PREV_FOR_SPIKE"] = "0"
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	// Should not have escalated (no prior baseline).
+	if mailData, _ := os.ReadFile(mailLog); strings.Contains(string(mailData), "ESCALATION: JSONL spike") {
+		t.Fatalf("first run with disabled floor must not escalate; mail log:\n%s", mailData)
+	}
+	// Sanity: the success summary nudge fired (script reached the end).
+	gcData, err := os.ReadFile(gcLog)
+	if err != nil {
+		t.Fatalf("ReadFile(gc log): %v", err)
+	}
+	if !strings.Contains(string(gcData), "DOG_DONE: jsonl") {
+		t.Fatalf("expected DOG_DONE nudge in gc log:\n%s", gcData)
+	}
+}

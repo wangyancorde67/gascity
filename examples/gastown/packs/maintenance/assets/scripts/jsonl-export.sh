@@ -2,8 +2,8 @@
 # jsonl-export — export Dolt databases to JSONL and push to git archive.
 #
 # Replaces mol-dog-jsonl formula. All operations are deterministic:
-# dolt sql exports, wc -l comparisons against spike threshold, git
-# add/commit/push. No LLM judgment needed.
+# dolt sql exports, jq record-count comparisons against spike threshold,
+# git add/commit/push. No LLM judgment needed.
 #
 # Runs as an exec order (no LLM, no agent, no wisp).
 set -euo pipefail
@@ -11,15 +11,35 @@ set -euo pipefail
 CITY="${GC_CITY:-.}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/dolt-target.sh"
+
+# jq is a hard dependency: count_jsonl_rows below relies on it, and a missing
+# jq would silently zero every record count and could mask spikes on a stale
+# baseline. Fail loud at startup instead.
+if ! command -v jq >/dev/null 2>&1; then
+    echo "jsonl-export: jq is required but not found in PATH" >&2
+    exit 1
+fi
 PACK_STATE_DIR="${GC_PACK_STATE_DIR:-${GC_CITY_RUNTIME_DIR:-$CITY/.gc/runtime}/packs/maintenance}"
 LEGACY_ARCHIVE_REPO="$CITY/.gc/jsonl-archive"
 LEGACY_STATE_FILE="$CITY/.gc/jsonl-export-state.json"
 
 # Configurable via environment (defaults match the old formula).
 SPIKE_THRESHOLD="${GC_JSONL_SPIKE_THRESHOLD:-20}"  # percentage (0-100)
+# Skip the percentage spike check when the previous record count is below
+# this absolute floor — small-N percentages are noise. Set to 0 to disable.
+MIN_PREV_FOR_SPIKE_CHECK="${GC_JSONL_MIN_PREV_FOR_SPIKE:-10}"
 MAX_PUSH_FAILURES="${GC_JSONL_MAX_PUSH_FAILURES:-3}"
 SCRUB="${GC_JSONL_SCRUB:-true}"
 ARCHIVE_REPO="${GC_JSONL_ARCHIVE_REPO:-$PACK_STATE_DIR/jsonl-archive}"
+
+# Count records in a `dolt sql -r json` payload. The output is `{"rows":[...]}`
+# on (typically) a single physical line, so `wc -l` measures formatting, not
+# records. Falls back to 0 on empty/missing/unparseable input; jq parse errors
+# are forwarded to stderr so a corrupt archive surfaces in operator logs
+# instead of being silently scored as zero rows.
+count_jsonl_rows() {
+    jq -r '(.rows // []) | length' || echo "0"
+}
 
 # State file for tracking consecutive push failures.
 STATE_FILE="$PACK_STATE_DIR/jsonl-export-state.json"
@@ -80,8 +100,9 @@ for DB in $DATABASES; do
     # Legacy flat file.
     cp "$DB_DIR/issues.jsonl" "$ARCHIVE_REPO/$DB.jsonl" 2>/dev/null || true
 
-    # Count records exported.
-    CURRENT_COUNT=$(wc -l < "$DB_DIR/issues.jsonl" 2>/dev/null || echo "0")
+    # Count records exported (via jq on the JSON payload, not wc -l on the
+    # physical line count).
+    CURRENT_COUNT=$(count_jsonl_rows < "$DB_DIR/issues.jsonl")
     TOTAL_EXPORTED=$((TOTAL_EXPORTED + CURRENT_COUNT))
 
     # Step 2: Filter test pollution.
@@ -94,40 +115,49 @@ for DB in $DATABASES; do
         mv "$TMPFILE" "$DB_DIR/issues.jsonl"
     fi
 
-    # Step 3: Spike detection — compare against previous commit.
+    # Step 3: Spike detection — compare record counts against previous commit.
     PREV_COUNT=0
     if git -C "$ARCHIVE_REPO" log -1 --format=%H -- "$DB/issues.jsonl" >/dev/null 2>&1; then
-        PREV_COUNT=$(git -C "$ARCHIVE_REPO" show HEAD:"$DB/issues.jsonl" 2>/dev/null | wc -l || echo "0")
+        PREV_COUNT=$(git -C "$ARCHIVE_REPO" show HEAD:"$DB/issues.jsonl" 2>/dev/null | count_jsonl_rows)
     fi
 
-    if [ "$PREV_COUNT" -gt 0 ]; then
-        FILTERED_COUNT=$(wc -l < "$DB_DIR/issues.jsonl" 2>/dev/null || echo "0")
-        if [ "$PREV_COUNT" -gt 0 ]; then
-            DELTA=$(( (FILTERED_COUNT - PREV_COUNT) * 100 / PREV_COUNT ))
-            # Use absolute value.
-            if [ "$DELTA" -lt 0 ]; then
-                DELTA=$(( -DELTA ))
-            fi
-            if [ "$DELTA" -gt "$SPIKE_THRESHOLD" ]; then
-                gc mail send mayor/ -s "ESCALATION: JSONL spike detected [HIGH]" \
-                    -m "Database: $DB, prev: $PREV_COUNT, current: $FILTERED_COUNT, delta: ${DELTA}%, threshold: ${SPIKE_THRESHOLD}%" \
-                    2>/dev/null || true
-                HALTED=1
-                echo "jsonl-export: HALTED — spike in $DB (${DELTA}% > ${SPIKE_THRESHOLD}%)"
-                break
-            fi
+    # Skip the percentage check on the first run (no prior commit) and when
+    # the previous count is below the absolute floor — a 1→2 swing is 100% but
+    # meaningless on a tiny database. The PREV_COUNT > 0 guard also avoids the
+    # division-by-zero on line `DELTA=...` when the floor is set to 0 to
+    # disable the small-N skip.
+    if [ "$PREV_COUNT" -gt 0 ] && [ "$PREV_COUNT" -ge "$MIN_PREV_FOR_SPIKE_CHECK" ]; then
+        FILTERED_COUNT=$(count_jsonl_rows < "$DB_DIR/issues.jsonl")
+        DELTA=$(( (FILTERED_COUNT - PREV_COUNT) * 100 / PREV_COUNT ))
+        if [ "$DELTA" -lt 0 ]; then
+            DELTA=$(( -DELTA ))
+        fi
+        if [ "$DELTA" -gt "$SPIKE_THRESHOLD" ]; then
+            gc mail send mayor/ -s "ESCALATION: JSONL spike detected [HIGH]" \
+                -m "Database: $DB, prev: $PREV_COUNT, current: $FILTERED_COUNT, delta: ${DELTA}%, threshold: ${SPIKE_THRESHOLD}%" \
+                2>/dev/null || true
+            HALTED=1
+            echo "jsonl-export: HALTED — spike in $DB (${DELTA}% > ${SPIKE_THRESHOLD}%)"
+            break
         fi
     fi
 done
 
+cd "$ARCHIVE_REPO"
+git add -A *.jsonl */ 2>/dev/null || true
+
+# On HALT we still commit the new export so PREV_COUNT advances on the next
+# run — otherwise the same spike re-fires every cooldown and floods the inbox
+# (#1547 root cause #3). Push is skipped so the spike data isn't propagated.
 if [ "$HALTED" -eq 1 ]; then
+    if ! git diff --cached --quiet 2>/dev/null; then
+        EXPORTED_DBS=$((TOTAL_DBS - $(echo "$FAILED_DBS" | wc -w)))
+        git commit -q -m "[HALT] backup $(date -u +%Y-%m-%dT%H:%M:%SZ): exported=$EXPORTED_DBS/$TOTAL_DBS records=$TOTAL_EXPORTED (spike detected; push skipped)" \
+            --author="Gas Town Daemon <daemon@gastown.local>" 2>/dev/null || true
+    fi
     gc session nudge deacon/ "DOG_DONE: jsonl — HALTED on spike detection" 2>/dev/null || true
     exit 0
 fi
-
-# Step 4: Commit and push.
-cd "$ARCHIVE_REPO"
-git add -A *.jsonl */ 2>/dev/null || true
 
 if git diff --cached --quiet 2>/dev/null; then
     # No changes.
