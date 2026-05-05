@@ -1612,6 +1612,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/city/{cityName}/session/{id}/permission-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post v0 city by city name session by ID permission mode */
+        post: operations["post-v0-city-by-city-name-session-by-id-permission-mode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/city/{cityName}/session/{id}/rename": {
         parameters: {
             query?: never;
@@ -2508,7 +2525,7 @@ export interface components {
             /** @description Event type. */
             type: string;
         };
-        EventPayload: components["schemas"]["AdapterEventPayload"] | components["schemas"]["BeadEventPayload"] | components["schemas"]["BoundEventPayload"] | components["schemas"]["CityCreateSucceededPayload"] | components["schemas"]["CityLifecyclePayload"] | components["schemas"]["CityUnregisterSucceededPayload"] | components["schemas"]["GroupCreatedEventPayload"] | components["schemas"]["InboundEventPayload"] | components["schemas"]["MailEventPayload"] | components["schemas"]["NoPayload"] | components["schemas"]["OutboundEventPayload"] | components["schemas"]["RequestFailedPayload"] | components["schemas"]["SessionCreateSucceededPayload"] | components["schemas"]["SessionLifecyclePayload"] | components["schemas"]["SessionMessageSucceededPayload"] | components["schemas"]["SessionSubmitSucceededPayload"] | components["schemas"]["UnboundEventPayload"] | components["schemas"]["WorkerOperationEventPayload"];
+        EventPayload: components["schemas"]["AdapterEventPayload"] | components["schemas"]["BeadEventPayload"] | components["schemas"]["BoundEventPayload"] | components["schemas"]["CityCreateSucceededPayload"] | components["schemas"]["CityLifecyclePayload"] | components["schemas"]["CityUnregisterSucceededPayload"] | components["schemas"]["GroupCreatedEventPayload"] | components["schemas"]["InboundEventPayload"] | components["schemas"]["MailEventPayload"] | components["schemas"]["NoPayload"] | components["schemas"]["OutboundEventPayload"] | components["schemas"]["RequestFailedPayload"] | components["schemas"]["SessionCreateSucceededPayload"] | components["schemas"]["SessionMessageSucceededPayload"] | components["schemas"]["SessionSubmitSucceededPayload"] | components["schemas"]["SessionUpdatedPayload"] | components["schemas"]["UnboundEventPayload"] | components["schemas"]["WorkerOperationEventPayload"];
         EventStreamEnvelope: {
             actor: string;
             message?: string;
@@ -3604,6 +3621,13 @@ export interface components {
              * @example idle
              */
             activity: string;
+            /**
+             * Format: int64
+             * @description Monotonically increasing permission mode version when known.
+             */
+            mode_version?: number;
+            /** @description Canonical runtime permission mode when known. */
+            permission_mode?: string;
         };
         SessionAgentGetResponse: {
             messages: unknown[] | null;
@@ -3628,6 +3652,9 @@ export interface components {
             SchemaVersion: number;
             SessionID: string;
             Status: components["schemas"]["BindingStatus"];
+        };
+        SessionCapabilities: {
+            permission_mode: components["schemas"]["SessionPermissionModeCapability"];
         };
         SessionCreateBody: {
             /** @description Optional session alias. */
@@ -3663,14 +3690,6 @@ export interface components {
             last_activity?: string;
             name: string;
         };
-        SessionLifecyclePayload: {
-            /** @description Short human-readable reason. */
-            reason?: string;
-            /** @description Canonical session bead ID. Always present. */
-            session_id: string;
-            /** @description Session template name when known at the emission site. */
-            template?: string;
-        };
         SessionMessageInputBody: {
             /** @description Message text to send. */
             message: string;
@@ -3690,6 +3709,41 @@ export interface components {
         SessionPendingResponse: {
             pending?: components["schemas"]["PendingInteraction"];
             supported: boolean;
+        };
+        SessionPermissionModeCapability: {
+            /** @description Whether the running session can switch permission mode without restart. */
+            live_switch: boolean;
+            /** @description Whether the current runtime permission mode can be read. */
+            readable: boolean;
+            /** @description Reason permission mode is unavailable or limited. */
+            reason?: string;
+            /** @description Whether runtime permission mode is supported for this provider/session. */
+            supported: boolean;
+            /** @description Canonical permission mode values accepted by this session. */
+            values?: string[] | null;
+        };
+        SessionPermissionModeInputBody: {
+            /**
+             * @description Canonical permission mode to apply to the running session.
+             * @enum {string}
+             */
+            permission_mode: "default" | "acceptEdits" | "plan" | "bypassPermissions";
+        };
+        SessionPermissionModeOutputBody: {
+            /** @description Session ID. */
+            id: string;
+            /**
+             * Format: int64
+             * @description Monotonically increasing session permission mode version.
+             */
+            mode_version: number;
+            /**
+             * @description Confirmed canonical permission mode.
+             * @enum {string}
+             */
+            permission_mode: "default" | "acceptEdits" | "plan" | "bypassPermissions";
+            /** @description Whether the provider verified the mode after applying it. */
+            verified: boolean;
         };
         /**
          * Session raw transcript frame
@@ -3726,6 +3780,7 @@ export interface components {
             activity?: string;
             alias?: string;
             attached: boolean;
+            capabilities: components["schemas"]["SessionCapabilities"];
             configured_named_session?: boolean;
             /** Format: int64 */
             context_pct?: number;
@@ -3740,6 +3795,8 @@ export interface components {
             metadata?: {
                 [key: string]: string;
             };
+            /** Format: int64 */
+            mode_version?: number;
             model?: string;
             options?: {
                 [key: string]: string;
@@ -3763,7 +3820,14 @@ export interface components {
         SessionStreamMessageEvent: {
             format: string;
             id: string;
+            /**
+             * Format: int64
+             * @description Monotonically increasing permission mode version when known.
+             */
+            mode_version?: number;
             pagination?: components["schemas"]["PaginationInfo"];
+            /** @description Canonical runtime permission mode when known. */
+            permission_mode?: string;
             /** @description Producing provider identifier (claude, codex, gemini, open-code, etc.). */
             provider: string;
             template: string;
@@ -3774,7 +3838,14 @@ export interface components {
             id: string;
             /** @description Provider-native transcript frames, emitted verbatim as the provider wrote them. */
             messages: components["schemas"]["SessionRawMessageFrame"][] | null;
+            /**
+             * Format: int64
+             * @description Monotonically increasing permission mode version when known.
+             */
+            mode_version?: number;
             pagination?: components["schemas"]["PaginationInfo"];
+            /** @description Canonical runtime permission mode when known. */
+            permission_mode?: string;
             /** @description Producing provider identifier (claude, codex, gemini, open-code, etc.). Consumers use this to dispatch per-provider frame parsing. */
             provider: string;
             template: string;
@@ -3810,6 +3881,17 @@ export interface components {
             template: string;
             /** @description Populated for conversation/text formats. */
             turns?: components["schemas"]["OutputTurn"][] | null;
+        };
+        SessionUpdatedPayload: {
+            /** Format: int64 */
+            mode_version?: number;
+            options?: {
+                [key: string]: string;
+            };
+            permission_mode?: string;
+            provider?: string;
+            session_id?: string;
+            session_name?: string;
         };
         SlingInputBody: {
             /** @description Bead ID to attach a formula to. */
@@ -4669,7 +4751,7 @@ export interface components {
         TypedEventStreamEnvelopeSessionCrashed: {
             actor: string;
             message?: string;
-            payload: components["schemas"]["SessionLifecyclePayload"];
+            payload: components["schemas"]["NoPayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;
@@ -4737,7 +4819,7 @@ export interface components {
         TypedEventStreamEnvelopeSessionStopped: {
             actor: string;
             message?: string;
-            payload: components["schemas"]["SessionLifecyclePayload"];
+            payload: components["schemas"]["NoPayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;
@@ -4788,7 +4870,7 @@ export interface components {
         TypedEventStreamEnvelopeSessionUpdated: {
             actor: string;
             message?: string;
-            payload: components["schemas"]["NoPayload"];
+            payload: components["schemas"]["SessionUpdatedPayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;
@@ -5493,7 +5575,7 @@ export interface components {
             actor: string;
             city: string;
             message?: string;
-            payload: components["schemas"]["SessionLifecyclePayload"];
+            payload: components["schemas"]["NoPayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;
@@ -5565,7 +5647,7 @@ export interface components {
             actor: string;
             city: string;
             message?: string;
-            payload: components["schemas"]["SessionLifecyclePayload"];
+            payload: components["schemas"]["NoPayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;
@@ -5619,7 +5701,7 @@ export interface components {
             actor: string;
             city: string;
             message?: string;
-            payload: components["schemas"]["NoPayload"];
+            payload: components["schemas"]["SessionUpdatedPayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;
@@ -10867,6 +10949,49 @@ export interface operations {
             };
         };
     };
+    "post-v0-city-by-city-name-session-by-id-permission-mode": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
+            path: {
+                /** @description City name. */
+                cityName: string;
+                /** @description Session ID, alias, or runtime session_name. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionPermissionModeInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionPermissionModeOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "post-v0-city-by-city-name-session-by-id-rename": {
         parameters: {
             query?: never;
@@ -11013,6 +11138,10 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    /** @description Monotonically increasing session permission mode version at the time streaming began, when known. */
+                    "GC-Session-Mode-Version"?: string;
+                    /** @description Canonical runtime permission mode at the time streaming began, when known. */
+                    "GC-Session-Permission-Mode"?: string;
                     /** @description Session state at the time streaming began (e.g. active, closed). */
                     "GC-Session-State"?: string;
                     /** @description Runtime status at the time streaming began. Emitted as "stopped" when the session's underlying process is not running. */
