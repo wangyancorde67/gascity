@@ -1150,32 +1150,33 @@ func TestSweepUndesiredPoolSessionBeads_SkipsPendingCreateClaim(t *testing.T) {
 	}
 }
 
-// #1460: pending_create_claim is an in-flight ownership flag, but the
-// lease must expire. After the create lease elapses with no live runtime,
-// the claim no longer protects — otherwise a crashed creator strands the
-// pool slot indefinitely. The sweep aligns with the lifecycle projection,
-// which now heals stale-creating-with-claim to StateAsleep.
-func TestSweepUndesiredPoolSessionBeads_SweepsStalePendingCreateClaim(t *testing.T) {
+// #1460: pending_create_claim stays protected only for the pending-create
+// lease. Once a never-started create ages past that lease, the sweep must
+// reap it instead of preserving the pool slot forever.
+func TestSweepUndesiredPoolSessionBeads_SweepsExpiredPendingCreateClaimLease(t *testing.T) {
 	store := beads.NewMemStore()
+	now := time.Now().UTC()
 	bead, err := store.Create(beads.Bead{
 		Title:  "worker",
 		Type:   sessionBeadType,
 		Labels: []string{sessionBeadLabel, "agent:worker"},
 		Metadata: map[string]string{
-			"session_name":         "worker-bd-stale-claim",
-			"template":             "worker",
-			"agent_name":           "worker",
-			"pool_slot":            "1",
-			poolManagedMetadataKey: boolMetadata(true),
-			"pending_create_claim": "true",
-			"continuation_epoch":   "1",
-			"generation":           "1",
+			"session_name":              "worker-bd-stale-claim",
+			"template":                  "worker",
+			"agent_name":                "worker",
+			"pool_slot":                 "1",
+			"state":                     "creating",
+			poolManagedMetadataKey:      boolMetadata(true),
+			"pending_create_claim":      "true",
+			"pending_create_started_at": pendingCreateStartedAtNow(now.Add(-(pendingCreateNeverStartedTimeout + time.Second))),
+			"continuation_epoch":        "1",
+			"generation":                "1",
 		},
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	bead.CreatedAt = time.Now().Add(-2 * time.Minute)
+	bead.CreatedAt = now.Add(-24 * time.Hour)
 	sessionBeads := newSessionBeadSnapshot([]beads.Bead{bead})
 
 	closed := sweepUndesiredPoolSessionBeads(
@@ -1188,7 +1189,7 @@ func TestSweepUndesiredPoolSessionBeads_SweepsStalePendingCreateClaim(t *testing
 		false,
 	)
 	if closed != 1 {
-		t.Fatalf("closed = %d, want 1 — stale pending_create_claim must be reaped", closed)
+		t.Fatalf("closed = %d, want 1 — expired pending_create_claim lease must be reaped", closed)
 	}
 }
 

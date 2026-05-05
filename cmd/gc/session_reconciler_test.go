@@ -2481,6 +2481,7 @@ func TestReconcileSessionBeads_PendingCreateLeasePreventsOrphanClose(t *testing.
 		"manual_session":       "true",
 		"pending_create_claim": "true",
 	})
+	session.CreatedAt = env.clk.Now().Add(-30 * time.Second)
 
 	woken := env.reconcile([]beads.Bead{session})
 	if woken != 0 {

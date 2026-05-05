@@ -970,6 +970,17 @@ func staleCreatingState(session beads.Bead, clk clock.Clock) bool {
 	if strings.TrimSpace(session.Metadata["state"]) != string(sessionpkg.StateCreating) {
 		return false
 	}
+	return pendingCreateAttemptStale(session, clk)
+}
+
+// pendingCreateAttemptStale reports whether the current pending-create attempt
+// has aged past staleCreatingStateTimeout, regardless of the bead's current
+// projected state. This lets the reconciler keep never-started pending-create
+// leases alive after healState has already rewritten state=creating to asleep.
+func pendingCreateAttemptStale(session beads.Bead, clk clock.Clock) bool {
+	if clk == nil {
+		return false
+	}
 	now := clk.Now()
 	if started, ok := parseRFC3339Metadata(session.Metadata["pending_create_started_at"]); ok {
 		return !now.Before(started.Add(staleCreatingStateTimeout))

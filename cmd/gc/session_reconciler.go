@@ -138,6 +138,24 @@ func allDependenciesAlive(
 }
 
 func pendingCreateSessionStillLeased(session beads.Bead, cfg *config.City, clk clock.Clock) bool {
+	var startupTimeout time.Duration
+	if cfg != nil {
+		startupTimeout = cfg.Session.StartupTimeoutDuration()
+	}
+	if strings.TrimSpace(session.Metadata["pending_create_claim"]) == "true" {
+		if !pendingCreateLeaseActive(session, clk, startupTimeout) {
+			return false
+		}
+		template := normalizedSessionTemplate(session, cfg)
+		if template == "" {
+			template = session.Metadata["template"]
+		}
+		agent := findAgentByTemplate(cfg, template)
+		if agent != nil {
+			return !agent.Suspended
+		}
+		return true
+	}
 	if !sessionStartRequested(session, clk) {
 		return false
 	}
@@ -145,29 +163,11 @@ func pendingCreateSessionStillLeased(session beads.Bead, cfg *config.City, clk c
 	if template == "" {
 		template = session.Metadata["template"]
 	}
-	var startupTimeout time.Duration
-	if cfg != nil {
-		startupTimeout = cfg.Session.StartupTimeoutDuration()
-	}
-	pendingCreate := strings.TrimSpace(session.Metadata["pending_create_claim"]) == "true" &&
-		strings.TrimSpace(session.Metadata["state"]) == "creating"
-	// Configured templates without current demand are not preserved forever
-	// merely because their agent still exists. Once the pending-create lease
-	// expires, the bead falls through to orphan/rollback handling so its alias
-	// can be released.
-	if pendingCreate && pendingCreateLeaseExpiredForRollback(session, clk, startupTimeout) {
-		return false
-	}
 	agent := findAgentByTemplate(cfg, template)
 	if agent != nil {
 		return !agent.Suspended
 	}
-	// API config mutations and session creation can arrive in adjacent
-	// reconciler ticks. Empty-last_woke_at pending creates may also leave the
-	// desired set before preWakeCommit records a provider start lease, so use
-	// the same never-started rollback floor as the desired branch before
-	// marking them orphaned.
-	return pendingCreate
+	return false
 }
 
 func pendingCreateStartInFlight(session beads.Bead, clk clock.Clock, startupTimeout time.Duration) bool {
@@ -195,6 +195,19 @@ func pendingCreateStartInFlight(session beads.Bead, clk clock.Clock, startupTime
 	return now.Before(started.Add(startupTimeout + staleKeyDetectDelay + 5*time.Second))
 }
 
+func pendingCreateLeaseActive(session beads.Bead, clk clock.Clock, startupTimeout time.Duration) bool {
+	if strings.TrimSpace(session.Metadata["pending_create_claim"]) != "true" {
+		return false
+	}
+	if pendingCreateStartInFlight(session, clk, startupTimeout) {
+		return true
+	}
+	if strings.TrimSpace(session.Metadata["last_woke_at"]) == "" {
+		return !pendingCreateNeverStartedLeaseExpired(session, clk)
+	}
+	return !pendingCreateAttemptStale(session, clk)
+}
+
 // pendingCreateNeverStartedTimeout is the rollback floor for pending creates
 // with no last_woke_at start lease. Production-created pending beads record
 // pending_create_started_at when they enter state=creating; use that timestamp
@@ -211,6 +224,13 @@ func pendingCreateNeverStartedExpired(session beads.Bead, clk clock.Clock) bool 
 		return false
 	}
 	if strings.TrimSpace(session.Metadata["state"]) != "creating" {
+		return false
+	}
+	return pendingCreateNeverStartedLeaseExpired(session, clk)
+}
+
+func pendingCreateNeverStartedLeaseExpired(session beads.Bead, clk clock.Clock) bool {
+	if strings.TrimSpace(session.Metadata["pending_create_claim"]) != "true" {
 		return false
 	}
 	if strings.TrimSpace(session.Metadata["last_woke_at"]) != "" {
