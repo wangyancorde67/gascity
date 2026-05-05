@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/dispatch"
 	"github.com/gastownhall/gascity/internal/events"
@@ -185,11 +187,13 @@ func workflowTraceWarnOpenFailure(path string, err error) {
 	fmt.Fprintf(workflowTraceWarnings.writer, "gc convoy control --serve: warning: opening workflow trace %q: %v\n", path, err) //nolint:errcheck // best-effort stderr
 }
 
+// useWorkflowTraceWarnings installs a per-command warning sink and must be
+// restored in the same goroutine with strict LIFO discipline.
 func useWorkflowTraceWarnings(writer io.Writer) func() {
 	workflowTraceWarnings.mu.Lock()
 	prevWriter := workflowTraceWarnings.writer
 	prevWarned := workflowTraceWarnings.warned
-	if writer != workflowTraceWarnings.writer || workflowTraceWarnings.warned == nil {
+	if writer != workflowTraceWarnings.writer {
 		workflowTraceWarnings.writer = writer
 		workflowTraceWarnings.warned = map[string]struct{}{}
 	}
@@ -210,6 +214,7 @@ func runWorkflowServe(agentName string, follow bool, _ io.Writer, stderr io.Writ
 	if err != nil {
 		return err
 	}
+	warnLegacyWorkflowTracePath(cityPath, stderr)
 	cfg, err := loadCityConfig(cityPath, stderr)
 	if err != nil {
 		return err
@@ -251,6 +256,22 @@ func runWorkflowServe(agentName string, follow bool, _ io.Writer, stderr io.Writ
 		return err
 	}
 	return runWorkflowServeFollow(agentCfg, cityPath, workDir, workQuery, workEnv, stderr)
+}
+
+func warnLegacyWorkflowTracePath(cityPath string, stderr io.Writer) {
+	if stderr == nil {
+		return
+	}
+	current := strings.TrimSpace(os.Getenv("GC_WORKFLOW_TRACE"))
+	if current == "" {
+		return
+	}
+	legacyTracePath := filepath.Join(cityPath, "control-dispatcher-trace.log")
+	if !samePath(current, legacyTracePath) {
+		return
+	}
+	nextTracePath := filepath.Join(cityPath, citylayout.RuntimeDataRoot, "control-dispatcher-trace.log")
+	fmt.Fprintf(stderr, "gc convoy control --serve: warning: legacy control-dispatcher trace path %q still in use; restart or recycle this session so it adopts %q\n", current, nextTracePath) //nolint:errcheck // best-effort stderr
 }
 
 type workflowServeDrainResult struct {

@@ -39,13 +39,16 @@ const (
 	// controlDispatcherDefaultRuntimeDirExpr is the watcher-safe default trace
 	// root for the control-dispatcher. The controller ignores the hidden .gc
 	// subtree recursively, so defaults must stay under it to avoid self-triggered
-	// config-watch churn.
+	// config-watch churn. The trace intentionally stays a flat, well-known file
+	// under .gc/runtime because operators and tests tail a single canonical path.
 	controlDispatcherDefaultRuntimeDirExpr = `${GC_CITY}/` + citylayout.RuntimeDataRoot
 	// controlDispatcherTraceInit exports the resolved trace path. Safe
-	// GC_CITY_RUNTIME_DIR overrides under ${GC_CITY}/.gc remain honored, but
-	// overrides outside the watcher-excluded subtree fall back to the default
-	// hidden runtime root unless GC_WORKFLOW_TRACE is explicitly set.
-	controlDispatcherTraceInit = `default_trace_dir="` + controlDispatcherRuntimeDirExpr + `"; hidden_runtime_root="${GC_CITY}/.gc"; case "$default_trace_dir" in "$hidden_runtime_root"|"$hidden_runtime_root"/*) ;; *) default_trace_dir="` + controlDispatcherDefaultRuntimeDirExpr + `";; esac; export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-$default_trace_dir/control-dispatcher-trace.log}"`
+	// GC_CITY_RUNTIME_DIR overrides under ${GC_CITY}/.gc remain honored. An
+	// override elsewhere inside the city root would re-enter the watched tree,
+	// so those fall back to the hidden runtime root unless GC_WORKFLOW_TRACE is
+	// explicitly set. Overrides outside the city tree remain trusted because the
+	// controller only watches the city root.
+	controlDispatcherTraceInit = `default_trace_dir="` + controlDispatcherRuntimeDirExpr + `"; hidden_runtime_root="${GC_CITY}/.gc"; case "$default_trace_dir" in "$hidden_runtime_root"|"$hidden_runtime_root"/*) ;; "$GC_CITY"|"$GC_CITY"/*) default_trace_dir="` + controlDispatcherDefaultRuntimeDirExpr + `";; esac; export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-$default_trace_dir/control-dispatcher-trace.log}"`
 	// controlDispatcherTraceDirInit creates the parent directory for the
 	// resolved trace path. This preserves explicit GC_WORKFLOW_TRACE overrides
 	// instead of unconditionally depending on the default runtime root.
