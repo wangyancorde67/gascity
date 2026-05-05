@@ -100,6 +100,7 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 	// compatible wake causes (pending create, named-always, assigned work) may
 	// still reuse the same bead.
 	desired := make(map[string]string) // sessionName → reason
+	concreteAssignedWork := make(map[string]bool)
 
 	// Newly created beads that still carry a controller create claim must be
 	// launched at least once, even if the work signal that materialized them
@@ -219,9 +220,6 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 		if bead.State == "closed" {
 			continue
 		}
-		if _, already := desired[bead.SessionName]; already {
-			continue
-		}
 		if agent, ok := agentsByName[bead.Template]; ok && agent.Suspended {
 			continue
 		}
@@ -230,7 +228,12 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 			if assignee == "" || (wb.Status != "open" && wb.Status != "in_progress") {
 				continue
 			}
-			if assignee == bead.ID || assignee == bead.SessionName || (bead.NamedIdentity != "" && assignee == bead.NamedIdentity) {
+			if assignee == bead.ID || assignee == bead.SessionName {
+				desired[bead.SessionName] = "assigned-work"
+				concreteAssignedWork[bead.SessionName] = true
+				break
+			}
+			if bead.NamedIdentity != "" && assignee == bead.NamedIdentity {
 				desired[bead.SessionName] = "assigned-work"
 				break
 			}
@@ -312,7 +315,7 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 			case isOnDemandSession(input.NamedSessions, bead):
 				idleTimeout = defaultOnDemandIdleTimeout
 			}
-			if idleTimeout > 0 && input.Now.Sub(bead.IdleSince) >= idleTimeout {
+			if idleTimeout > 0 && input.Now.Sub(bead.IdleSince) >= idleTimeout && !concreteAssignedWork[name] {
 				decision.ShouldWake = false
 				decision.Reason = "idle-sleep"
 			}

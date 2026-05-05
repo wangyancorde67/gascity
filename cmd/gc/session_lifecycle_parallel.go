@@ -622,7 +622,8 @@ func buildPreparedStart(
 	}
 	firstStart := session.Metadata["started_config_hash"] == ""
 	forceFresh := session.Metadata["wake_mode"] == "fresh"
-	if !firstStart && !forceFresh {
+	hasResumeKey := strings.TrimSpace(session.Metadata["session_key"]) != ""
+	if !firstStart && !forceFresh && hasResumeKey {
 		agentCfg.PromptSuffix = ""
 		agentCfg.PromptFlag = ""
 		agentCfg.Nudge = tp.Hints.Nudge

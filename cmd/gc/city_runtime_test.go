@@ -576,8 +576,9 @@ func TestOrderTrackingSweepWatchdogOnlyClosesSweepOrderTracking(t *testing.T) {
 
 func TestCityRuntimeDemandSnapshotRefreshesWhenDemandCommandsAreCustom(t *testing.T) {
 	cases := []struct {
-		name  string
-		agent config.Agent
+		name       string
+		agent      config.Agent
+		wantBuilds int
 	}{
 		{
 			name: "custom scale_check",
@@ -585,6 +586,7 @@ func TestCityRuntimeDemandSnapshotRefreshesWhenDemandCommandsAreCustom(t *testin
 				Name:       "worker",
 				ScaleCheck: "test -f external-queue && echo 1 || echo 0",
 			},
+			wantBuilds: 2,
 		},
 		{
 			name: "custom work_query",
@@ -592,6 +594,7 @@ func TestCityRuntimeDemandSnapshotRefreshesWhenDemandCommandsAreCustom(t *testin
 				Name:      "worker",
 				WorkQuery: "gh issue list --json number --limit 1",
 			},
+			wantBuilds: 1,
 		},
 	}
 
@@ -619,10 +622,37 @@ func TestCityRuntimeDemandSnapshotRefreshesWhenDemandCommandsAreCustom(t *testin
 			_ = cr.loadDemandSnapshot(sessionBeads, nil, "patrol", false)
 			_ = cr.loadDemandSnapshot(sessionBeads, nil, "patrol", false)
 
-			if buildCalls != 2 {
-				t.Fatalf("buildDesiredState call count = %d, want 2 when demand command is not event-backed", buildCalls)
+			if buildCalls != tc.wantBuilds {
+				t.Fatalf("buildDesiredState call count = %d, want %d", buildCalls, tc.wantBuilds)
 			}
 		})
+	}
+}
+
+func TestCityRuntimeDemandSnapshotDoesNotRunControllerWorkQuery(t *testing.T) {
+	cr := &CityRuntime{
+		cityName: "test-city",
+		cityPath: t.TempDir(),
+		cfg: &config.City{
+			Workspace: config.Workspace{Name: "test-city"},
+			Agents: []config.Agent{{
+				Name:      "worker",
+				WorkQuery: `printf '[{"id":"work-1"}]'`,
+			}},
+		},
+		cs: &controllerState{
+			eventProv: events.NewFake(),
+		},
+		stderr: io.Discard,
+	}
+	cr.buildFnWithSessionBeads = func(*config.City, runtime.Provider, beads.Store, map[string]beads.Store, *sessionBeadSnapshot, *sessionReconcilerTraceCycle) DesiredStateResult {
+		return DesiredStateResult{State: map[string]TemplateParams{}}
+	}
+
+	snapshot := cr.loadDemandSnapshot(newSessionBeadSnapshot(nil), nil, "patrol", false)
+
+	if len(snapshot.result.WorkSet) != 0 {
+		t.Fatalf("WorkSet = %#v, want empty; controller demand must not run work_query", snapshot.result.WorkSet)
 	}
 }
 

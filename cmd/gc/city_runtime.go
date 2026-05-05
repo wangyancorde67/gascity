@@ -1310,13 +1310,10 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 		readyWaitSet = nil
 	}
 
-	// workSet: defense-in-depth wake signal from work_query. When work_query
-	// detects pending work but scale_check hasn't caught up yet, workSet
-	// ensures at least one session wakes without waiting for the next tick.
-	workSet := result.WorkSet
-	if workSet == nil {
-		workSet = computeWorkSet(cr.cfg, shellScaleCheck, cityName, cr.cityPath, store, sessionBeads, cr.stderr)
-	}
+	// Controller wake demand comes from assigned-work scans and scale_check.
+	// work_query remains the agent-side gc hook claim path; running every
+	// work_query here can block assigned-work resumes behind unrelated probes.
+	workSet := make(map[string]bool)
 	if trace != nil {
 		templateNames := make(map[string]struct{})
 		openCounts := make(map[string]int)
@@ -1837,7 +1834,7 @@ func (cr *CityRuntime) loadDemandSnapshot(
 			result.PoolDesiredCounts = make(map[string]int)
 		}
 		mergeNamedSessionDemand(result.PoolDesiredCounts, result.NamedSessionDemand, cr.cfg)
-		result.WorkSet = computeWorkSet(cr.cfg, shellScaleCheck, cr.cityName, cr.cityPath, cr.cityBeadStore(), sessionBeads, cr.stderr)
+		result.WorkSet = make(map[string]bool)
 		cr.demandSnapshot = &runtimeDemandSnapshot{
 			createdAt:          time.Now(),
 			sessionFingerprint: sessionFingerprint,
@@ -1881,7 +1878,7 @@ func demandSnapshotDemandSourcesEventBacked(cfg *config.City) bool {
 		return false
 	}
 	for i := range cfg.Agents {
-		if strings.TrimSpace(cfg.Agents[i].ScaleCheck) != "" || strings.TrimSpace(cfg.Agents[i].WorkQuery) != "" {
+		if strings.TrimSpace(cfg.Agents[i].ScaleCheck) != "" {
 			return false
 		}
 	}

@@ -874,6 +874,59 @@ func TestPrepareStartCandidate_GeneratesMissingSessionKeyBeforeWake(t *testing.T
 	}
 }
 
+func TestPrepareStartCandidate_ResumeCapableWithoutSessionKeyKeepsStartupPrompt(t *testing.T) {
+	store := beads.NewMemStore()
+	session, err := store.Create(beads.Bead{
+		Title:  "codex-worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "agent:codex-worker"},
+		Metadata: map[string]string{
+			"template":            "codex-worker",
+			"session_name":        "codex-worker",
+			"started_config_hash": "previous-start",
+			"session_key":         "",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prepared, err := prepareStartCandidate(startCandidate{
+		session: &session,
+		tp: TemplateParams{
+			TemplateName: "codex-worker",
+			SessionName:  "codex-worker",
+			Command:      "aimux run codex -- --dangerously-bypass-approvals-and-sandbox",
+			Prompt:       "You are a routed workflow lane. Run gc hook first.",
+			ResolvedProvider: &config.ResolvedProvider{
+				Name:          "codex",
+				PromptMode:    "arg",
+				ResumeFlag:    "resume",
+				ResumeStyle:   "subcommand",
+				ResumeCommand: "aimux run codex -- resume {{.SessionKey}}",
+			},
+		},
+		order: 0,
+	}, &config.City{}, store, &clock.Fake{Time: time.Date(2026, 5, 5, 4, 20, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatalf("prepareStartCandidate: %v", err)
+	}
+
+	if prepared.cfg.PromptSuffix == "" {
+		t.Fatal("PromptSuffix should be retained when there is no session_key to resume")
+	}
+	parts := shellquote.Split(prepared.cfg.PromptSuffix)
+	if len(parts) != 1 {
+		t.Fatalf("PromptSuffix parsed parts = %#v, want single prompt payload", parts)
+	}
+	if !strings.Contains(parts[0], "Run gc hook first") {
+		t.Fatalf("prompt payload = %q, want startup workflow prompt", parts[0])
+	}
+	if strings.Contains(prepared.cfg.Command, "resume") {
+		t.Fatalf("prepared.cfg.Command = %q, should not use resume without a session_key", prepared.cfg.Command)
+	}
+}
+
 func TestPrepareStartCandidate_DoesNotAppendCLIResumeFlagForACP(t *testing.T) {
 	store := beads.NewMemStore()
 	session, err := store.Create(beads.Bead{

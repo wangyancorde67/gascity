@@ -52,6 +52,20 @@ func (s *readyStaticStore) Ready(...beads.ReadyQuery) ([]beads.Bead, error) {
 	return out, nil
 }
 
+type readyQueryRecordingStore struct {
+	*beads.MemStore
+	readyQueries []beads.ReadyQuery
+}
+
+func (s *readyQueryRecordingStore) Ready(query ...beads.ReadyQuery) ([]beads.Bead, error) {
+	if len(query) == 0 {
+		s.readyQueries = append(s.readyQueries, beads.ReadyQuery{})
+	} else {
+		s.readyQueries = append(s.readyQueries, query[0])
+	}
+	return s.MemStore.Ready(query...)
+}
+
 type demandListCountingStore struct {
 	beads.Store
 	liveInProgressLists int
@@ -671,7 +685,7 @@ func TestCollectAssignedWorkBeads_PreservesPartialInProgressSurvivors(t *testing
 		t.Fatalf("reload work bead: %v", err)
 	}
 
-	got, stores, storeRefs, partial := collectAssignedWorkBeadsWithStores(&config.City{}, store, nil, nil)
+	got, stores, storeRefs, partial := collectAssignedWorkBeadsWithStores(&config.City{}, store, nil, nil, nil)
 	if !partial {
 		t.Fatal("partial = false, want true")
 	}
@@ -702,7 +716,7 @@ func TestCollectAssignedWorkBeads_PreservesPartialReadySurvivors(t *testing.T) {
 		t.Fatalf("create work bead: %v", err)
 	}
 
-	got, stores, storeRefs, partial := collectAssignedWorkBeadsWithStores(&config.City{}, store, nil, nil)
+	got, stores, storeRefs, partial := collectAssignedWorkBeadsWithStores(&config.City{}, store, nil, nil, nil)
 	if !partial {
 		t.Fatal("partial = false, want true")
 	}
@@ -714,6 +728,265 @@ func TestCollectAssignedWorkBeads_PreservesPartialReadySurvivors(t *testing.T) {
 	}
 	if len(storeRefs) != 1 || storeRefs[0] != "" {
 		t.Fatalf("storeRefs = %#v, want city store ref for partial survivor", storeRefs)
+	}
+}
+
+func TestCollectAssignedWorkBeads_SkipsReadyProbeForInProgressAssignee(t *testing.T) {
+	store := &readyQueryRecordingStore{MemStore: beads.NewMemStore()}
+	session, err := store.Create(beads.Bead{
+		Title:  "worker session",
+		Type:   sessionBeadType,
+		Status: "open",
+		Metadata: map[string]string{
+			"session_name": "worker-session",
+			"template":     "worker",
+			"state":        "asleep",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session bead: %v", err)
+	}
+	work, err := store.Create(beads.Bead{
+		Title:    "active work",
+		Type:     "task",
+		Assignee: "worker-session",
+	})
+	if err != nil {
+		t.Fatalf("create work bead: %v", err)
+	}
+	if err := store.Update(work.ID, beads.UpdateOpts{Status: stringPtr("in_progress")}); err != nil {
+		t.Fatalf("mark work in_progress: %v", err)
+	}
+	work, err = store.Get(work.ID)
+	if err != nil {
+		t.Fatalf("reload work: %v", err)
+	}
+	snapshot := newSessionBeadSnapshot([]beads.Bead{session})
+
+	got, _, _, partial := collectAssignedWorkBeadsWithStores(&config.City{}, store, nil, nil, snapshot)
+	if partial {
+		t.Fatal("collectAssignedWorkBeadsWithStores reported partial results")
+	}
+	if len(got) != 1 || got[0].ID != work.ID {
+		t.Fatalf("got = %#v, want in-progress work %s", got, work.ID)
+	}
+	if len(store.readyQueries) != 0 {
+		t.Fatalf("Ready queried while in-progress work was already known: %#v", store.readyQueries)
+	}
+}
+
+func TestCollectAssignedWorkBeads_SkipsCityReadyProbeForRigInProgressAssignee(t *testing.T) {
+	cityStore := &readyQueryRecordingStore{MemStore: beads.NewMemStore()}
+	rigStore := &readyQueryRecordingStore{MemStore: beads.NewMemStore()}
+	session, err := cityStore.Create(beads.Bead{
+		Title:  "worker session",
+		Type:   sessionBeadType,
+		Status: "open",
+		Metadata: map[string]string{
+			"session_name": "worker-session",
+			"template":     "worker",
+			"state":        "asleep",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session bead: %v", err)
+	}
+	work, err := rigStore.Create(beads.Bead{
+		Title:    "active rig work",
+		Type:     "task",
+		Assignee: "worker-session",
+	})
+	if err != nil {
+		t.Fatalf("create work bead: %v", err)
+	}
+	if err := rigStore.Update(work.ID, beads.UpdateOpts{Status: stringPtr("in_progress")}); err != nil {
+		t.Fatalf("mark work in_progress: %v", err)
+	}
+	work, err = rigStore.Get(work.ID)
+	if err != nil {
+		t.Fatalf("reload work: %v", err)
+	}
+	snapshot := newSessionBeadSnapshot([]beads.Bead{session})
+
+	got, _, _, partial := collectAssignedWorkBeadsWithStores(
+		&config.City{Rigs: []config.Rig{{Name: "repo", Path: "repo"}}},
+		cityStore,
+		map[string]beads.Store{"repo": rigStore},
+		nil,
+		snapshot,
+	)
+	if partial {
+		t.Fatal("collectAssignedWorkBeadsWithStores reported partial results")
+	}
+	if len(got) != 1 || got[0].ID != work.ID {
+		t.Fatalf("got = %#v, want rig in-progress work %s", got, work.ID)
+	}
+	if len(cityStore.readyQueries) != 0 || len(rigStore.readyQueries) != 0 {
+		t.Fatalf("Ready queried while cross-store in-progress work was already known: city=%#v rig=%#v", cityStore.readyQueries, rigStore.readyQueries)
+	}
+}
+
+func TestCollectAssignedWorkBeads_ReadyProbeStillRunsForOtherAssignees(t *testing.T) {
+	store := &readyQueryRecordingStore{MemStore: beads.NewMemStore()}
+	activeSession, err := store.Create(beads.Bead{
+		Title:  "active worker session",
+		Type:   sessionBeadType,
+		Status: "open",
+		Metadata: map[string]string{
+			"session_name": "worker-active",
+			"template":     "worker",
+			"state":        "asleep",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create active session bead: %v", err)
+	}
+	readySession, err := store.Create(beads.Bead{
+		Title:  "ready worker session",
+		Type:   sessionBeadType,
+		Status: "open",
+		Metadata: map[string]string{
+			"session_name": "worker-ready",
+			"template":     "worker",
+			"state":        "asleep",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create ready session bead: %v", err)
+	}
+	activeWork, err := store.Create(beads.Bead{
+		Title:    "active work",
+		Type:     "task",
+		Assignee: "worker-active",
+	})
+	if err != nil {
+		t.Fatalf("create active work bead: %v", err)
+	}
+	if err := store.Update(activeWork.ID, beads.UpdateOpts{Status: stringPtr("in_progress")}); err != nil {
+		t.Fatalf("mark active work in_progress: %v", err)
+	}
+	activeWork, err = store.Get(activeWork.ID)
+	if err != nil {
+		t.Fatalf("reload active work: %v", err)
+	}
+	readyWork, err := store.Create(beads.Bead{
+		Title:    "ready work",
+		Type:     "task",
+		Status:   "open",
+		Assignee: "worker-ready",
+	})
+	if err != nil {
+		t.Fatalf("create ready work bead: %v", err)
+	}
+	snapshot := newSessionBeadSnapshot([]beads.Bead{activeSession, readySession})
+
+	got, _, _, partial := collectAssignedWorkBeadsWithStores(&config.City{}, store, nil, nil, snapshot)
+	if partial {
+		t.Fatal("collectAssignedWorkBeadsWithStores reported partial results")
+	}
+	gotIDs := make(map[string]bool)
+	for _, bead := range got {
+		gotIDs[bead.ID] = true
+	}
+	for _, want := range []string{activeWork.ID, readyWork.ID} {
+		if !gotIDs[want] {
+			t.Fatalf("collected work IDs = %#v, want %s", gotIDs, want)
+		}
+	}
+	queried := make(map[string]bool)
+	for _, query := range store.readyQueries {
+		queried[query.Assignee] = true
+	}
+	if queried["worker-active"] || queried[activeSession.ID] {
+		t.Fatalf("Ready queries = %#v, want no probe for active assignee", store.readyQueries)
+	}
+	if !queried["worker-ready"] {
+		t.Fatalf("Ready queries = %#v, want probe for worker-ready", store.readyQueries)
+	}
+}
+
+func TestCollectAssignedWorkBeads_ReadyProbeIncludesActiveSessionAssignees(t *testing.T) {
+	store := &readyQueryRecordingStore{MemStore: beads.NewMemStore()}
+	activeSession, err := store.Create(beads.Bead{
+		Title:  "active worker session",
+		Type:   sessionBeadType,
+		Status: "open",
+		Metadata: map[string]string{
+			"session_name": "worker-active",
+			"template":     "worker",
+			"state":        "active",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create active session bead: %v", err)
+	}
+	sleepySession, err := store.Create(beads.Bead{
+		Title:  "sleepy worker session",
+		Type:   sessionBeadType,
+		Status: "open",
+		Metadata: map[string]string{
+			"session_name": "worker-sleepy",
+			"template":     "worker",
+			"state":        "asleep",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create sleepy session bead: %v", err)
+	}
+	readyWork, err := store.Create(beads.Bead{
+		Title:    "ready active work",
+		Type:     "task",
+		Status:   "open",
+		Assignee: "worker-active",
+	})
+	if err != nil {
+		t.Fatalf("create ready work bead: %v", err)
+	}
+	snapshot := newSessionBeadSnapshot([]beads.Bead{activeSession, sleepySession})
+
+	got, _, _, partial := collectAssignedWorkBeadsWithStores(&config.City{}, store, nil, nil, snapshot)
+	if partial {
+		t.Fatal("collectAssignedWorkBeadsWithStores reported partial results")
+	}
+	if len(got) != 1 || got[0].ID != readyWork.ID {
+		t.Fatalf("got = %#v, want ready active-session work %s", got, readyWork.ID)
+	}
+	queried := make(map[string]bool)
+	for _, query := range store.readyQueries {
+		queried[query.Assignee] = true
+	}
+	if !queried["worker-active"] {
+		t.Fatalf("Ready queries = %#v, want probe for active session assignee", store.readyQueries)
+	}
+}
+
+func TestReadyAssignedWorkAssigneesExcludeBroadIdentities(t *testing.T) {
+	got := readyAssignedWorkAssignees(&config.City{
+		Agents: []config.Agent{{
+			Dir:  "repo",
+			Name: "worker",
+		}},
+		NamedSessions: []config.NamedSession{
+			{Template: "mayor", Mode: "always"},
+			{Dir: "repo", Template: "named-worker", Mode: "on_demand"},
+		},
+	}, nil, nil)
+
+	for _, disallowed := range []string{"repo/worker", "mayor"} {
+		for _, value := range got {
+			if value == disallowed {
+				t.Fatalf("ready assignees = %#v, want no broad identity %q", got, disallowed)
+			}
+		}
+	}
+	foundNamed := false
+	for _, value := range got {
+		if value == "repo/named-worker" {
+			foundNamed = true
+		}
+	}
+	if !foundNamed {
+		t.Fatalf("ready assignees = %#v, want on-demand named-session identity", got)
 	}
 }
 
@@ -741,6 +1014,7 @@ func TestCollectAssignedWorkBeadsWithStores_TracksRigStore(t *testing.T) {
 		&config.City{Rigs: []config.Rig{{Name: "repo", Path: "/repo"}}},
 		cityStore,
 		map[string]beads.Store{"repo": rigStore},
+		nil,
 		nil,
 	)
 	if partial {
@@ -800,6 +1074,7 @@ func TestCollectAssignedWorkBeadsWithStores_PreservesCrossStoreIDCollisions(t *t
 		&config.City{Rigs: []config.Rig{{Name: "repo", Path: "/repo"}}},
 		cityStore,
 		map[string]beads.Store{"repo": rigStore},
+		nil,
 		nil,
 	)
 	if partial {
@@ -2105,7 +2380,7 @@ func TestBuildDesiredState_OnDemandNamedSession_ScaleCheckNonIntegerDoesNotFallT
 	}
 }
 
-func TestBuildDesiredState_OnDemandNamedSession_WorkQueryUsesExplicitRigPassword(t *testing.T) {
+func TestBuildDesiredState_OnDemandNamedSession_RigWorkQueryDoesNotMaterialize(t *testing.T) {
 	t.Setenv("GC_BEADS", "bd")
 	t.Setenv("GC_DOLT_USER", "")
 	t.Setenv("GC_DOLT_PASSWORD", "")
@@ -2169,8 +2444,8 @@ func TestBuildDesiredState_OnDemandNamedSession_WorkQueryUsesExplicitRigPassword
 			break
 		}
 	}
-	if !found {
-		t.Fatal("on-demand rig named session should materialize when work_query sees rig-scoped password")
+	if found {
+		t.Fatal("on-demand rig named session materialized from controller-side work_query")
 	}
 }
 
@@ -4134,11 +4409,7 @@ func TestBuildDesiredState_RigScopedScaleCheckExpandsRigTemplate(t *testing.T) {
 	}
 }
 
-// TestBuildDesiredState_NamedSessionWorkQueryExpandsRigTemplate verifies that
-// {{.Rig}} in a named-session agent's work_query is substituted before the
-// controller's work-readiness probe runs — regression test for #793, named
-// session path at build_desired_state.go:341.
-func TestBuildDesiredState_NamedSessionWorkQueryExpandsRigTemplate(t *testing.T) {
+func TestBuildDesiredState_NamedSessionWorkQueryDoesNotDriveControllerDemand(t *testing.T) {
 	cityPath := t.TempDir()
 	rigDir := filepath.Join(cityPath, "alpha")
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
@@ -4154,11 +4425,7 @@ func TestBuildDesiredState_NamedSessionWorkQueryExpandsRigTemplate(t *testing.T)
 			StartCommand:      "true",
 			MinActiveSessions: intPtr(0),
 			MaxActiveSessions: intPtr(1),
-			// work_query must produce non-empty output for on_demand demand.
-			// When {{.Rig}} is expanded the echo yields "alpha", which is
-			// treated as ready work. Unexpanded, the literal "{{.Rig}}" is
-			// still non-empty — so to discriminate, use a grep filter.
-			WorkQuery: "echo {{.Rig}} | grep alpha",
+			WorkQuery:         "echo {{.Rig}} | grep alpha",
 		}},
 		NamedSessions: []config.NamedSession{{
 			Template: "alpha/dog",
@@ -4168,7 +4435,7 @@ func TestBuildDesiredState_NamedSessionWorkQueryExpandsRigTemplate(t *testing.T)
 
 	dsResult := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
 
-	if !dsResult.NamedSessionDemand["alpha/dog"] {
-		t.Errorf("NamedSessionDemand[alpha/dog] = false, want true (work_query {{.Rig}} should expand to alpha and grep match)")
+	if dsResult.NamedSessionDemand["alpha/dog"] {
+		t.Fatal("NamedSessionDemand[alpha/dog] came from controller-side work_query")
 	}
 }
