@@ -2739,6 +2739,210 @@ func TestReconcileSessionBeads_OrphanDrainLogThrottled(t *testing.T) {
 	}
 }
 
+func TestReconcileSessionBeads_DrainAckedOrphanCanceledForAssignedWork(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{}
+	if err := env.sp.Start(context.Background(), "orphan", runtime.Config{}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := env.sp.SetMeta("orphan", "GC_DRAIN_ACK", "1"); err != nil {
+		t.Fatalf("SetMeta(GC_DRAIN_ACK): %v", err)
+	}
+	session := env.createSessionBead("orphan", "worker")
+	env.markSessionActive(&session)
+	work, err := env.store.Create(beads.Bead{
+		Title:    "assigned work",
+		Type:     "task",
+		Status:   "open",
+		Assignee: session.ID,
+	})
+	if err != nil {
+		t.Fatalf("Create work bead: %v", err)
+	}
+	dops := newFakeDrainOps()
+	if err := dops.setDrainAck("orphan"); err != nil {
+		t.Fatalf("setDrainAck: %v", err)
+	}
+	env.dt.set(session.ID, &drainState{
+		startedAt:  env.clk.Now().Add(-defaultDrainTimeout),
+		deadline:   env.clk.Now().Add(-time.Second),
+		reason:     "orphaned",
+		generation: 1,
+		ackSet:     true,
+	})
+
+	reconcileSessionBeadsAtPath(
+		context.Background(),
+		"",
+		[]beads.Bead{session},
+		nil,
+		nil,
+		env.cfg,
+		env.sp,
+		env.store,
+		dops,
+		[]beads.Bead{work},
+		nil,
+		nil,
+		env.dt,
+		map[string]int{},
+		false,
+		nil,
+		"",
+		nil,
+		env.clk,
+		env.rec,
+		0,
+		0,
+		&env.stdout,
+		&env.stderr,
+	)
+
+	if !env.sp.IsRunning("orphan") {
+		t.Fatal("assigned-work orphan drain should be canceled before stopping the running session")
+	}
+	if ds := env.dt.get(session.ID); ds != nil {
+		t.Fatalf("drain = %+v, want canceled", ds)
+	}
+	if ack, _ := env.sp.GetMeta("orphan", "GC_DRAIN_ACK"); ack != "" {
+		t.Fatalf("GC_DRAIN_ACK = %q, want cleared", ack)
+	}
+}
+
+func TestReconcileSessionBeads_RecoveredDrainAckedOrphanCanceledForAssignedWork(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{}
+	if err := env.sp.Start(context.Background(), "orphan", runtime.Config{}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	session := env.createSessionBead("orphan", "worker")
+	env.markSessionActive(&session)
+	work, err := env.store.Create(beads.Bead{
+		Title:    "assigned work",
+		Type:     "task",
+		Status:   "open",
+		Assignee: session.ID,
+	})
+	if err != nil {
+		t.Fatalf("Create work bead: %v", err)
+	}
+	if err := setReconcilerDrainAckMetadata(env.sp, "orphan", &drainState{
+		reason:     "orphaned",
+		generation: 1,
+		ackSet:     true,
+	}); err != nil {
+		t.Fatalf("setReconcilerDrainAckMetadata: %v", err)
+	}
+
+	reconcileSessionBeadsAtPath(
+		context.Background(),
+		"",
+		[]beads.Bead{session},
+		nil,
+		nil,
+		env.cfg,
+		env.sp,
+		env.store,
+		newDrainOps(env.sp),
+		[]beads.Bead{work},
+		nil,
+		nil,
+		env.dt,
+		map[string]int{},
+		false,
+		nil,
+		"",
+		nil,
+		env.clk,
+		env.rec,
+		0,
+		0,
+		&env.stdout,
+		&env.stderr,
+	)
+
+	if !env.sp.IsRunning("orphan") {
+		t.Fatal("recovered assigned-work orphan drain should be canceled before stopping the running session")
+	}
+	if ack, _ := env.sp.GetMeta("orphan", "GC_DRAIN_ACK"); ack != "" {
+		t.Fatalf("GC_DRAIN_ACK = %q, want cleared", ack)
+	}
+	if source, _ := env.sp.GetMeta("orphan", reconcilerDrainAckSourceKey); source != "" {
+		t.Fatalf("%s = %q, want cleared", reconcilerDrainAckSourceKey, source)
+	}
+}
+
+func TestReconcileSessionBeads_DeadDrainAckedOrphanWithAssignedWorkCompletesDrain(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{}
+	session := env.createSessionBead("orphan", "worker")
+	env.markSessionActive(&session)
+	work, err := env.store.Create(beads.Bead{
+		Title:    "assigned work",
+		Type:     "task",
+		Status:   "open",
+		Assignee: session.ID,
+	})
+	if err != nil {
+		t.Fatalf("Create work bead: %v", err)
+	}
+	dops := newFakeDrainOps()
+	if err := dops.setDrainAck("orphan"); err != nil {
+		t.Fatalf("setDrainAck: %v", err)
+	}
+	env.dt.set(session.ID, &drainState{
+		startedAt:  env.clk.Now().Add(-defaultDrainTimeout),
+		deadline:   env.clk.Now().Add(-time.Second),
+		reason:     "orphaned",
+		generation: 1,
+		ackSet:     true,
+	})
+
+	reconcileSessionBeadsAtPath(
+		context.Background(),
+		"",
+		[]beads.Bead{session},
+		nil,
+		nil,
+		env.cfg,
+		env.sp,
+		env.store,
+		dops,
+		[]beads.Bead{work},
+		nil,
+		nil,
+		env.dt,
+		map[string]int{},
+		false,
+		nil,
+		"",
+		nil,
+		env.clk,
+		env.rec,
+		0,
+		0,
+		&env.stdout,
+		&env.stderr,
+	)
+
+	if env.sp.IsRunning("orphan") {
+		t.Fatal("dead provider should not be treated as recovered")
+	}
+	if ds := env.dt.get(session.ID); ds != nil {
+		t.Fatalf("drain = %+v, want completed", ds)
+	}
+	got, err := env.store.Get(session.ID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", session.ID, err)
+	}
+	if got.Metadata["state"] != "asleep" {
+		t.Fatalf("state = %q, want asleep", got.Metadata["state"])
+	}
+	if got.Metadata["sleep_reason"] != "idle" {
+		t.Fatalf("sleep_reason = %q, want idle", got.Metadata["sleep_reason"])
+	}
+}
+
 func TestReconcileSessionBeads_OrphanNotRunningClosed(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "other"}}}

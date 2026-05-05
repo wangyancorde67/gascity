@@ -234,6 +234,8 @@ func cancelSessionDrainForPending(session beads.Bead, sp runtime.Provider, dt *d
 
 func cancelOrphanedSessionDrainForAssignedWork(session beads.Bead, sp runtime.Provider, dt *drainTracker) bool {
 	return cancelSessionDrainIf(session, sp, dt, func(reason string) bool {
+		// Only concrete assigned work overrides an orphan drain; generic
+		// work-query and named-demand wakeups intentionally do not.
 		return reason == "orphaned"
 	})
 }
@@ -344,6 +346,16 @@ func staleOrLegacyDrainAckBeforeStart(session beads.Bead, sp runtime.Provider, n
 func cancelRecoveredReconcilerAckedDrain(session beads.Bead, sp runtime.Provider, name string) bool {
 	reason, ok := reconcilerDrainAckMatchesSession(session, sp, name)
 	if !ok || !pendingDrainReasonCancelable(reason) {
+		return false
+	}
+	clearReconcilerDrainAckMetadata(sp, name)
+	telemetry.RecordDrainTransition(context.Background(), name, reason, "cancel")
+	return true
+}
+
+func cancelRecoveredOrphanedDrainForAssignedWork(session beads.Bead, sp runtime.Provider, name string) bool {
+	reason, ok := reconcilerDrainAckMatchesSession(session, sp, name)
+	if !ok || reason != "orphaned" {
 		return false
 	}
 	clearReconcilerDrainAckMetadata(sp, name)

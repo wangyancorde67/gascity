@@ -28,7 +28,9 @@ import (
 )
 
 type wakeEvaluation struct {
-	Reasons          []WakeReason
+	Reasons []WakeReason
+	// Reason mirrors AwakeDecision.Reason on the ComputeAwakeSet bridge path.
+	// It is only actionable when Reasons contains the matching effective wake.
 	Reason           string
 	Policy           resolvedSessionSleepPolicy
 	ConfigSuppressed bool

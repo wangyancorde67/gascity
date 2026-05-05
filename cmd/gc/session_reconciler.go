@@ -671,6 +671,26 @@ func reconcileSessionBeadsTracedWithNamedDemand(
 			default:
 				if dops != nil {
 					if acked, _ := dops.isDrainAcked(name); acked {
+						hasAssignedWork, assignedErr := sessionHasOpenAssignedWorkForReachableStore(cityPath, cfg, store, rigStores, *session)
+						if assignedErr != nil {
+							fmt.Fprintf(stderr, "session reconciler: checking assigned work for drain-acked %s: %v\n", name, assignedErr) //nolint:errcheck
+							hasAssignedWork = true
+						}
+						if providerAlive && hasAssignedWork {
+							if cancelOrphanedSessionDrainForAssignedWork(*session, sp, dt) ||
+								cancelRecoveredOrphanedDrainForAssignedWork(*session, sp, name) {
+								_ = dops.clearDrain(name)
+								template := normalizedSessionTemplate(*session, cfg)
+								if template == "" {
+									template = session.Metadata["template"]
+								}
+								fmt.Fprintf(stdout, "Canceled drain-acked session '%s' (assigned work)\n", name) //nolint:errcheck
+								if trace != nil {
+									trace.recordDecision("reconciler.drain.cancel", template, name, "orphaned", "cancel_assigned_work", nil, nil, "")
+								}
+								continue
+							}
+						}
 						stopped := !providerAlive
 						if providerAlive {
 							if err := workerKillSessionTargetWithConfig("", store, sp, cfg, name); err != nil {
@@ -691,11 +711,6 @@ func reconcileSessionBeadsTracedWithNamedDemand(
 								Subject: template,
 								Message: "drain acknowledged by agent",
 							})
-							hasAssignedWork, assignedErr := sessionHasOpenAssignedWorkForReachableStore(cityPath, cfg, store, rigStores, *session)
-							if assignedErr != nil {
-								fmt.Fprintf(stderr, "session reconciler: checking assigned work for drain-acked %s: %v\n", name, assignedErr) //nolint:errcheck
-								hasAssignedWork = true
-							}
 							if hasAssignedWork {
 								batch := sessionpkg.CompleteDrainPatch(clk.Now().UTC(), "idle", session.Metadata["wake_mode"] == "fresh")
 								_ = store.SetMetadataBatch(session.ID, batch)
@@ -1330,6 +1345,7 @@ func reconcileSessionBeadsTracedWithNamedDemand(
 			if !demandOverrides {
 				eval.ConfigSuppressed = true
 				eval.Reasons = nil // Clear reasons so Phase 2 does not cancel the drain.
+				eval.Reason = ""
 			}
 		}
 		wakeEvals[target.session.ID] = eval
