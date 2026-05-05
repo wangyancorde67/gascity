@@ -78,7 +78,7 @@ A Run is in flight. An operator opens the dashboard, drills into a specific bead
 
 **R3. Sessions are Runs.** Ad-hoc agent activity is modeled as a Run of a built-in single-step "execute" formula. There is one execution model in the data layer; "session" is a UI affordance, not a separate type. *(S6)*
 
-**R4. The Run state machine includes a paused-awaiting-input state.** The orchestrator distinguishes "running," "paused awaiting human input," and terminal states. A paused Run is not stuck-looking and is not a candidate for stale-Run garbage collection. *(S4, S5, S7)*
+**R4. Steps can enter a paused-awaiting-input state.** Individual steps can pause for human input while other independent steps in the same Run continue executing. The orchestrator distinguishes HITL-paused steps from stuck steps; a Run with any step in HITL is not a candidate for stale-Run garbage collection. *(S4, S5, S7)*
 
 **R5. Operator mutations on a Run have defined downstream semantics.** Skip, abort, re-prompt, relabel, and kill-polecat are operations with predictable effects on the Run's state. After a mutation, the Run continues from the new state without manual stitching. *(S9)*
 
@@ -100,35 +100,35 @@ A Run is in flight. An operator opens the dashboard, drills into a specific bead
 
 ### Step types and dispositions
 
-**R13. The orchestrator recognizes a HITL disposition class.** HITL is a runtime disposition alongside transient-fail and hard-fail, with its own scheduling, notification, and authorization policy. Steps can enter HITL state by author declaration (compile time) or by agent transition (runtime). On human response, the step resumes in the same Run with the new context available to the agent. *(S4, S5)*
+**R12. The orchestrator recognizes a HITL disposition class.** HITL is a runtime disposition alongside transient-fail and hard-fail, with its own scheduling, notification, and authorization policy. Steps can enter HITL state by author declaration (compile time) or by agent transition (runtime). On human response, the step resumes in the same Run with the new context available to the agent. *(S4, S5)*
 
-**R14. Pending HITL steps are surfaced to the assigned human.** The orchestrator notifies the assigned human via a defined notification mechanism when a step enters HITL state. The notification source is durable (survives controller restart). *(S4, S7)*
+**R13. Pending HITL steps are surfaced to the assigned human.** The orchestrator notifies the assigned human via a defined notification mechanism when a step enters HITL state. The notification source is durable (survives controller restart). *(S4, S7)*
 
-**R15. HITL approvers are subject to an authorization model.** "Who is allowed to approve" is verifiable at approval time. Rejection terminates the Run via the hard-fail path; downstream steps can react to it. *(S4)*
+**R14. HITL approvers are subject to an authorization model.** "Who is allowed to approve" is verifiable at approval time. Rejection terminates the Run via the hard-fail path; downstream steps can react to it. *(S4)*
 
-**R16. Gather phase outcomes follow author-declared policy.** A gather phase combines its children's outcomes via a policy declared by the author — declaratively in TOML for thresholds and weights, or as an agent step inside the sub-formula for judgment-based policies. The runtime applies the policy; the runtime does not decide it. *(S3)*
+**R15. Gather phase outcomes follow author-declared policy.** A gather phase combines its children's outcomes via a policy declared by the author — declaratively in TOML for thresholds and weights, or as an agent step inside the sub-formula for judgment-based policies. The runtime applies the policy; the runtime does not decide it. *(S3)*
 
-**R17. A disposition exists for "succeeded with reduced coverage."** Gather phases and other step types can produce an outcome that means "the work continued but with degraded coverage." This disposition is distinct from pass, hard-fail, and transient-fail. *(S3)*
+**R16. A disposition exists for "succeeded with reduced coverage."** Gather phases and other step types can produce an outcome that means "the work continued but with degraded coverage." This disposition is distinct from pass, hard-fail, and transient-fail. *(S3)*
 
 ### Polecat drain and concurrency
 
-**P1. Drain completion is defined as quiescence over the convoy's ready set.** A drain is complete when the convoy has no remaining ready beads and no in-flight polecats are processing beads from this convoy. Beads created after drain completion belong to subsequent steps, not this drain. *(S1)*
+**P1. Drain completion is defined as quiescence over the convoy's ready set.** A drain is complete when the convoy has no remaining ready beads and no in-flight polecats are processing beads from this convoy. Beads created after drain completion belong to subsequent steps, not this drain. Downstream steps that `needs`/`depends_on` the drain step start via the existing step-dependency mechanism (`internal/formula/types.go:230-235`) once the drain step is complete. *(S1)*
 
 **P2. Recursively-discovered work within an active drain joins the same drain.** When a polecat creates new beads during a drain (transitively discovered work that belongs to the same convoy graph), the drain picks them up in subsequent waves until quiescence. This is what makes the drain a loop, not a single fan-out. *(S1)*
 
 ### Stdlib library
 
-**R18. O2 ships a stdlib sub-formula library.** Initial contents: a shred-plan sub-formula covering common artifact types (markdown plans, GitHub issues, PR descriptions); a scatter/gather sub-formula supporting both declarative and agent-driven gather policies. *(S2, S3, S8)*
+**R17. O2 ships a stdlib sub-formula library.** Initial contents: a shred-plan sub-formula covering common artifact types (markdown plans, GitHub issues, PR descriptions); a scatter/gather sub-formula supporting both declarative and agent-driven gather policies. *(S2, S3, S8)*
 
-**R19. Pack distribution extends to author-supplied sub-formulas.** The mechanism that distributes formulas in packs also distributes sub-formulas. Authors share sub-formulas through the same channels they share formulas. *(S8)*
+**R18. Pack distribution extends to author-supplied sub-formulas.** The mechanism that distributes formulas in packs also distributes sub-formulas. Authors share sub-formulas through the same channels they share formulas. *(S8)*
 
-**R20. Sub-formula version pinning is supported.** Consumers pin to a specific version of a sub-formula in their import; upstream changes don't break consumers until they explicitly bump the pin. *(S8)*
+**R19. Sub-formula version pinning is supported.** Consumers pin to a specific version of a sub-formula in their import; upstream changes don't break consumers until they explicitly bump the pin. *(S8)*
 
 ### Observability
 
-**R21. The dashboard renders Runs as the central object.** Active and historical Runs are listable, queryable, and drillable. Run detail shows current state, steps, bead activity, and (when sub-formulas are used) logical grouping of steps by their sub-formula provenance. *(S6)*
+**R20. The dashboard renders Runs as the central object.** Active and historical Runs are listable, queryable, and drillable. Run detail shows current state, steps, bead activity, and (when sub-formulas are used) logical grouping of steps by their sub-formula provenance. *(S6)*
 
-**R22. Operator mutations reflect immediately in live state.** A mutation through the dashboard is queryable through the same API immediately afterward; there is no read-after-write inconsistency window for operator-initiated state changes. *(S9)*
+**R21. Operator mutations reflect immediately in live state.** A mutation through the dashboard is queryable through the same API immediately afterward; there is no read-after-write inconsistency window for operator-initiated state changes. *(S9)*
 
 ---
 
@@ -145,14 +145,15 @@ Today, every state machine in dispatch is built on stringly-typed metadata: `gc.
 - `Transient{retries_remaining, last_error}`
 - `Degraded{coverage_explanation, partial_results}`
 - `HITL{assigned_human, request, auth_policy, deadline}`
+- `Skipped{reason}` (produced by operator intervention, not by agents)
 
 The runtime's policy table dispatches on the variant. Producers and consumers share a single Go type. Huma OpenAPI generation makes the wire format honest; the dashboard's TypeScript types are generated from the same source. Bead metadata becomes the *projection* of the typed disposition, not the source of truth.
 
-This is foundational. It unblocks: gather policy (configurable based on typed children's dispositions in TC6), HITL primitive (adds a variant), `degraded` as a first-class outcome (existing variant generalized beyond retry exhaustion), Agent ABI return shape (TC3).
+This is foundational. It unblocks: gather policy (configurable based on typed children's dispositions, TC5), HITL primitive (adds a variant, TC6), `degraded` as a first-class outcome (existing variant generalized beyond retry exhaustion), Agent ABI return shape (TC3).
 
 ### TC2. Run as a bead
 
-A Run should be a typed bead (`Type="run"`), not a projection over existing beads and not a parallel persistence model. This honors the "beads is the universal persistence substrate" invariant. Crash recovery falls out for free — the controller already knows how to rebuild reality from beads. The API surface is `GET /beads?type=run` and `GET /beads/{id}` with no new persistence APIs. Sub-formula expansion remains "child beads with the parent Run's `gc.root_bead_id`."
+A Run should be a typed bead (`Type="run"`), not a projection over existing beads and not a parallel persistence model. This honors the "beads is the universal persistence substrate" invariant. Crash recovery falls out for free — the controller already knows how to rebuild reality from beads. Runs are queryable via the bead store's existing query infrastructure; no new persistence layer or API pattern is introduced. Sub-formula expansion remains "child beads with the parent Run's `gc.root_bead_id`."
 
 The one open question is structured payload. Bead metadata is currently flat string key/value; a Run carries structured data (vars resolved at instantiation, formula version, current step, state machine position, the input convoy reference). Two viable designs:
 
@@ -171,7 +172,7 @@ The most important interface in the system, currently the most under-specified.
 
 - **Run context:** the Run ID, formula identity, formula version, and the resolved variable scope (per TC4).
 - **Work scope:** the work bead (or convoy if the step is convoy-aware), parent step's output if this is a downstream step, and step-specific metadata.
-- **Available primitives:** typed primitive functions the agent can invoke during its work — `report_disposition(disposition)`, `request_hitl(request)`, `produce_convoy(beads)`, `create_child_bead(spec)`. Each primitive has a typed signature.
+- **Available primitives:** typed primitive functions the agent can invoke during its work — `report_disposition(disposition)`, `produce_convoy(beads)`, `create_child_bead(spec)`. Each primitive has a typed signature. HITL is reported via `report_disposition(HITL{...})` — no separate primitive needed.
 
 When the agent finishes, it returns a typed `Disposition` (per TC1) plus any `produced_artifacts` (new beads, convoys, structured outputs). The wire shape is one typed envelope, not the union of "set this metadata, also create those beads, also raise this interaction."
 
@@ -201,9 +202,9 @@ The proposal commits to typed handoffs (R8) and ergonomic sub-formula imports (R
 
 ### TC5. Gather policy expression
 
-R16 commits to author-declared gather policies "in TOML for thresholds/weights, or as an agent step for judgment-based policies." The TOML expression shape is undesigned. If the schema is too rigid, authors flee to "agent step" mode for everything and the declarative path is dead. If too flexible, you've reinvented Rego or CEL with worse ergonomics.
+R15 commits to author-declared gather policies. Today's gather behavior (`internal/dispatch/runtime.go:993-1008`) is even more aggressive than "any-fail→fail" — on the first child failure, it skips all remaining open children and immediately closes the scope as failed. An author-declared policy might want to let all children complete before deciding (e.g., "pass if 4 of 5 pass" requires waiting for all 5). The TOML expression shape is undesigned. If the schema is too rigid, authors flee to "agent step" mode for everything and the declarative path is dead. If too flexible, you've reinvented Rego or CEL with worse ergonomics.
 
-**Direction.** A small, sharp policy language built on the typed Disposition system from TC1. Predicates over typed children's outcomes:
+**Direction.** Extend the existing condition language in `internal/formula/condition.go` (which already supports `step.status == 'complete'`, `step.output.approved == true`, `children(step).all(...)`, and external checks like `file.exists()`) with predicates over typed children's dispositions:
 
 ```toml
 [gather.policy]
@@ -220,7 +221,7 @@ weights = { security = 2.0, integration = 2.0, lint = 0.5 }
 pass_when = "weighted_sum(d, weights) >= 3.0"
 ```
 
-Expressive enough for real cases, narrow enough to avoid Turing-completeness. Could borrow from the existing `condition = "{{var}} == value"` step condition syntax in `internal/formula/condition.go` and extend it.
+Expressive enough for real cases, narrow enough to avoid Turing-completeness. The existing condition language already has the evaluation infrastructure; gather policy is a new evaluation context (children's dispositions) using the same grammar.
 
 **Escape hatch:** when the declarative language doesn't suffice, the gather policy is an agent step inside the scatter/gather sub-formula. The agent receives the typed children's dispositions and returns a single phase disposition. Same Disposition ADT (TC1) end-to-end.
 
@@ -246,7 +247,7 @@ R5 commits to skip / abort / re-prompt / relabel / kill-polecat as first-class o
 
 **Relabel.** Adjusts labels on a bead. If the relabeled label affects routing (`pool:reviewers` → `pool:senior-reviewers`), in-flight work continues with its current pool; new work picks up the new pool. Re-routing in-flight work requires explicit cancel + re-dispatch.
 
-**Kill-polecat.** Kills a specific polecat process. The work the polecat was doing is marked transient-fail (per the existing transient retry machinery) and either retried (if the step has a retry policy) or marked degraded (if not).
+**Kill-polecat.** Kills a specific polecat process. The work the polecat was doing is marked transient-fail and either retried (if the step has a retry policy) or hard-failed (if retries are exhausted).
 
 **Implementation pattern.** Each intervention is a typed event in the bead store; the runtime reduces over it the same way it reduces over agent-produced state changes. This keeps the "no status files; query live state" invariant intact while making interventions auditable, reversible, and composable.
 
@@ -264,7 +265,7 @@ The viewer also needs to support the mutation operations from R5 (skip, abort, r
 
 ### TC9. Migration and backwards compatibility
 
-The formula version field gates current (v2) vs O2 behavior at the formula level. Existing v2 formulas execute on v2 semantics unchanged; O2 formulas declare the new version and opt into O2 semantics (convoy-as-input, sub-formula imports, HITL, gather policies). No data migration of existing molecules / convoys / sessions / wisps required for the upgrade.
+The formula version field gates current (v2) vs O2 behavior at the formula level. Existing v2 formulas execute on v2 semantics unchanged; O2 formulas declare the new version and opt into O2 semantics (convoy-as-input, sub-formula imports, HITL, gather policies). No data migration of existing molecules / convoys / wisps required for the upgrade. For sessions (R3): new sessions are created as Run beads; existing `Type="session"` beads (`internal/beads/beads.go:89`) continue to function as-is and are not migrated.
 
 The `slingDefaultFormula` path in `internal/sling/sling_core.go:259` continues to work — it instantiates a wisp around a single bead the way it does today. O2 formulas that take a single bead receive it as a 1-element convoy via runtime auto-normalization (R6).
 
@@ -274,11 +275,12 @@ One inline-author tool needs to land for S2 to work without forcing the OOB shre
 
 ## Open Questions
 
-1. **Default step input mode (R7):** should the default for an undeclared step be "as a whole" or "decompose"? Proposed default: "as a whole," because it preserves today's per-step semantics. Worth validating against early authoring experience.
-2. **`degraded` rename rollout:** soft-fail is in production fixtures (`internal/testfixtures/reviewworkflows/fixtures.go`). Rename in O2 formulas only; v2 formulas keep `soft_fail`.
-3. **Scope of stdlib library:** ship the initial release with shred-plan + scatter-gather (R18). Should `review-and-ship`, `deploy-with-canary`, or other common patterns be in the initial stdlib too?
-4. **Formula schema location:** sub-formula version pinning syntax in TOML — where does the version field live? Per-import? Per-pack manifest?
-5. **Notification channel for HITL:** dashboard-only for the initial release per TC6. Confirm acceptable scope.
+1. **Molecule → Run relationship:** do molecules become the internal bead representation of a Run's step graph, or do Runs and molecules coexist as separate bead types? The Goals section says "likely"; this needs a design decision.
+2. **Default step input mode (R7):** should the default for an undeclared step be "as a whole" or "decompose"? Proposed default: "as a whole," because it preserves today's per-step semantics. Worth validating against early authoring experience.
+3. **`degraded` rename rollout:** soft-fail is in production fixtures (`internal/testfixtures/reviewworkflows/fixtures.go`). Rename in O2 formulas only; v2 formulas keep `soft_fail`.
+4. **Scope of stdlib library:** ship the initial release with shred-plan + scatter-gather (R17). Should `review-and-ship`, `deploy-with-canary`, or other common patterns be in the initial stdlib too?
+5. **Formula schema location:** sub-formula version pinning syntax in TOML — where does the version field live? Per-import? Per-pack manifest?
+6. **Notification channel for HITL:** dashboard-only for the initial release per TC6. Confirm acceptable scope.
 
 ---
 
