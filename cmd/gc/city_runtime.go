@@ -1539,6 +1539,7 @@ func sweepUndesiredPoolSessionBeads(
 	if store == nil || sessionBeads == nil || cfg == nil || storeQueryPartial {
 		return 0
 	}
+	startupTimeout := cfg.Session.StartupTimeoutDuration()
 	var candidates []beads.Bead
 	for _, bead := range sessionBeads.Open() {
 		if bead.Status == "closed" {
@@ -1554,11 +1555,11 @@ func sweepUndesiredPoolSessionBeads(
 			continue
 		}
 		// Don't sweep beads that the reconciler still considers "start
-		// requested" — their work assignment window hasn't opened. Mirrors
-		// sessionStartRequested (session_reconcile.go) exactly so the two
-		// loops agree about ownership:
-		//   - pending_create_claim=true: in-flight create claim, protected
-		//     regardless of age until the lifecycle clears it.
+		// requested" — their work assignment window hasn't opened. The
+		// pending_create_claim lease mirrors the reconciler's recovery model:
+		// fresh start-in-flight and never-started queue entries are protected,
+		// but once that lease expires the crashed creator must not strand the
+		// pool slot forever.
 		//   - state=creating: protected until staleCreatingState would
 		//     return true (i.e., until staleCreatingStateTimeout has
 		//     elapsed; zero CreatedAt is treated as stale, matching
@@ -1567,7 +1568,7 @@ func sweepUndesiredPoolSessionBeads(
 		// on the same tick it's created (no work assigned →
 		// GCSweepSessionBeads closes it), spinning the pool in a rapid
 		// create→sweep→recreate loop.
-		if strings.TrimSpace(bead.Metadata["pending_create_claim"]) == "true" {
+		if pendingCreateClaimStillLeasedForSweep(bead, startupTimeout) {
 			continue
 		}
 		if strings.TrimSpace(bead.Metadata["state"]) == "creating" && !isStaleCreating(bead) {
@@ -1631,6 +1632,14 @@ func sweepUndesiredPoolSessionBeads(
 		candidates = append(candidates, bead)
 	}
 	return len(GCSweepSessionBeads(store, rigStores, candidates))
+}
+
+// pendingCreateClaimStillLeasedForSweep keeps pending_create_claim protection
+// aligned with the reconciler: start-in-flight claims stay protected for the
+// provider-start lease, never-started creates get the longer queue lease, and
+// stale claims stop blocking pool-slot recovery.
+func pendingCreateClaimStillLeasedForSweep(bead beads.Bead, startupTimeout time.Duration) bool {
+	return pendingCreateLeaseActive(bead, nil, startupTimeout)
 }
 
 // isStaleCreating mirrors staleCreatingState in session_reconcile.go without
