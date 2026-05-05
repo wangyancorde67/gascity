@@ -1365,7 +1365,7 @@ func TestBuildDesiredState_PoolInFlightSessionsPreservePartialScaleDemand(t *tes
 	}
 }
 
-func TestBuildDesiredState_OnDemandNamedSession_RoutedMetadataAloneDoesNotMaterialize(t *testing.T) {
+func TestBuildDesiredState_OnDemandNamedSession_RoutedMetadataCreatesEphemeralOnly(t *testing.T) {
 	cityPath := t.TempDir()
 	store := beads.NewMemStore()
 	if _, err := store.Create(beads.Bead{
@@ -1393,10 +1393,21 @@ func TestBuildDesiredState_OnDemandNamedSession_RoutedMetadataAloneDoesNotMateri
 	}
 
 	dsResult := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
+	foundEphemeral := false
 	for _, tp := range dsResult.State {
-		if tp.TemplateName == "mayor" {
+		if tp.TemplateName != "mayor" {
+			continue
+		}
+		if tp.ConfiguredNamedIdentity == "mayor" {
 			t.Fatalf("routed metadata alone should not materialize on-demand named session: %+v", tp)
 		}
+		foundEphemeral = true
+	}
+	if !foundEphemeral {
+		t.Fatal("routed metadata should create an ephemeral session for the backing template")
+	}
+	if dsResult.NamedSessionDemand["mayor"] {
+		t.Fatal("routed metadata should not record named-session demand")
 	}
 }
 

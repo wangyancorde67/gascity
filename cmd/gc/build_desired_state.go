@@ -234,13 +234,6 @@ func buildDesiredStateWithSessionBeads(
 		if cfg.Agents[i].Suspended {
 			continue
 		}
-		backsNamedSession := false
-		for j := range cfg.NamedSessions {
-			if cfg.NamedSessions[j].TemplateQualifiedName() == cfg.Agents[i].QualifiedName() {
-				backsNamedSession = true
-				break
-			}
-		}
 
 		sp := scaleParamsFor(&cfg.Agents[i])
 		// Expand {{.Rig}}/{{.AgentBase}} before the scale_check enters the
@@ -248,24 +241,6 @@ func buildDesiredStateWithSessionBeads(
 		sp.Check = expandAgentCommandTemplate(cityPath, cityName, &cfg.Agents[i], cfg.Rigs, "scale_check", sp.Check, stderr)
 
 		if !cfg.Agents[i].SupportsGenericEphemeralSessions() {
-			continue
-		}
-		if backsNamedSession {
-			rigName := configuredRigName(cityPath, &cfg.Agents[i], cfg.Rigs)
-			if rigName != "" && suspendedRigPaths[filepath.Clean(rigRootForName(rigName, cfg.Rigs))] {
-				continue
-			}
-			// Named-session materialization is handled in the named-session pass,
-			// but explicit scale_check/min demand for the backing template still
-			// creates ephemeral capacity through the pool pipeline. The default
-			// routed-work scale_check is skipped here so routed metadata alone
-			// does not create a parallel generic worker for the same backing
-			// template.
-			poolDir := agentCommandDir(cityPath, &cfg.Agents[i], cfg.Rigs)
-			if store != nil && strings.TrimSpace(cfg.Agents[i].ScaleCheck) == "" {
-				continue
-			}
-			pendingPools = append(pendingPools, poolEvalWork{agentIdx: i, sp: sp, poolDir: poolDir, newDemand: store != nil})
 			continue
 		}
 
