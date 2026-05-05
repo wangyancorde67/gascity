@@ -71,14 +71,26 @@ validate_exported_issues() {
 
 read_state_json() {
     if [ -f "$STATE_FILE" ]; then
-        cat "$STATE_FILE"
-        return
+        if jq -c '.' "$STATE_FILE" 2>/dev/null; then
+            return
+        fi
+        echo "jsonl-export: state file malformed; resetting to empty state" >&2
     fi
     echo '{}'
 }
 
 write_state_json() {
-    printf '%s\n' "$1" > "$STATE_FILE"
+    local tmpfile
+
+    tmpfile=$(mktemp "${STATE_FILE}.tmp.XXXXXX")
+    if ! printf '%s\n' "$1" > "$tmpfile"; then
+        rm -f "$tmpfile"
+        return 1
+    fi
+    if ! mv -f "$tmpfile" "$STATE_FILE"; then
+        rm -f "$tmpfile"
+        return 1
+    fi
 }
 
 set_consecutive_push_failures() {
@@ -127,20 +139,22 @@ send_spike_alert() {
 }
 
 retry_pending_spike_alert() {
+    local state_json
     local db
     local prev_count
     local current_count
     local delta
     local threshold
 
-    db=$(read_state_json | jq -r '.pending_spike_alert.database // empty' 2>/dev/null || true)
+    state_json=$(read_state_json)
+    db=$(printf '%s\n' "$state_json" | jq -r '.pending_spike_alert.database // empty')
     if [ -z "$db" ]; then
         return
     fi
-    prev_count=$(read_state_json | jq -r '.pending_spike_alert.prev_count // 0' 2>/dev/null || echo "0")
-    current_count=$(read_state_json | jq -r '.pending_spike_alert.current_count // 0' 2>/dev/null || echo "0")
-    delta=$(read_state_json | jq -r '.pending_spike_alert.delta // 0' 2>/dev/null || echo "0")
-    threshold=$(read_state_json | jq -r '.pending_spike_alert.threshold // 0' 2>/dev/null || echo "0")
+    prev_count=$(printf '%s\n' "$state_json" | jq -r '.pending_spike_alert.prev_count // 0')
+    current_count=$(printf '%s\n' "$state_json" | jq -r '.pending_spike_alert.current_count // 0')
+    delta=$(printf '%s\n' "$state_json" | jq -r '.pending_spike_alert.delta // 0')
+    threshold=$(printf '%s\n' "$state_json" | jq -r '.pending_spike_alert.threshold // 0')
 
     if send_spike_alert "$db" "$prev_count" "$current_count" "$delta" "$threshold"; then
         clear_pending_spike_alert
@@ -206,6 +220,8 @@ if [ ! -e "$STATE_FILE" ] && [ -e "$LEGACY_STATE_FILE" ]; then
 fi
 mkdir -p "$(dirname "$STATE_FILE")"
 
+retry_pending_spike_alert
+
 # Discover databases. Exclude Dolt/MySQL system schemas, Gas City's internal
 # health-probe database, and test-fixture scratch databases (benchdb,
 # testdb_*, lowercase beads_t[0-9a-f]{8,}, beads_pt*, beads_vr*,
@@ -223,8 +239,6 @@ if [ ! -d "$ARCHIVE_REPO/.git" ]; then
     mkdir -p "$ARCHIVE_REPO"
     git -C "$ARCHIVE_REPO" init -q 2>/dev/null || true
 fi
-
-retry_pending_spike_alert
 
 # Build scrub filter for the issues table.
 SCRUB_FILTER=""
@@ -383,7 +397,7 @@ if ! git push origin main -q 2>/dev/null; then
     # Track consecutive failures.
     CONSECUTIVE=0
     if [ -f "$STATE_FILE" ]; then
-        CONSECUTIVE=$(jq -r '.consecutive_push_failures // 0' "$STATE_FILE" 2>/dev/null || echo "0")
+        CONSECUTIVE=$(read_state_json | jq -r '.consecutive_push_failures // 0' || echo "0")
     fi
     CONSECUTIVE=$((CONSECUTIVE + 1))
     set_consecutive_push_failures "$CONSECUTIVE"
