@@ -2854,6 +2854,75 @@ func TestSyncSessionBeads_StalePoolSnapshotReusesVisibleOwner(t *testing.T) {
 	}
 }
 
+func TestSyncSessionBeads_DoesNotCompactLivePoolSlotIdentity(t *testing.T) {
+	store := beads.NewMemStore()
+	clk := &clock.Fake{Time: time.Date(2026, 5, 5, 17, 30, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	cfg := &config.City{
+		Agents: []config.Agent{{
+			Name:              "worker",
+			Dir:               "pack",
+			MaxActiveSessions: intPtr(10),
+		}},
+	}
+	template := "pack/worker"
+	sessionName := "pack-worker-mc-live"
+
+	live, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "agent:" + template},
+		Metadata: map[string]string{
+			"template":             template,
+			"session_name":         sessionName,
+			"agent_name":           "pack/worker-6",
+			"alias":                "pack/worker-6",
+			"pool_slot":            "6",
+			"state":                "awake",
+			"session_origin":       "ephemeral",
+			poolManagedMetadataKey: boolMetadata(true),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	desired := map[string]TemplateParams{
+		sessionName: {
+			TemplateName: template,
+			InstanceName: "pack/worker-6",
+			Alias:        "pack/worker-6",
+			PoolSlot:     6,
+		},
+		"pack-worker-mc-other": {
+			TemplateName: template,
+			InstanceName: "pack/worker-1",
+			Alias:        "pack/worker-1",
+			PoolSlot:     1,
+		},
+	}
+
+	var stderr bytes.Buffer
+	syncSessionBeads("", store, desired, sp, allConfiguredDS(desired), cfg, clk, &stderr, false)
+	if stderr.Len() > 0 {
+		t.Fatalf("unexpected stderr: %s", stderr.String())
+	}
+
+	got, err := store.Get(live.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata["pool_slot"] != "6" {
+		t.Fatalf("pool_slot = %q, want live identity slot 6", got.Metadata["pool_slot"])
+	}
+	if got.Metadata["alias"] != "pack/worker-6" {
+		t.Fatalf("alias = %q, want pack/worker-6", got.Metadata["alias"])
+	}
+	if got.Metadata["agent_name"] != "pack/worker-6" {
+		t.Fatalf("agent_name = %q, want pack/worker-6", got.Metadata["agent_name"])
+	}
+}
+
 func TestCreatePoolSessionBead_MetadataFailureLeavesReachablePlaceholder(t *testing.T) {
 	store := &failingPoolSessionNameStore{MemStore: beads.NewMemStore()}
 	template := "pack/worker"

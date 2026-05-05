@@ -1384,7 +1384,7 @@ func syncDesiredPoolSlots(
 				continue
 			}
 			slot, _ := strconv.Atoi(openBeads[idx].Metadata["pool_slot"])
-			if slot <= 0 || slot > len(names) || usedSlots[slot] != "" {
+			if slot <= 0 || usedSlots[slot] != "" {
 				continue
 			}
 			usedSlots[slot] = sn
