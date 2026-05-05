@@ -36,9 +36,16 @@ const (
 	// directory for a city, while still honoring explicit GC_CITY_RUNTIME_DIR
 	// overrides in tests and custom launchers.
 	controlDispatcherRuntimeDirExpr = `${GC_CITY_RUNTIME_DIR:-${GC_CITY}/` + citylayout.RuntimeDataRoot + `}`
-	// controlDispatcherTracePathExpr is the default workflow trace file within
-	// the canonical runtime root.
-	controlDispatcherTracePathExpr = controlDispatcherRuntimeDirExpr + `/control-dispatcher-trace.log`
+	// controlDispatcherDefaultRuntimeDirExpr is the watcher-safe default trace
+	// root for the control-dispatcher. The controller ignores the hidden .gc
+	// subtree recursively, so defaults must stay under it to avoid self-triggered
+	// config-watch churn.
+	controlDispatcherDefaultRuntimeDirExpr = `${GC_CITY}/` + citylayout.RuntimeDataRoot
+	// controlDispatcherTraceInit exports the resolved trace path. Safe
+	// GC_CITY_RUNTIME_DIR overrides under ${GC_CITY}/.gc remain honored, but
+	// overrides outside the watcher-excluded subtree fall back to the default
+	// hidden runtime root unless GC_WORKFLOW_TRACE is explicitly set.
+	controlDispatcherTraceInit = `default_trace_dir="` + controlDispatcherRuntimeDirExpr + `"; hidden_runtime_root="${GC_CITY}/.gc"; case "$default_trace_dir" in "$hidden_runtime_root"|"$hidden_runtime_root"/*) ;; *) default_trace_dir="` + controlDispatcherDefaultRuntimeDirExpr + `";; esac; export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-$default_trace_dir/control-dispatcher-trace.log}"`
 	// controlDispatcherTraceDirInit creates the parent directory for the
 	// resolved trace path. This preserves explicit GC_WORKFLOW_TRACE overrides
 	// instead of unconditionally depending on the default runtime root.
@@ -56,7 +63,7 @@ const (
 	// cycle duration well past the configured patrol_interval. See
 	// engdocs/design/session-reconciler-tracing.md for the canonical
 	// .gc/runtime/ convention for trace data.
-	ControlDispatcherStartCommand = `sh -c 'export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-` + controlDispatcherTracePathExpr + `}"; ` + controlDispatcherTraceDirInit + `; exec "${GC_BIN:-gc}" convoy control --serve --follow ` + ControlDispatcherAgentName + `'`
+	ControlDispatcherStartCommand = `sh -c '` + controlDispatcherTraceInit + `; ` + controlDispatcherTraceDirInit + `; exec "${GC_BIN:-gc}" convoy control --serve --follow ` + ControlDispatcherAgentName + `'`
 )
 
 // ControlDispatcherStartCommandFor returns the start command for a
@@ -65,7 +72,7 @@ const (
 // fsnotify exclusion; see ControlDispatcherStartCommand for the full
 // rationale.
 func ControlDispatcherStartCommandFor(qualifiedName string) string {
-	return `sh -c 'export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-` + controlDispatcherTracePathExpr + `}"; ` + controlDispatcherTraceDirInit + `; exec "${GC_BIN:-gc}" convoy control --serve --follow ` + qualifiedName + `'`
+	return `sh -c '` + controlDispatcherTraceInit + `; ` + controlDispatcherTraceDirInit + `; exec "${GC_BIN:-gc}" convoy control --serve --follow ` + qualifiedName + `'`
 }
 
 // BindingQualifiedName returns the binding-qualified agent identity without a

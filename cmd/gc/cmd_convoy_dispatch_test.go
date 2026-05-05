@@ -1509,6 +1509,109 @@ func TestRunWorkflowServeRoutesTraceOpenWarningsToCommandStderr(t *testing.T) {
 	}
 }
 
+func TestRunControlDispatcherWithStoreRoutesRalphTraceWarningToStderr(t *testing.T) {
+	cityDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\nformula_v2 = true\n"), 0o644); err != nil {
+		t.Fatalf("write city.toml: %v", err)
+	}
+	checkPath := filepath.Join(cityDir, "pass-check.sh")
+	if err := os.WriteFile(checkPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write pass-check.sh: %v", err)
+	}
+	t.Setenv("GC_WORKFLOW_TRACE", filepath.Join(t.TempDir(), "missing", "workflow-trace.log"))
+
+	store := beads.NewMemStore()
+	workflow, err := store.Create(beads.Bead{
+		Title: "workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create workflow bead: %v", err)
+	}
+	logical, err := store.Create(beads.Bead{
+		Title: "logical",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "ralph",
+			"gc.step_id":      "implement",
+			"gc.max_attempts": "1",
+			"gc.root_bead_id": workflow.ID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create logical bead: %v", err)
+	}
+	run1, err := store.Create(beads.Bead{
+		Title: "run 1",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":            "run",
+			"gc.step_id":         "implement",
+			"gc.ralph_step_id":   "implement",
+			"gc.attempt":         "1",
+			"gc.step_ref":        "implement.run.1",
+			"gc.root_bead_id":    workflow.ID,
+			"gc.logical_bead_id": logical.ID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run bead: %v", err)
+	}
+	check1, err := store.Create(beads.Bead{
+		Title: "check 1",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":            "check",
+			"gc.step_id":         "implement",
+			"gc.ralph_step_id":   "implement",
+			"gc.attempt":         "1",
+			"gc.step_ref":        "implement.check.1",
+			"gc.check_mode":      "exec",
+			"gc.check_path":      checkPath,
+			"gc.check_timeout":   "30s",
+			"gc.max_attempts":    "1",
+			"gc.root_bead_id":    workflow.ID,
+			"gc.logical_bead_id": logical.ID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create check bead: %v", err)
+	}
+	if err := store.DepAdd(check1.ID, run1.ID, "blocks"); err != nil {
+		t.Fatalf("add check->run dep: %v", err)
+	}
+	if err := store.DepAdd(logical.ID, check1.ID, "blocks"); err != nil {
+		t.Fatalf("add logical->check dep: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if err := runControlDispatcherWithStore(cityDir, cityDir, store, check1, check1.ID, &stdout, &stderr); err != nil {
+		t.Fatalf("runControlDispatcherWithStore: %v", err)
+	}
+
+	gotStderr := stderr.String()
+	if count := strings.Count(gotStderr, "opening workflow trace"); count != 1 {
+		t.Fatalf("warning count = %d, want 1; stderr=%q", count, gotStderr)
+	}
+	if !strings.Contains(gotStderr, "gc convoy control --serve: warning: opening workflow trace") {
+		t.Fatalf("stderr = %q, want workflow trace warning prefix", gotStderr)
+	}
+	if gotStdout := stdout.String(); !strings.Contains(gotStdout, "action=pass") {
+		t.Fatalf("stdout = %q, want processed pass action", gotStdout)
+	}
+	checkAfter, err := store.Get(check1.ID)
+	if err != nil {
+		t.Fatalf("reload check bead: %v", err)
+	}
+	if checkAfter.Status != "closed" || checkAfter.Metadata["gc.outcome"] != "pass" {
+		t.Fatalf("check bead = status %q outcome %q, want closed/pass", checkAfter.Status, checkAfter.Metadata["gc.outcome"])
+	}
+}
+
 func TestWorkflowServeControlReadyQueryUsesControlTiers(t *testing.T) {
 	query := workflowServeControlReadyQuery(config.Agent{Name: config.ControlDispatcherAgentName})
 	if strings.Contains(query, "GC_SESSION_ORIGIN") {

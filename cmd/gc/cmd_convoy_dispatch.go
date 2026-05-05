@@ -158,6 +158,9 @@ func runControlDispatcherInStore(cityPath, storePath, beadID string, stdout, std
 }
 
 func runControlDispatcherWithStore(cityPath, storePath string, store beads.Store, bead beads.Bead, beadID string, stdout, stderr io.Writer) error {
+	restoreTraceWarnings := useWorkflowTraceWarnings(stderr)
+	defer restoreTraceWarnings()
+
 	opts := dispatch.ProcessOptions{CityPath: cityPath, StorePath: storePath}
 	opts.Tracef = workflowTracef
 	loadCfg := false

@@ -17,8 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reconciliations. After upgrading, operators tailing the default trace should
   switch to `.gc/runtime/control-dispatcher-trace.log`; the old
   `${GC_CITY}/control-dispatcher-trace.log` file becomes stale and can be
-  removed. Existing running `control-dispatcher` sessions keep their previous
-  trace path until they are restarted or recycled.
+  removed. After upgrading, restart or recycle existing `control-dispatcher`
+  sessions so they pick up the new trace path; otherwise they keep their
+  previous trace target and can continue retriggering reconciles.
 - `proxy_process` services now receive a `GC_SERVICE_URL_PREFIX` that the
   supervisor's public listener actually routes. Previously the prefix was
   the per-city-relative `/svc/<name>`, so any service that composed
