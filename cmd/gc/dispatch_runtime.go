@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -72,11 +73,13 @@ var (
 		}
 		return ep, nil
 	}
-	workflowServeIdlePollInterval  = 100 * time.Millisecond
-	workflowServeIdlePollAttempts  = 3
-	workflowServeWakeSweepInterval = 1 * time.Second
-	workflowServeMaxIdleSleep      = 30 * time.Second
-	workflowServeWaitForWake       = waitForRelevantWorkflowWakeWithTrace
+	workflowServeIdlePollInterval            = 100 * time.Millisecond
+	workflowServeIdlePollAttempts            = 3
+	workflowServeWakeSweepInterval           = 1 * time.Second
+	workflowServeMaxIdleSleep                = 30 * time.Second
+	workflowServeWaitForWake                 = waitForRelevantWorkflowWakeWithTrace
+	workflowTraceWarningWriter     io.Writer = os.Stderr
+	workflowTraceOpenWarned        sync.Map
 )
 
 // followSleepDuration returns the sleep interval the --follow loop should use
@@ -149,10 +152,21 @@ func workflowTracef(format string, args ...any) {
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
+		workflowTraceWarnOpenFailure(path, err)
 		return
 	}
 	defer f.Close()                                                                                //nolint:errcheck // best-effort trace log
 	fmt.Fprintf(f, "%s %s\n", time.Now().UTC().Format(time.RFC3339), fmt.Sprintf(format, args...)) //nolint:errcheck
+}
+
+func workflowTraceWarnOpenFailure(path string, err error) {
+	if workflowTraceWarningWriter == nil || strings.TrimSpace(path) == "" || err == nil {
+		return
+	}
+	if _, loaded := workflowTraceOpenWarned.LoadOrStore(path, struct{}{}); loaded {
+		return
+	}
+	fmt.Fprintf(workflowTraceWarningWriter, "gc convoy control --serve: warning: opening workflow trace %q: %v\n", path, err) //nolint:errcheck // best-effort stderr
 }
 
 func runWorkflowServe(agentName string, follow bool, _ io.Writer, stderr io.Writer) error {

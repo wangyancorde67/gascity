@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -3566,6 +3567,31 @@ func TestWaitForRelevantWorkflowWakeTraceIncludesBackoffState(t *testing.T) {
 	trace := string(traceBytes)
 	if !strings.Contains(trace, "serve wake-sweep idle_sweeps=3 sleep=5ms") {
 		t.Fatalf("trace = %q, want wake-sweep line with idle_sweeps and sleep", trace)
+	}
+}
+
+func TestWorkflowTracefWarnsOnceWhenTracePathCannotBeOpened(t *testing.T) {
+	tracePath := filepath.Join(t.TempDir(), "missing", "workflow-trace.log")
+	t.Setenv("GC_WORKFLOW_TRACE", tracePath)
+
+	var stderr bytes.Buffer
+	prevWriter := workflowTraceWarningWriter
+	workflowTraceWarningWriter = &stderr
+	workflowTraceOpenWarned = sync.Map{}
+	t.Cleanup(func() {
+		workflowTraceWarningWriter = prevWriter
+		workflowTraceOpenWarned = sync.Map{}
+	})
+
+	workflowTracef("first write")
+	workflowTracef("second write")
+
+	got := stderr.String()
+	if count := strings.Count(got, "opening workflow trace"); count != 1 {
+		t.Fatalf("warning count = %d, want 1; stderr=%q", count, got)
+	}
+	if !strings.Contains(got, tracePath) {
+		t.Fatalf("stderr = %q, want missing trace path %q", got, tracePath)
 	}
 }
 

@@ -14,8 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `${GC_CITY}/.gc/runtime/control-dispatcher-trace.log`) instead of writing at
   city root. This keeps workflow-trace appends inside the controller's
   watcher-excluded runtime subtree, avoiding continuous `config-changed`
-  reconciliations. Operators tailing the default trace should follow
-  `.gc/runtime/control-dispatcher-trace.log` after upgrading.
+  reconciliations. After upgrading, operators tailing the default trace should
+  switch to `.gc/runtime/control-dispatcher-trace.log`; the old
+  `${GC_CITY}/control-dispatcher-trace.log` file becomes stale and can be
+  removed.
 - `proxy_process` services now receive a `GC_SERVICE_URL_PREFIX` that the
   supervisor's public listener actually routes. Previously the prefix was
   the per-city-relative `/svc/<name>`, so any service that composed

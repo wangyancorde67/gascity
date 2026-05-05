@@ -4874,3 +4874,87 @@ func TestControlDispatcherStartCommandTracesUnderGCRuntime(t *testing.T) {
 		}
 	})
 }
+
+func TestControlDispatcherStartCommandExecResolvesRuntimeTracePath(t *testing.T) {
+	t.Run("default runtime root", func(t *testing.T) {
+		cityDir := t.TempDir()
+		tracePath, args := runControlDispatcherStartCommand(t, ControlDispatcherStartCommand, cityDir, "")
+		wantTracePath := filepath.Join(cityDir, citylayout.RuntimeDataRoot, "control-dispatcher-trace.log")
+		if tracePath != wantTracePath {
+			t.Fatalf("trace path = %q, want %q", tracePath, wantTracePath)
+		}
+		if args != "convoy control --serve --follow "+ControlDispatcherAgentName {
+			t.Fatalf("args = %q, want follow command for %q", args, ControlDispatcherAgentName)
+		}
+		if _, err := os.Stat(wantTracePath); err != nil {
+			t.Fatalf("trace file %q not created: %v", wantTracePath, err)
+		}
+	})
+
+	t.Run("runtime root override", func(t *testing.T) {
+		cityDir := t.TempDir()
+		runtimeDir := filepath.Join(t.TempDir(), "custom-runtime")
+		tracePath, args := runControlDispatcherStartCommand(t, ControlDispatcherStartCommandFor("qcore/control-dispatcher"), cityDir, runtimeDir)
+		wantTracePath := filepath.Join(runtimeDir, "control-dispatcher-trace.log")
+		if tracePath != wantTracePath {
+			t.Fatalf("trace path = %q, want %q", tracePath, wantTracePath)
+		}
+		if args != "convoy control --serve --follow qcore/control-dispatcher" {
+			t.Fatalf("args = %q, want qualified follow command", args)
+		}
+		if _, err := os.Stat(wantTracePath); err != nil {
+			t.Fatalf("trace file %q not created: %v", wantTracePath, err)
+		}
+	})
+}
+
+func runControlDispatcherStartCommand(t *testing.T, command, cityDir, runtimeDir string) (tracePath, args string) {
+	t.Helper()
+
+	tmp := t.TempDir()
+	resultPath := filepath.Join(tmp, "gc-result")
+	gcPath := filepath.Join(tmp, "gc")
+	gcScript := fmt.Sprintf(`#!/bin/sh
+set -eu
+trace_parent=${GC_WORKFLOW_TRACE%%/*}
+[ -d "$trace_parent" ]
+: > "$GC_WORKFLOW_TRACE"
+printf 'TRACE=%%s\nARGS=%%s\n' "$GC_WORKFLOW_TRACE" "$*" > %q
+`, resultPath)
+	if err := os.WriteFile(gcPath, []byte(gcScript), 0o755); err != nil {
+		t.Fatalf("write fake gc: %v", err)
+	}
+
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Env = []string{
+		"PATH=" + tmp + ":" + os.Getenv("PATH"),
+		"GC_BIN=" + gcPath,
+		"GC_CITY=" + cityDir,
+	}
+	if runtimeDir != "" {
+		cmd.Env = append(cmd.Env, "GC_CITY_RUNTIME_DIR="+runtimeDir)
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("run control-dispatcher start command: %v\n%s", err, out)
+	}
+
+	data, err := os.ReadFile(resultPath)
+	if err != nil {
+		t.Fatalf("read fake gc result: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		switch {
+		case strings.HasPrefix(line, "TRACE="):
+			tracePath = strings.TrimPrefix(line, "TRACE=")
+		case strings.HasPrefix(line, "ARGS="):
+			args = strings.TrimPrefix(line, "ARGS=")
+		}
+	}
+	if tracePath == "" {
+		t.Fatalf("fake gc result missing trace path:\n%s", data)
+	}
+	if args == "" {
+		t.Fatalf("fake gc result missing args:\n%s", data)
+	}
+	return tracePath, args
+}
