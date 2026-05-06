@@ -1782,7 +1782,7 @@ type Agent struct {
 	// ID. Used by gc sling to make a bead visible to the target's work_query.
 	// The placeholder {} is replaced with the bead ID at runtime.
 	// Default for all agents:
-	// "bd update {} --set-metadata gc.routed_to=<qualified-name>".
+	// "bd update {} --assignee <qualified-name> --set-metadata gc.routed_to=<qualified-name>".
 	// Routing is metadata-based; sling stamps the target template and the
 	// reconciler/scale_check paths decide when sessions are created.
 	// Custom sling_query and work_query can be overridden independently.
@@ -2058,7 +2058,7 @@ func legacyWorkflowControlQualifiedName(target string) string {
 // EffectiveSlingQuery returns the sling query command template for this agent.
 // The template uses {} as a placeholder for the bead ID.
 // If SlingQuery is set, returns it as-is. Otherwise returns the default:
-// "bd update {} --set-metadata gc.routed_to=<template>"
+// "bd update {} --assignee <template> --set-metadata gc.routed_to=<template>"
 //
 // All agents use metadata-based routing. The reconciler and scale_check
 // handle session creation; sling just stamps the target template.
@@ -2072,8 +2072,16 @@ func (a *Agent) EffectiveSlingQuery() string {
 // DefaultSlingQuery returns the built-in metadata-routing sling query for
 // this agent. Callers outside config should prefer this helper over rebuilding
 // the command string to preserve the bd boundary invariant.
+//
+// The default sets BOTH the assignee and the gc.routed_to metadata. The
+// supervisor's pool/desired-state computation matches by assignee, so a slung
+// bead is invisible to demand without it; metadata alone causes the target
+// agent to never materialize. Setting both keeps the long-standing
+// gc.routed_to history (which other queries and the dashboard inspect) while
+// making the bead visible to the reconciler.
 func (a *Agent) DefaultSlingQuery() string {
-	return "bd update {} --set-metadata gc.routed_to=" + a.QualifiedName()
+	q := a.QualifiedName()
+	return "bd update {} --assignee " + q + " --set-metadata gc.routed_to=" + q
 }
 
 // EffectiveDefaultSlingFormula returns the default sling formula for

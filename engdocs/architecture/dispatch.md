@@ -238,7 +238,7 @@ Pool agents with default queries:
 [[agent]]
 name = "coder"
 pool = { min = 1, max = 3, check = "echo 2" }
-# Default sling_query: bd update {} --set-metadata gc.routed_to=coder
+# Default sling_query: bd update {} --assignee coder --set-metadata gc.routed_to=coder
 # Default work_query:  bd ready --metadata-field gc.routed_to=coder --unassigned --limit=1
 ```
 
