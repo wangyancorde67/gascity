@@ -1265,10 +1265,7 @@ func discoverSessionBeadsWithRoots(
 		// but we still need the bead in desired state so the reconciler
 		// doesn't classify it as orphaned. Only skip if we can't resolve
 		// the template.
-		template := b.Metadata["template"]
-		if template == "" {
-			template = b.Metadata["common_name"]
-		}
+		template := resolvedSessionTemplate(b, cfg)
 		if template == "" {
 			continue
 		}
@@ -1303,7 +1300,7 @@ func discoverSessionBeadsWithRoots(
 			if isPoolManagedSessionBead(b) && !manualSession && !isNamedSessionBead(b) && !creating && !pendingCreate && !scaleCheckPartial {
 				continue
 			}
-			if !manualSession && !desiredHasTemplate(desired, template) && !pendingCreate && !scaleCheckPartial {
+			if !manualSession && (!creating || isStaleCreating(b)) && !desiredHasTemplate(desired, template) && !pendingCreate && !scaleCheckPartial {
 				continue
 			}
 		}
@@ -1334,7 +1331,7 @@ func discoverSessionBeadsWithRoots(
 			// inputs aligned across buildDesiredState paths. Named beads
 			// intentionally pass through with the base shape (see
 			// canonicalSessionIdentity).
-			resolveAgent, sessionQualifiedName = canonicalSessionIdentity(cfgAgent, b)
+			resolveAgent, sessionQualifiedName = canonicalSessionIdentityWithConfig(cfg, cfgAgent, b)
 		}
 		fpExtra := buildFingerprintExtra(resolveAgent)
 		tp, err := resolveTemplateForSessionBead(bp, resolveAgent, sessionQualifiedName, fpExtra, b)
@@ -1400,7 +1397,7 @@ func realizeDependencyFloors(
 			if agentInSuspendedRig(bp.cityPath, depAgent, cfg.Rigs, suspendedRigPaths) {
 				continue
 			}
-			ensureDependencyOnlyTemplate(bp, depAgent, desired, stderr)
+			ensureDependencyOnlyTemplate(bp, cfg, depAgent, desired, stderr)
 			visit(dep)
 		}
 	}
@@ -1411,6 +1408,7 @@ func realizeDependencyFloors(
 
 func ensureDependencyOnlyTemplate(
 	bp *agentBuildParams,
+	cfg *config.City,
 	cfgAgent *config.Agent,
 	desired map[string]TemplateParams,
 	stderr io.Writer,
@@ -1458,7 +1456,7 @@ func ensureDependencyOnlyTemplate(
 	// Otherwise GC_ALIAS would be the base "rig/dog" here and "rig/dog-1"
 	// on the realize path, oscillating across ticks and triggering the
 	// reconciler's config-drift drain on the live dependency-floor session.
-	resolveAgent, resolveQN := canonicalSessionIdentity(cfgAgent, sessionBead)
+	resolveAgent, resolveQN := canonicalSessionIdentityWithConfig(cfg, cfgAgent, sessionBead)
 	// Dep-floor slot-1 fallback. The guard triggers when the helper returned
 	// the BASE form — meaning no pool_slot was stamped yet. Keying off
 	// resolveQN (a stable value) rather than pointer identity keeps the
@@ -1609,6 +1607,10 @@ func resolveTemplateForSessionBead(
 //   - Instance-expanding agent without a slot stamp → (cfgAgent,
 //     cfgAgent.QualifiedName()); realize will claim and stamp later.
 func canonicalSessionIdentity(cfgAgent *config.Agent, bead beads.Bead) (*config.Agent, string) {
+	return canonicalSessionIdentityWithConfig(nil, cfgAgent, bead)
+}
+
+func canonicalSessionIdentityWithConfig(cfg *config.City, cfgAgent *config.Agent, bead beads.Bead) (*config.Agent, string) {
 	if cfgAgent == nil {
 		return nil, ""
 	}
@@ -1618,7 +1620,7 @@ func canonicalSessionIdentity(cfgAgent *config.Agent, bead beads.Bead) (*config.
 	if !cfgAgent.SupportsInstanceExpansion() {
 		return cfgAgent, cfgAgent.QualifiedName()
 	}
-	slot := existingPoolSlot(cfgAgent, bead)
+	slot := existingPoolSlotWithConfig(cfg, cfgAgent, bead)
 	if slot <= 0 {
 		return cfgAgent, cfgAgent.QualifiedName()
 	}
@@ -1717,23 +1719,139 @@ func existingPoolSlot(cfgAgent *config.Agent, sessionBead beads.Bead) int {
 			return slot
 		}
 	}
-	agentName := strings.TrimSpace(sessionBeadAgentName(sessionBead))
-	if agentName == "" || cfgAgent == nil {
+	if cfgAgent == nil {
 		return 0
 	}
-	if slot := resolvePoolSlot(agentName, cfgAgent.QualifiedName()); slot > 0 {
+	if slot := resolvePersistedPoolIdentitySlot(cfgAgent, true, sessionBeadAgentName(sessionBead), sessionBead.Metadata["alias"]); slot > 0 {
 		return slot
 	}
-	if slot := resolvePoolSlot(agentName, cfgAgent.Name); slot > 0 {
-		return slot
+	if strings.TrimSpace(sessionBead.Metadata["alias"]) == "" && !beadOwnsPoolSessionName(sessionBead) {
+		if slot := resolvePersistedPoolIdentitySlot(cfgAgent, true, sessionBead.Metadata["session_name"]); slot > 0 {
+			return slot
+		}
 	}
-	for idx, themed := range cfgAgent.NamepoolNames {
-		if strings.TrimSpace(themed) == agentName {
-			return idx + 1
+	return 0
+}
+
+func resolvePersistedPoolIdentitySlot(cfgAgent *config.Agent, allowLocalIdentity bool, candidates ...string) int {
+	if cfgAgent == nil {
+		return 0
+	}
+	for _, name := range candidates {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
 		}
-		if cfgAgent.Dir != "" && strings.TrimSpace(cfgAgent.QualifiedInstanceName(themed)) == agentName {
-			return idx + 1
+		if slot := resolvePoolSlot(name, cfgAgent.QualifiedName()); slot > 0 {
+			return slot
 		}
+		if cfgAgent.BindingName != "" {
+			if slot := resolvePoolSlot(name, cfgAgent.BindingQualifiedName()); slot > 0 {
+				return slot
+			}
+		}
+		if cfgAgent.BindingName == "" && allowLocalIdentity {
+			if slot := resolvePoolSlot(name, cfgAgent.Name); slot > 0 {
+				return slot
+			}
+		}
+		for idx, themed := range cfgAgent.NamepoolNames {
+			themed = strings.TrimSpace(themed)
+			if themed == "" {
+				continue
+			}
+			if themed == name {
+				return idx + 1
+			}
+			if strings.TrimSpace(cfgAgent.QualifiedInstanceName(themed)) == name {
+				return idx + 1
+			}
+		}
+	}
+	return 0
+}
+
+func poolSlotHasConfiguredBound(cfgAgent *config.Agent) bool {
+	if cfgAgent == nil {
+		return false
+	}
+	if len(cfgAgent.NamepoolNames) > 0 {
+		return true
+	}
+	if maxSessions := cfgAgent.EffectiveMaxActiveSessions(); maxSessions != nil {
+		return true
+	}
+	return false
+}
+
+func inBoundsPoolSlot(cfgAgent *config.Agent, slot int) bool {
+	if cfgAgent == nil || slot <= 0 || !poolSlotHasConfiguredBound(cfgAgent) {
+		return false
+	}
+	if len(cfgAgent.NamepoolNames) > 0 && slot > len(cfgAgent.NamepoolNames) {
+		return false
+	}
+	if maxSessions := cfgAgent.EffectiveMaxActiveSessions(); maxSessions != nil && *maxSessions > 0 && slot > *maxSessions {
+		return false
+	}
+	return true
+}
+
+func existingPoolSlotWithConfig(cfg *config.City, cfgAgent *config.Agent, sessionBead beads.Bead) int {
+	if cfgAgent == nil {
+		return 0
+	}
+	storedTemplateMatches := cfg == nil || storedTemplateMatchesPoolTemplate(sessionBeadStoredTemplate(sessionBead), cfgAgent.QualifiedName(), cfg)
+	agentSlot := resolvePersistedPoolIdentitySlot(cfgAgent, storedTemplateMatches, sessionBeadAgentName(sessionBead))
+	aliasSlot := resolvePersistedPoolIdentitySlot(cfgAgent, storedTemplateMatches, sessionBead.Metadata["alias"])
+	sessionNameSlot := 0
+	if storedTemplateMatches && strings.TrimSpace(sessionBead.Metadata["alias"]) == "" && !beadOwnsPoolSessionName(sessionBead) {
+		sessionNameSlot = resolvePersistedPoolIdentitySlot(cfgAgent, true, sessionBead.Metadata["session_name"])
+	}
+	if sessionBead.Metadata["pool_slot"] != "" {
+		if slot, err := strconv.Atoi(strings.TrimSpace(sessionBead.Metadata["pool_slot"])); err == nil && slot > 0 {
+			if agentSlot > 0 && agentSlot == aliasSlot && agentSlot != slot {
+				return agentSlot
+			}
+			if !storedTemplateMatches && agentSlot == 0 && aliasSlot == 0 {
+				return 0
+			}
+			if !inBoundsPoolSlot(cfgAgent, slot) {
+				if agentSlot > 0 {
+					return agentSlot
+				}
+				if aliasSlot > 0 {
+					return aliasSlot
+				}
+				if sessionNameSlot > 0 {
+					return sessionNameSlot
+				}
+				if poolSlotHasConfiguredBound(cfgAgent) {
+					return 0
+				}
+			}
+			return slot
+		}
+	}
+	if poolSlotHasConfiguredBound(cfgAgent) {
+		if agentSlot > 0 && !inBoundsPoolSlot(cfgAgent, agentSlot) {
+			agentSlot = 0
+		}
+		if aliasSlot > 0 && !inBoundsPoolSlot(cfgAgent, aliasSlot) {
+			aliasSlot = 0
+		}
+		if sessionNameSlot > 0 && !inBoundsPoolSlot(cfgAgent, sessionNameSlot) {
+			sessionNameSlot = 0
+		}
+	}
+	if agentSlot > 0 {
+		return agentSlot
+	}
+	if aliasSlot > 0 {
+		return aliasSlot
+	}
+	if sessionNameSlot > 0 {
+		return sessionNameSlot
 	}
 	return 0
 }
