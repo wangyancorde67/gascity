@@ -3721,6 +3721,233 @@ on_exhausted = "hard_fail"
 	}
 }
 
+func TestProcessFanoutUsesResolvedSourceStepRefForIterationScopedFragments(t *testing.T) {
+	t.Parallel()
+	formulatest.EnableV2ForTest(t)
+
+	dir := t.TempDir()
+	expansion := `
+formula = "expansion-review"
+type = "expansion"
+version = 2
+contract = "graph.v2"
+
+[vars.reviewer]
+required = true
+
+[vars.scope_ref]
+default = "body"
+
+[[template]]
+id = "{target}.review"
+title = "Review {reviewer}"
+metadata = { "gc.scope_ref" = "{scope_ref}" }
+`
+	if err := os.WriteFile(filepath.Join(dir, "expansion-review.toml"), []byte(expansion), 0o644); err != nil {
+		t.Fatalf("write expansion formula: %v", err)
+	}
+
+	store := beads.NewMemStore()
+	workflow := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+		},
+	})
+	source := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title:  "prepare items",
+		Type:   "task",
+		Status: "closed",
+		Metadata: map[string]string{
+			"gc.root_bead_id": workflow.ID,
+			"gc.step_ref":     "mol.review-loop.iteration.2.design-review.prepare-review-items",
+			"gc.outcome":      "pass",
+			"gc.output_json":  `{"items":[{"name":"claude"}]}`,
+		},
+	})
+	fanout := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "Expand fanout for prepare items",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "fanout",
+			"gc.root_bead_id": workflow.ID,
+			"gc.scope_ref":    "mol.review-loop.iteration.2",
+			"gc.control_for":  "design-review.prepare-review-items",
+			"gc.for_each":     "output.items",
+			"gc.bond":         "expansion-review",
+			"gc.bond_vars":    `{"reviewer":"{item.name}","scope_ref":"body"}`,
+			"gc.fanout_mode":  "parallel",
+		},
+	})
+	mustDepAdd(t, store, fanout.ID, source.ID, "blocks")
+
+	result, err := ProcessControl(store, fanout, ProcessOptions{FormulaSearchPaths: []string{dir}})
+	if err != nil {
+		t.Fatalf("ProcessControl(fanout spawn): %v", err)
+	}
+	if !result.Processed || result.Action != "fanout-spawn" {
+		t.Fatalf("spawn result = %+v, want processed fanout-spawn", result)
+	}
+
+	child := findAttemptByRef(t, store, workflow.ID, "expansion-review.mol.review-loop.iteration.2.design-review.prepare-review-items.item.1.review")
+	if child.ID == "" {
+		t.Fatal("missing iteration-qualified fanout child")
+	}
+	if got := child.Metadata["gc.scope_ref"]; got != "mol.review-loop.iteration.2" {
+		t.Fatalf("child gc.scope_ref = %q, want live fanout scope", got)
+	}
+	if stale := findAttemptByRef(t, store, workflow.ID, "expansion-review.design-review.prepare-review-items.item.1.review"); stale.ID != "" {
+		t.Fatalf("spawned stale logical child ref %q; want iteration-qualified source step ref", stale.Metadata["gc.step_ref"])
+	}
+}
+
+func TestProcessFanoutDoesNotReusePriorIterationFragments(t *testing.T) {
+	t.Parallel()
+	formulatest.EnableV2ForTest(t)
+
+	dir := t.TempDir()
+	expansion := `
+formula = "expansion-review"
+type = "expansion"
+version = 2
+contract = "graph.v2"
+
+[vars.reviewer]
+required = true
+
+[[template]]
+id = "{target}.review"
+title = "Review {reviewer}"
+`
+	if err := os.WriteFile(filepath.Join(dir, "expansion-review.toml"), []byte(expansion), 0o644); err != nil {
+		t.Fatalf("write expansion formula: %v", err)
+	}
+
+	store := beads.NewMemStore()
+	workflow := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+		},
+	})
+	_ = mustCreateWorkflowBead(t, store, beads.Bead{
+		Title:  "old review",
+		Type:   "task",
+		Status: "closed",
+		Metadata: map[string]string{
+			"gc.root_bead_id": workflow.ID,
+			"gc.step_ref":     "expansion-review.design-review.prepare-review-items.item.1.review",
+			"gc.outcome":      "pass",
+		},
+	})
+	source := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title:  "prepare items",
+		Type:   "task",
+		Status: "closed",
+		Metadata: map[string]string{
+			"gc.root_bead_id": workflow.ID,
+			"gc.step_ref":     "mol.review-loop.iteration.3.design-review.prepare-review-items",
+			"gc.outcome":      "pass",
+			"gc.output_json":  `{"items":[{"name":"claude"}]}`,
+		},
+	})
+	fanout := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "Expand fanout for prepare items",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "fanout",
+			"gc.root_bead_id": workflow.ID,
+			"gc.scope_ref":    "mol.review-loop.iteration.3",
+			"gc.control_for":  "design-review.prepare-review-items",
+			"gc.for_each":     "output.items",
+			"gc.bond":         "expansion-review",
+			"gc.bond_vars":    `{"reviewer":"{item.name}"}`,
+			"gc.fanout_mode":  "parallel",
+		},
+	})
+	mustDepAdd(t, store, fanout.ID, source.ID, "blocks")
+
+	result, err := ProcessControl(store, fanout, ProcessOptions{FormulaSearchPaths: []string{dir}})
+	if err != nil {
+		t.Fatalf("ProcessControl(fanout spawn): %v", err)
+	}
+	if result.Created == 0 {
+		t.Fatalf("fanout reused a prior-iteration fragment; created=%d", result.Created)
+	}
+	if child := findAttemptByRef(t, store, workflow.ID, "expansion-review.mol.review-loop.iteration.3.design-review.prepare-review-items.item.1.review"); child.ID == "" {
+		t.Fatal("missing new iteration-qualified review child")
+	}
+}
+
+func TestProcessFanoutUsesControlForWhenSourceStepRefIsLogical(t *testing.T) {
+	t.Parallel()
+	formulatest.EnableV2ForTest(t)
+
+	dir := t.TempDir()
+	expansion := `
+formula = "expansion-review"
+type = "expansion"
+version = 2
+contract = "graph.v2"
+
+[vars.reviewer]
+required = true
+
+[[template]]
+id = "{target}.review"
+title = "Review {reviewer}"
+`
+	if err := os.WriteFile(filepath.Join(dir, "expansion-review.toml"), []byte(expansion), 0o644); err != nil {
+		t.Fatalf("write expansion formula: %v", err)
+	}
+
+	store := beads.NewMemStore()
+	workflow := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+		},
+	})
+	source := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title:  "prepare items",
+		Type:   "task",
+		Status: "closed",
+		Metadata: map[string]string{
+			"gc.root_bead_id": workflow.ID,
+			"gc.step_ref":     "design-review.prepare-review-items",
+			"gc.outcome":      "pass",
+			"gc.output_json":  `{"items":[{"name":"claude"}]}`,
+		},
+	})
+	fanout := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "Expand fanout for prepare items",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "fanout",
+			"gc.root_bead_id": workflow.ID,
+			"gc.control_for":  "design-review.prepare-review-items",
+			"gc.for_each":     "output.items",
+			"gc.bond":         "expansion-review",
+			"gc.bond_vars":    `{"reviewer":"{item.name}"}`,
+			"gc.fanout_mode":  "parallel",
+		},
+	})
+	mustDepAdd(t, store, fanout.ID, source.ID, "blocks")
+
+	if _, err := ProcessControl(store, fanout, ProcessOptions{FormulaSearchPaths: []string{dir}}); err != nil {
+		t.Fatalf("ProcessControl(fanout spawn): %v", err)
+	}
+	if child := findAttemptByRef(t, store, workflow.ID, "expansion-review.design-review.prepare-review-items.item.1.review"); child.ID == "" {
+		t.Fatal("missing logical source child")
+	}
+}
+
 func TestProcessFanoutRecreatesExistingFragmentWithStaleRouteMetadata(t *testing.T) {
 	formulatest.EnableV2ForTest(t)
 

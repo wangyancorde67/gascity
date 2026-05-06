@@ -120,13 +120,18 @@ func processFanout(store beads.Store, bead beads.Bead, opts ProcessOptions) (Con
 	var previousSinkIDs []string
 	totalCreated := 0
 	for index, item := range items {
-		targetRef := sourceRef + ".item." + strconv.Itoa(index+1)
+		targetRef := fanoutTargetRef(source, sourceRef, index)
 		target := &formula.Step{
 			ID:          targetRef,
 			Title:       source.Title,
 			Description: source.Description,
 		}
 		itemVars := materializeFanoutVars(bondVars, item, index)
+		if _, ok := itemVars["scope_ref"]; ok {
+			if scopeRef := strings.TrimSpace(bead.Metadata["gc.scope_ref"]); scopeRef != "" {
+				itemVars["scope_ref"] = scopeRef
+			}
+		}
 		fragment, err := formula.CompileExpansionFragment(context.Background(), bead.Metadata["gc.bond"], opts.FormulaSearchPaths, target, itemVars)
 		if err != nil {
 			return ControlResult{}, fmt.Errorf("%s: compiling fragment %d: %w", bead.ID, index+1, err)
@@ -177,6 +182,14 @@ func processFanout(store beads.Store, bead beads.Bead, opts ProcessOptions) (Con
 		return ControlResult{}, fmt.Errorf("%s: recording fanout state: %w", bead.ID, err)
 	}
 	return ControlResult{Processed: true, Action: "fanout-spawn", Created: totalCreated}, nil
+}
+
+func fanoutTargetRef(source beads.Bead, sourceRef string, index int) string {
+	base := strings.TrimSpace(source.Metadata["gc.step_ref"])
+	if base == "" {
+		base = sourceRef
+	}
+	return base + ".item." + strconv.Itoa(index+1)
 }
 
 func routeFanoutFragmentSteps(fragment *formula.FragmentRecipe, control beads.Bead, opts ProcessOptions, store beads.Store) {
