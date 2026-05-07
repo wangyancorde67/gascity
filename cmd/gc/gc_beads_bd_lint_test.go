@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"testing"
 )
+
+var bdConfigSetPattern = regexp.MustCompile(`bd[a-zA-Z_]*[[:space:]]+.*config[[:space:]]+set`)
 
 // TestGcBeadsBdNoBdConfigSet enforces the perf-fix from ga-5mym: the
 // gc-beads-bd init script must never invoke `bd config set` (directly or
@@ -28,28 +31,8 @@ func TestGcBeadsBdNoBdConfigSet(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }() //nolint:errcheck // test cleanup
 
-	// Match `bd <args> config set` and `run_bd_<wrapper> <args> config set`.
-	// The script invokes bd both directly and through helpers like
-	// run_bd_pinned, which always end up calling `bd config set` — both
-	// shapes hit the slow auto-migrate path.
-	pattern := regexp.MustCompile(`bd[a-zA-Z_]*[[:space:]]+.*config[[:space:]]+set`)
-	commentLine := regexp.MustCompile(`^[[:space:]]*#`)
-
-	var offenders []string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
-		if commentLine.MatchString(line) {
-			continue
-		}
-		if pattern.MatchString(line) {
-			offenders = append(offenders, formatOffender(scriptPath, lineNum, line))
-		}
-	}
-	if err := scanner.Err(); err != nil {
+	offenders, err := bdConfigSetOffenders(scriptPath, f)
+	if err != nil {
 		t.Fatalf("scan script: %v", err)
 	}
 	if len(offenders) > 0 {
@@ -57,6 +40,131 @@ func TestGcBeadsBdNoBdConfigSet(t *testing.T) {
 			"See ga-5mym; use ensure_bd_runtime_config_value (direct SQL) instead.\n"+
 			"Offending lines:\n  %s", strings.Join(offenders, "\n  "))
 	}
+}
+
+func TestGcBeadsBdConfigSetLintCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		script  string
+		wantHit bool
+	}{
+		{
+			name:    "direct bd config set",
+			script:  `bd config set issue_prefix "$prefix"`,
+			wantHit: true,
+		},
+		{
+			name:    "wrapper bd config set",
+			script:  `run_bd_pinned "$dir" config set issue_prefix "$prefix"`,
+			wantHit: true,
+		},
+		{
+			name: "wrapper continuation bd config set",
+			script: "run_bd_pinned \"$dir\" config \\\n" +
+				"  set issue_prefix \"$prefix\"",
+			wantHit: true,
+		},
+		{
+			name: "direct continuation bd config set",
+			script: "bd \\\n" +
+				"  config set issue_prefix \"$prefix\"",
+			wantHit: true,
+		},
+		{
+			name:    "bd config get is safe",
+			script:  `bd config get issue_prefix`,
+			wantHit: false,
+		},
+		{
+			name:    "runtime config helper is safe",
+			script:  `ensure_bd_runtime_config_value "$db" "issue_prefix" "$prefix"`,
+			wantHit: false,
+		},
+		{
+			name:    "full line comment is safe",
+			script:  `# bd config set issue_prefix "$prefix"`,
+			wantHit: false,
+		},
+		{
+			name:    "inline comment is safe",
+			script:  `ensure_bd_runtime_config_value "$db" "issue_prefix" "$prefix" # replaces bd config set`,
+			wantHit: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			offenders, err := bdConfigSetOffenders("test-script.sh", strings.NewReader(tt.script))
+			if err != nil {
+				t.Fatalf("scan script: %v", err)
+			}
+			gotHit := len(offenders) > 0
+			if gotHit != tt.wantHit {
+				t.Fatalf("bdConfigSetOffenders hit = %v, want %v; offenders: %v", gotHit, tt.wantHit, offenders)
+			}
+		})
+	}
+}
+
+func bdConfigSetOffenders(path string, r io.Reader) ([]string, error) {
+	var offenders []string
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	lineNum := 0
+	continued := ""
+	continuedLine := 0
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimRight(stripShellComment(scanner.Text()), " \t")
+		if line == "" && continued == "" {
+			continue
+		}
+		if strings.HasSuffix(line, `\`) {
+			if continued == "" {
+				continuedLine = lineNum
+			}
+			continued = joinContinuedShellLine(continued, strings.TrimSuffix(line, `\`))
+			continue
+		}
+
+		lineToCheck := line
+		offenderLine := lineNum
+		if continued != "" {
+			lineToCheck = joinContinuedShellLine(continued, line)
+			offenderLine = continuedLine
+			continued = ""
+			continuedLine = 0
+		}
+		if bdConfigSetPattern.MatchString(lineToCheck) {
+			offenders = append(offenders, formatOffender(path, offenderLine, lineToCheck))
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if continued != "" && bdConfigSetPattern.MatchString(continued) {
+		offenders = append(offenders, formatOffender(path, continuedLine, continued))
+	}
+	return offenders, nil
+}
+
+func stripShellComment(line string) string {
+	if i := strings.Index(line, "#"); i >= 0 {
+		return line[:i]
+	}
+	return line
+}
+
+func joinContinuedShellLine(prefix, line string) string {
+	prefix = strings.TrimSpace(prefix)
+	line = strings.TrimSpace(line)
+	if prefix == "" {
+		return line
+	}
+	if line == "" {
+		return prefix
+	}
+	return prefix + " " + line
 }
 
 func formatOffender(path string, line int, content string) string {
