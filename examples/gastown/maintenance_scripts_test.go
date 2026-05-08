@@ -2007,6 +2007,13 @@ exit 0
 
 func TestReaperScopesIssueAutoCloseToCityBeadsDir(t *testing.T) {
 	cityDir := t.TempDir()
+	// reaper.sh canonicalizes its CITY arg via `pwd -P`, so on macOS
+	// (where t.TempDir is under /var/folders -> /private/var/folders)
+	// the logged $PWD will be the resolved form. Resolve here so the
+	// assertions below compare apples to apples on every OS.
+	if resolved, err := filepath.EvalSymlinks(cityDir); err == nil {
+		cityDir = resolved
+	}
 	writeCityBeadsMetadata(t, cityDir, "citydb")
 	canonicalCityDir, err := filepath.EvalSymlinks(cityDir)
 	if err != nil {
