@@ -182,3 +182,44 @@ func TestReopenLockWindow_TickCriticalTimeout(t *testing.T) {
 		t.Fatalf("stderr missing reopen failure log: %q", stderr.String())
 	}
 }
+
+// TestCloseBead_TickCriticalStoreReceivesWrites verifies the low-level
+// close helper writes its metadata patch and Close operation through the
+// supplied tick-critical store. Ownership checks remain outside closeBead.
+//
+// Architecture: ga-f4m2.1.
+func TestCloseBead_TickCriticalStoreReceivesWrites(t *testing.T) {
+	store := beads.NewMemStore()
+	sessionBead, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name": "worker-1",
+			"state":        "active",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session bead: %v", err)
+	}
+
+	tickStore := &trackingStore{Store: store}
+	var stderr bytes.Buffer
+	now := time.Date(2026, 5, 1, 9, 45, 0, 0, time.UTC)
+	if !closeBead(store, tickStore, sessionBead.ID, "stale-session", now, &stderr) {
+		t.Fatalf("closeBead returned false: %s", stderr.String())
+	}
+	if len(tickStore.setMetadataBatchKeys) != 1 || tickStore.setMetadataBatchKeys[0] != sessionBead.ID {
+		t.Fatalf("tickStore.setMetadataBatchKeys = %v, want [%s]", tickStore.setMetadataBatchKeys, sessionBead.ID)
+	}
+	if len(tickStore.closes) != 1 || tickStore.closes[0] != sessionBead.ID {
+		t.Fatalf("tickStore.closes = %v, want [%s]", tickStore.closes, sessionBead.ID)
+	}
+	got, err := store.Get(sessionBead.ID)
+	if err != nil {
+		t.Fatalf("get session bead: %v", err)
+	}
+	if got.Status != "closed" {
+		t.Fatalf("status = %q, want closed", got.Status)
+	}
+}

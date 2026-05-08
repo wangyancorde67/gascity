@@ -105,8 +105,9 @@ func materializeSessionForTemplateWithOptions(
 			// identity and reopen it rather than creating a new one.
 			// This preserves the bead ID so existing references (slings,
 			// convoys, messages) continue to work. Supersedes PR #204.
+			tickStore := tickCriticalStoreForCity(cityPath, cityPath, store, cfg)
 			if bead, ok := reopenClosedConfiguredNamedSessionBead(
-				cityPath, store, cfg, cityName, spec.Identity, spec.SessionName, "stopped", time.Now().UTC(), opts.materializeMetadata, stderr,
+				cityPath, store, tickStore, cfg, cityName, spec.Identity, spec.SessionName, "stopped", time.Now().UTC(), opts.materializeMetadata, stderr,
 			); ok {
 				if sn := strings.TrimSpace(bead.Metadata["session_name"]); sn != "" {
 					snapshot.add(bead)

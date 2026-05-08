@@ -23,6 +23,7 @@ import (
 // re-verified.
 func closeSessionBeadIfUnassigned(
 	store beads.Store,
+	tickStore beads.Store,
 	rigStores map[string]beads.Store,
 	session beads.Bead,
 	reason string,
@@ -40,7 +41,7 @@ func closeSessionBeadIfUnassigned(
 	if hasAssignedWork {
 		return false
 	}
-	return closeBead(store, session.ID, reason, now, stderr)
+	return closeBead(store, tickStore, session.ID, reason, now, stderr)
 }
 
 // closeSessionBeadIfReachableStoreUnassigned closes a session bead only when
@@ -51,6 +52,7 @@ func closeSessionBeadIfReachableStoreUnassigned(
 	cityPath string,
 	cfg *config.City,
 	store beads.Store,
+	tickStore beads.Store,
 	rigStores map[string]beads.Store,
 	session beads.Bead,
 	reason string,
@@ -68,5 +70,5 @@ func closeSessionBeadIfReachableStoreUnassigned(
 	if hasAssignedWork {
 		return false
 	}
-	return closeBead(store, session.ID, reason, now, stderr)
+	return closeBead(store, tickStore, session.ID, reason, now, stderr)
 }

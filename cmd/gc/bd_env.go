@@ -39,6 +39,81 @@ func bdStoreForCity(dir, cityPath string) *beads.BdStore {
 	return beads.NewBdStoreWithPrefix(dir, bdCommandRunnerForCity(cityPath), issuePrefixForScope(dir, cityPath, cfg))
 }
 
+// bdStoreForCityTickCritical returns a city-scoped bead store whose
+// subprocess invocations use the tick-critical timeout from the city's
+// BackendConfig (default 30s) and the bounded-retry policy from
+// BackendConfig.ManagedRetryBounded (default off). Use this for write
+// paths inside session-identifier lock windows where a single stalled
+// bd subprocess holds the lock for the entire timeout — namely the
+// reopen-status + setMetaBatch sequence in
+// reopenClosedConfiguredNamedSessionBead and the bead.Close write in
+// closeBead. Reads stay on bdStoreForCity.
+//
+// Architecture: ga-f4m2.1.
+func bdStoreForCityTickCritical(dir, cityPath string, cfg *config.City) beads.Store {
+	timeout := 30 * time.Second
+	bounded := false
+	if cfg != nil {
+		timeout = cfg.Backend.TickSubprocessTimeoutDuration()
+		bounded = cfg.Backend.ManagedRetryBounded
+	}
+	runner := bdCommandRunnerWithManagedRetryOpts(cityPath, func(dir string) map[string]string {
+		env := bdRuntimeEnv(cityPath)
+		env["BEADS_DIR"] = filepath.Join(dir, ".beads")
+		return env
+	}, timeout, bounded)
+	return beads.NewBdStoreWithPrefix(dir, runner, issuePrefixForScope(dir, cityPath, cfg))
+}
+
+func bdStoreForRigTickCritical(rigDir, cityPath string, cfg *config.City, knownPrefix ...string) beads.Store {
+	timeout := 30 * time.Second
+	bounded := false
+	if cfg != nil {
+		timeout = cfg.Backend.TickSubprocessTimeoutDuration()
+		bounded = cfg.Backend.ManagedRetryBounded
+	}
+	prefix := issuePrefixForScope(rigDir, cityPath, cfg)
+	if prefix == "" {
+		for _, candidate := range knownPrefix {
+			if strings.TrimSpace(candidate) != "" {
+				prefix = candidate
+				break
+			}
+		}
+	}
+	runner := bdCommandRunnerWithManagedRetryOpts(cityPath, func(_ string) map[string]string {
+		return bdRuntimeEnvForRig(cityPath, cfg, rigDir)
+	}, timeout, bounded)
+	return beads.NewBdStoreWithPrefix(rigDir, runner, prefix)
+}
+
+func tickCriticalStoreForCity(dir, cityPath string, store beads.Store, cfg *config.City) beads.Store {
+	if cityStoreUsesBd(store) {
+		return bdStoreForCityTickCriticalFn(dir, cityPath, cfg)
+	}
+	return store
+}
+
+func cityStoreUsesBd(store beads.Store) bool {
+	switch s := store.(type) {
+	case *beads.BdStore:
+		return true
+	case *beads.CachingStore:
+		return cityStoreUsesBd(s.Backing())
+	default:
+		return false
+	}
+}
+
+// bdStoreForCityTickCriticalFn is the test seam for tick-critical store
+// construction. Production paths call it to obtain the city-scoped
+// tick-critical store. Tests that exercise reopen via
+// resolveSessionIDMaterializingNamed (or sibling entry points) can
+// override this to return the same in-memory store used for reads, so
+// the reopen writes land in the test fixture's backing data rather
+// than a real Dolt-backed BdStore. Architecture: ga-f4m2.1.
+var bdStoreForCityTickCriticalFn = bdStoreForCityTickCritical
+
 // bdStoreForRig opens a bead store at rigDir using rig-level Dolt config
 // when available, falling back to city-level config. Use this when the rig
 // may have its own Dolt server (e.g., shared from another city).

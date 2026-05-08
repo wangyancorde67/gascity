@@ -1052,7 +1052,7 @@ func TestReopenClosedConfiguredNamedSessionBeadClearsPendingCreateStartedAtWhenA
 
 	var stderr bytes.Buffer
 	reopened, ok := reopenClosedConfiguredNamedSessionBead(
-		cityPath, store, cfg, "test-city", "refinery", sessionName, "active", now, nil, &stderr,
+		cityPath, store, store, cfg, "test-city", "refinery", sessionName, "active", now, nil, &stderr,
 	)
 	if !ok {
 		t.Fatalf("reopenClosedConfiguredNamedSessionBead failed: %s", stderr.String())
@@ -1664,7 +1664,7 @@ func TestCloseSessionBeadIfRuntimeStoppedAndUnassigned_RechecksAssignedWorkAfter
 
 	var stderr bytes.Buffer
 	closed := closeSessionBeadIfRuntimeStoppedAndUnassigned(
-		store, nil, sp, nil, b, "suspended", "suspended session", now, &stderr,
+		store, store, nil, sp, nil, b, "suspended", "suspended session", now, &stderr,
 	)
 
 	if closed {
@@ -1707,7 +1707,7 @@ func TestCloseSessionBeadIfRuntimeStoppedAndUnassigned_StopLeavesRunningKeepsBea
 
 	var stderr bytes.Buffer
 	closed := closeSessionBeadIfRuntimeStoppedAndUnassigned(
-		store, nil, sp, nil, b, "orphaned", "orphaned session", now, &stderr,
+		store, store, nil, sp, nil, b, "orphaned", "orphaned session", now, &stderr,
 	)
 
 	if closed {
@@ -2552,7 +2552,7 @@ func TestCloseBeadPreservesPendingCreateClaimWhenCloseFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if closeBead(store, b.ID, "failed-create", now, ioDiscard{}) {
+	if closeBead(store, store, b.ID, "failed-create", now, ioDiscard{}) {
 		t.Fatal("closeBead returned true, want false when Close fails")
 	}
 	got, err := store.Get(b.ID)
@@ -4772,7 +4772,7 @@ func TestReapStaleSessionBeads(t *testing.T) {
 			}
 
 			var stderr bytes.Buffer
-			got := reapStaleSessionBeads(store, sp, dt, clk, &stderr)
+			got := reapStaleSessionBeads(store, store, sp, dt, clk, &stderr)
 			if got != tt.wantReaped {
 				t.Errorf("reapStaleSessionBeads() = %d, want %d\nstderr: %s", got, tt.wantReaped, stderr.String())
 			}
@@ -4825,7 +4825,7 @@ func TestReapStaleSessionBeads_HonorsRecentWakeGrace(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	got := reapStaleSessionBeads(store, sp, nil, &clock.Fake{Time: now}, &stderr)
+	got := reapStaleSessionBeads(store, store, sp, nil, &clock.Fake{Time: now}, &stderr)
 	if got != 0 {
 		t.Fatalf("reapStaleSessionBeads() = %d, want 0\nstderr: %s", got, stderr.String())
 	}
@@ -4842,13 +4842,13 @@ func TestReapStaleSessionBeads_NilStoreAndProvider(t *testing.T) {
 	clk := &clock.Fake{Time: time.Now()}
 	var stderr bytes.Buffer
 
-	if got := reapStaleSessionBeads(nil, nil, nil, clk, &stderr); got != 0 {
+	if got := reapStaleSessionBeads(nil, nil, nil, nil, clk, &stderr); got != 0 {
 		t.Errorf("nil store+provider: got %d, want 0", got)
 	}
-	if got := reapStaleSessionBeads(beads.NewMemStore(), nil, nil, clk, &stderr); got != 0 {
+	if got := reapStaleSessionBeads(beads.NewMemStore(), nil, nil, nil, clk, &stderr); got != 0 {
 		t.Errorf("nil provider: got %d, want 0", got)
 	}
-	if got := reapStaleSessionBeads(nil, runtime.NewFake(), nil, clk, &stderr); got != 0 {
+	if got := reapStaleSessionBeads(nil, nil, runtime.NewFake(), nil, clk, &stderr); got != 0 {
 		t.Errorf("nil store: got %d, want 0", got)
 	}
 }
@@ -5188,7 +5188,7 @@ func TestCloseBeadDoesNotDuplicateOwnershipGuard(t *testing.T) {
 
 	var stderr bytes.Buffer
 	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
-	if !closeBead(store, sessionBead.ID, "stale-session", now, &stderr) {
+	if !closeBead(store, store, sessionBead.ID, "stale-session", now, &stderr) {
 		t.Fatalf("closeBead returned false; want true because ownership gating belongs to closeSessionBeadIfUnassigned: stderr=%s", stderr.String())
 	}
 	got, err := store.Get(sessionBead.ID)
@@ -5227,7 +5227,7 @@ func TestCloseSessionBeadIfUnassignedRefusesWhenRigStoreWorkAssignedBySessionNam
 
 	var stderr bytes.Buffer
 	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
-	if closeSessionBeadIfUnassigned(store, map[string]beads.Store{"demo": rigStore}, sessionBead, "stale-session", now, &stderr) {
+	if closeSessionBeadIfUnassigned(store, store, map[string]beads.Store{"demo": rigStore}, sessionBead, "stale-session", now, &stderr) {
 		t.Fatal("closeSessionBeadIfUnassigned returned true; want false because rig-store work is still assigned by session_name")
 	}
 	got, err := store.Get(sessionBead.ID)

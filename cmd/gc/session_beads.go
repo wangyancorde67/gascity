@@ -259,9 +259,23 @@ func preserveConfiguredNamedSessionBead(b beads.Bead, cfg *config.City, cityName
 	return true
 }
 
+// reopenClosedConfiguredNamedSessionBead reopens the canonical bead for
+// a configured named session that was previously closed, preserving the
+// bead ID for reference continuity (slings, convoys, messages).
+//
+// Reads (lookup, spec resolution, alias availability) go through store.
+// The two writes inside the session-identifier lock window — the status
+// reopen Update and the setMetaBatch — go through tickStore. Production
+// callers pass bdStoreForCityTickCritical(...) as tickStore so a stalled
+// bd subprocess cannot hold the identifier lock past the tick-critical
+// timeout. Tests may pass the same store as tickStore when timing isn't
+// being exercised. tickStore must be non-nil.
+//
+// Architecture: ga-f4m2.1.
 func reopenClosedConfiguredNamedSessionBead(
 	cityPath string,
 	store beads.Store,
+	tickStore beads.Store,
 	cfg *config.City,
 	cityName string,
 	identity string,
@@ -271,7 +285,7 @@ func reopenClosedConfiguredNamedSessionBead(
 	extraMeta map[string]string,
 	stderr io.Writer,
 ) (beads.Bead, bool) {
-	if store == nil || cfg == nil {
+	if store == nil || tickStore == nil || cfg == nil {
 		return beads.Bead{}, false
 	}
 	if stderr == nil {
@@ -309,7 +323,7 @@ func reopenClosedConfiguredNamedSessionBead(
 			return nil
 		}
 		open := "open"
-		if err := store.Update(bead.ID, beads.UpdateOpts{Status: &open}); err != nil {
+		if err := tickStore.Update(bead.ID, beads.UpdateOpts{Status: &open}); err != nil {
 			fmt.Fprintf(stderr, "session beads: reopening configured named session %q: %v\n", identity, err) //nolint:errcheck
 			return nil
 		}
@@ -338,7 +352,7 @@ func reopenClosedConfiguredNamedSessionBead(
 		for k, v := range extraMeta {
 			batch[k] = v
 		}
-		if setMetaBatch(store, bead.ID, batch, stderr) == nil {
+		if setMetaBatch(tickStore, bead.ID, batch, stderr) == nil {
 			if bead.Metadata == nil {
 				bead.Metadata = make(map[string]string, len(batch))
 			}
@@ -738,6 +752,7 @@ func syncSessionBeadsWithSnapshotAndRigStores(
 	if stderr == nil {
 		stderr = io.Discard
 	}
+	tickStore := tickCriticalStoreForCity(cityPath, cityPath, store, cfg)
 
 	existing, err := snapshotOrLoadSessionBeads(store, sessionBeads)
 	if err != nil {
@@ -800,7 +815,7 @@ func syncSessionBeadsWithSnapshotAndRigStores(
 		}
 		canonical, ok := bySessionName[sn]
 		if ok && canonical.ID != b.ID {
-			if closeSessionBeadIfUnassigned(store, rigStores, b, "duplicate", clk.Now().UTC(), stderr) {
+			if closeSessionBeadIfUnassigned(store, tickStore, rigStores, b, "duplicate", clk.Now().UTC(), stderr) {
 				openBeads[i].Status = "closed"
 			}
 		}
@@ -846,7 +861,7 @@ func syncSessionBeadsWithSnapshotAndRigStores(
 			if strings.TrimSpace(b.Metadata["session_name"]) == spec.SessionName {
 				continue
 			}
-			if !closeSessionBeadIfRuntimeStoppedAndUnassigned(store, rigStores, sp, cfg, b, "reconfigured", "reconfigured named session", now, stderr) {
+			if !closeSessionBeadIfRuntimeStoppedAndUnassigned(store, tickStore, rigStores, sp, cfg, b, "reconfigured", "reconfigured named session", now, stderr) {
 				blockedReconfiguredNamedIdentities[identity] = true
 				continue
 			}
@@ -899,7 +914,7 @@ func syncSessionBeadsWithSnapshotAndRigStores(
 					if strings.TrimSpace(open.Metadata["session_name"]) != sn {
 						continue
 					}
-					if closeSessionBeadIfUnassigned(store, rigStores, open, "duplicate", now, stderr) {
+					if closeSessionBeadIfUnassigned(store, tickStore, rigStores, open, "duplicate", now, stderr) {
 						openBeads[i].Status = "closed"
 					}
 				}
@@ -908,7 +923,7 @@ func syncSessionBeadsWithSnapshotAndRigStores(
 		}
 		state := syncSessionCachedState(sn, b, exists, sp)
 		if !exists && isConfiguredNamed {
-			if reopened, ok := reopenClosedConfiguredNamedSessionBead(cityPath, store, cfg, cityName, tp.ConfiguredNamedIdentity, sn, state, now, nil, stderr); ok {
+			if reopened, ok := reopenClosedConfiguredNamedSessionBead(cityPath, store, tickStore, cfg, cityName, tp.ConfiguredNamedIdentity, sn, state, now, nil, stderr); ok {
 				b = reopened
 				exists = true
 				state = syncSessionCachedState(sn, b, exists, sp)
@@ -1370,7 +1385,7 @@ func syncSessionBeadsWithSnapshotAndRigStores(
 				continue
 			}
 			if configuredNames[sn] {
-				if closeSessionBeadIfRuntimeStoppedAndUnassigned(store, rigStores, sp, cfg, b, "suspended", "suspended session", now, stderr) {
+				if closeSessionBeadIfRuntimeStoppedAndUnassigned(store, tickStore, rigStores, sp, cfg, b, "suspended", "suspended session", now, stderr) {
 					if idx, ok := indexBySessionName[sn]; ok {
 						openBeads[idx].Status = "closed"
 					}
@@ -1384,7 +1399,7 @@ func syncSessionBeadsWithSnapshotAndRigStores(
 						}
 					}
 				}
-				if closeSessionBeadIfRuntimeStoppedAndUnassigned(store, rigStores, sp, cfg, b, "orphaned", "orphaned session", now, stderr) {
+				if closeSessionBeadIfRuntimeStoppedAndUnassigned(store, tickStore, rigStores, sp, cfg, b, "orphaned", "orphaned session", now, stderr) {
 					if idx, ok := indexBySessionName[sn]; ok {
 						openBeads[idx].Status = "closed"
 					}
@@ -1599,6 +1614,7 @@ func closeFailedCreateBead(store beads.Store, id string, now time.Time, stderr i
 // Returns the number of beads reaped.
 func reapStaleSessionBeads(
 	store beads.Store,
+	tickStore beads.Store,
 	sp runtime.Provider,
 	dt *drainTracker,
 	clk clock.Clock,
@@ -1654,7 +1670,7 @@ func reapStaleSessionBeads(
 		if !ok || now.Sub(startedAt) < staleCreatingStateTimeout {
 			continue
 		}
-		if closeBead(store, b.ID, "stale-session", now.UTC(), stderr) {
+		if closeBead(store, tickStore, b.ID, "stale-session", now.UTC(), stderr) {
 			fmt.Fprintf(stderr, "WARN: reconciler: reaped stuck-creating session bead %s — tmux session %q not found\n", b.ID, sn) //nolint:errcheck
 			reaped++
 		}
@@ -1733,6 +1749,7 @@ func cleanupDeadRuntimeSessionCorpses(
 
 func closeSessionBeadIfRuntimeStoppedAndUnassigned(
 	store beads.Store,
+	tickStore beads.Store,
 	rigStores map[string]beads.Store,
 	sp runtime.Provider,
 	cfg *config.City,
@@ -1764,7 +1781,7 @@ func closeSessionBeadIfRuntimeStoppedAndUnassigned(
 	if hasAssignedWork {
 		return false
 	}
-	return closeBead(store, b.ID, closeReason, now, stderr)
+	return closeBead(store, tickStore, b.ID, closeReason, now, stderr)
 }
 
 func stopRuntimeBeforeSessionBeadMutation(
@@ -1821,12 +1838,17 @@ func staleReapStartBoundary(b beads.Bead) (time.Time, bool) {
 // full cross-store, multi-identifier assignment picture. closeBead remains
 // the low-level metadata+close helper used once a caller has already decided
 // the bead is safe to retire (or the close reason is unrelated to work
-// ownership, such as failed-create cleanup).
-func closeBead(store beads.Store, id, reason string, now time.Time, stderr io.Writer) bool {
-	if setMetaBatch(store, id, session.ClosePatch(now, reason), stderr) != nil {
+// ownership, such as failed-create cleanup). tickStore carries the writes so
+// controller tick paths can use the shorter bd subprocess timeout while reads
+// and ownership checks stay on store.
+func closeBead(store, tickStore beads.Store, id, reason string, now time.Time, stderr io.Writer) bool {
+	if tickStore == nil {
+		tickStore = store
+	}
+	if setMetaBatch(tickStore, id, session.ClosePatch(now, reason), stderr) != nil {
 		return false
 	}
-	if err := store.Close(id); err != nil {
+	if err := tickStore.Close(id); err != nil {
 		fmt.Fprintf(stderr, "session beads: closing %s: %v\n", id, err) //nolint:errcheck
 		return false
 	}

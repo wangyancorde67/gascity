@@ -20,6 +20,7 @@ City is the top-level configuration for a Gas City instance.
 | `rigs` | []Rig |  |  | Rigs lists external projects registered in the city. |
 | `patches` | Patches |  |  | Patches holds targeted modifications applied after fragment merge. |
 | `beads` | BeadsConfig |  |  | Beads configures the bead store backend. |
+| `backend` | BackendConfig |  |  | Backend tunes bd subprocess behavior orthogonal to the provider selection in [beads]. Introduced for tick-critical timeout minimization (ga-f4m2.1). |
 | `session` | SessionConfig |  |  | Session configures the session provider backend. |
 | `mail` | MailConfig |  |  | Mail configures the mail provider backend. |
 | `events` | EventsConfig |  |  | Events configures the events provider backend. |
@@ -225,6 +226,15 @@ AgentPatch modifies an existing agent identified by (Dir, Name).
 | `min_active_sessions` | integer |  |  | MinActiveSessions overrides the minimum number of sessions to keep alive. |
 | `scale_check` | string |  |  | ScaleCheck overrides the command template whose output reports new unassigned session demand for bead-backed reconciliation. Supports the same Go template placeholders as Agent.scale_check. |
 | `option_defaults` | map[string]string |  |  | OptionDefaults adds or overrides provider option defaults for this agent. Keys are option keys, values are choice values. Merges additively (patch keys win over existing agent keys). Example: option_defaults = &#123; model = "sonnet" &#125; |
+
+## BackendConfig
+
+BackendConfig holds tunables for the bd subprocess backend that are orthogonal to the provider selection in BeadsConfig.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `tick_subprocess_timeout` | string |  | `30s` | TickSubprocessTimeout caps individual bd subprocess invocations on tick-critical write paths (status reopens, metadata batches, bead closes). Big-list reads keep the package-level default. Duration string (e.g., "30s", "1m"). Defaults to "30s". |
+| `managed_retry_bounded` | boolean |  |  | ManagedRetryBounded, when true, refuses to retry a transport-level bd subprocess error if the first attempt already exceeded the call's per-call subprocess budget. Default false for one release; flip on after a soak period to avoid surfacing a new failure mode alongside the timeout tightening. |
 
 ## BeadsConfig
 

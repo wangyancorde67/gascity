@@ -37,7 +37,7 @@ func GCSweepSessionBeads(store beads.Store, rigStores map[string]beads.Store, se
 		if sb.Status == "closed" {
 			continue
 		}
-		if !closeSessionBeadIfUnassigned(store, rigStores, sb, "gc_swept", time.Now().UTC(), nil) {
+		if !closeSessionBeadIfUnassigned(store, store, rigStores, sb, "gc_swept", time.Now().UTC(), nil) {
 			continue
 		}
 		closed = append(closed, sb.ID)

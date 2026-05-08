@@ -456,6 +456,7 @@ func reconcileSessionBeadsTracedWithNamedDemand(
 	if cityName == "" {
 		cityName = config.EffectiveCityName(cfg, "")
 	}
+	tickStore := tickCriticalStoreForCity(cityPath, cityPath, store, cfg)
 
 	// Phase 0: Heal expired timers on all sessions.
 	for i := range sessions {
@@ -732,7 +733,7 @@ func reconcileSessionBeadsTracedWithNamedDemand(
 								dt.clearIdleProbe(session.ID)
 								dt.remove(session.ID)
 							}
-							if closeSessionBeadIfReachableStoreUnassigned(cityPath, cfg, store, rigStores, *session, "drained", clk.Now().UTC(), stderr) {
+							if closeSessionBeadIfReachableStoreUnassigned(cityPath, cfg, store, tickStore, rigStores, *session, "drained", clk.Now().UTC(), stderr) {
 								session.Status = "closed"
 							}
 						}
@@ -782,7 +783,7 @@ func reconcileSessionBeadsTracedWithNamedDemand(
 					if storeQueryPartial {
 						continue
 					}
-					if closeSessionBeadIfReachableStoreUnassigned(cityPath, cfg, store, rigStores, *session, reason, clk.Now().UTC(), stderr) {
+					if closeSessionBeadIfReachableStoreUnassigned(cityPath, cfg, store, tickStore, rigStores, *session, reason, clk.Now().UTC(), stderr) {
 						session.Status = "closed"
 					}
 				}
@@ -1502,7 +1503,7 @@ func reconcileSessionBeadsTracedWithNamedDemand(
 			if closeReason == "" {
 				closeReason = "drained"
 			}
-			closeBead(store, target.session.ID, closeReason, clk.Now().UTC(), stderr)
+			closeBead(store, tickStore, target.session.ID, closeReason, clk.Now().UTC(), stderr)
 		}
 	}
 
