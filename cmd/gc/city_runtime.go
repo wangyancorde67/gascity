@@ -676,13 +676,19 @@ func (cr *CityRuntime) tick(
 			if *prevPoolRunning != nil {
 				for sn, info := range cr.poolDeathHandlers {
 					if (*prevPoolRunning)[sn] && !currentSet[sn] {
-						skipHook, err := cr.skipPoolDeathHookForManagedStop(sn)
+						suppressionBead, found, err := cr.poolManagedStopSuppressionBead(sn)
 						if err != nil {
-							fmt.Fprintf(cr.stderr, "%s: on_death %s skipped while checking session lifecycle: %v\n", cr.logPrefix, sn, err) //nolint:errcheck // best-effort stderr
-							continue
-						}
-						if skipHook {
-							fmt.Fprintf(cr.stderr, "%s: on_death %s skipped for managed session stop\n", cr.logPrefix, sn) //nolint:errcheck // best-effort stderr
+							fmt.Fprintf(cr.stderr, "%s: on_death %s proceeding because session lifecycle lookup failed: %v\n", cr.logPrefix, sn, err) //nolint:errcheck // best-effort stderr
+						} else if found && poolDeathHookSuppressedByManagedStop(suppressionBead) {
+							_, _ = fmt.Fprintf(
+								cr.stderr,
+								"%s: on_death %s skipped for managed session stop (bead=%s status=%s state=%s)\n",
+								cr.logPrefix,
+								sn,
+								strings.TrimSpace(suppressionBead.ID),
+								strings.TrimSpace(suppressionBead.Status),
+								strings.TrimSpace(suppressionBead.Metadata["state"]),
+							)
 							continue
 						}
 						if _, err := shellRunHook(info.Command, info.Dir, info.Env); err != nil {
@@ -950,32 +956,75 @@ func (cr *CityRuntime) applyStartupConfigReload(
 }
 
 func (cr *CityRuntime) skipPoolDeathHookForManagedStop(sessionName string) (bool, error) {
+	bead, found, err := cr.poolManagedStopSuppressionBead(sessionName)
+	if err != nil || !found {
+		return false, err
+	}
+	return poolDeathHookSuppressedByManagedStop(bead), nil
+}
+
+func (cr *CityRuntime) poolManagedStopSuppressionBead(sessionName string) (beads.Bead, bool, error) {
 	sessionName = strings.TrimSpace(sessionName)
 	if sessionName == "" {
-		return false, nil
+		return beads.Bead{}, false, nil
 	}
 	store := cr.cityBeadStore()
 	if store == nil {
-		return false, nil
+		return beads.Bead{}, false, nil
 	}
-	matches, err := sessionpkg.ExactMetadataSessionCandidates(store, false, map[string]string{"session_name": sessionName})
+	matches, err := sessionpkg.ExactMetadataSessionCandidates(store, true, map[string]string{"session_name": sessionName})
 	if err != nil {
-		return true, err
+		return beads.Bead{}, false, err
 	}
+	var (
+		poolMatches []beads.Bead
+		owner       beads.Bead
+		ownerCount  int
+	)
 	for _, bead := range matches {
 		if !isPoolManagedSessionBead(bead) {
 			continue
 		}
-		switch sessionpkg.State(strings.TrimSpace(bead.Metadata["state"])) {
-		case sessionpkg.StateActive, sessionpkg.StateAwake, sessionpkg.StateCreating:
+		if strings.TrimSpace(bead.Metadata["session_name"]) != sessionName {
 			continue
-		case "":
-			continue
-		default:
-			return true, nil
+		}
+		poolMatches = append(poolMatches, bead)
+		if beadOwnsPoolSessionName(bead) {
+			owner = bead
+			ownerCount++
 		}
 	}
-	return false, nil
+	switch {
+	case ownerCount == 1:
+		return owner, true, nil
+	case ownerCount > 1:
+		ids := make([]string, 0, len(poolMatches))
+		for _, bead := range poolMatches {
+			if beadOwnsPoolSessionName(bead) {
+				ids = append(ids, bead.ID)
+			}
+		}
+		return beads.Bead{}, false, fmt.Errorf("multiple canonical pool session beads matched %q: %s", sessionName, strings.Join(ids, ", "))
+	case len(poolMatches) == 0:
+		return beads.Bead{}, false, nil
+	case len(poolMatches) == 1:
+		return poolMatches[0], true, nil
+	default:
+		ids := make([]string, 0, len(poolMatches))
+		for _, bead := range poolMatches {
+			ids = append(ids, bead.ID)
+		}
+		return beads.Bead{}, false, fmt.Errorf("ambiguous pool session beads matched %q without a canonical owner: %s", sessionName, strings.Join(ids, ", "))
+	}
+}
+
+func poolDeathHookSuppressedByManagedStop(bead beads.Bead) bool {
+	switch sessionpkg.State(strings.TrimSpace(bead.Metadata["state"])) {
+	case "", sessionpkg.StateActive, sessionpkg.StateAwake, sessionpkg.StateCreating:
+		return false
+	default:
+		return true
+	}
 }
 
 func (cr *CityRuntime) reloadConfigTraced(

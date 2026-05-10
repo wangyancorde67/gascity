@@ -4902,6 +4902,97 @@ func TestSelectOrCreatePoolSessionBead_SkipsTerminalPoolBeadsForNewTier(t *testi
 	}
 }
 
+func TestPoolSessionBeadReusableForNewDemand_StateContract(t *testing.T) {
+	testCases := []struct {
+		name string
+		meta map[string]string
+		want bool
+	}{
+		{
+			name: "active",
+			meta: map[string]string{"state": string(sessionpkg.StateActive)},
+			want: true,
+		},
+		{
+			name: "awake",
+			meta: map[string]string{"state": string(sessionpkg.StateAwake)},
+			want: true,
+		},
+		{
+			name: "creating",
+			meta: map[string]string{"state": string(sessionpkg.StateCreating)},
+			want: true,
+		},
+		{
+			name: "drained",
+			meta: map[string]string{"state": "drained"},
+			want: false,
+		},
+		{
+			name: "asleep",
+			meta: map[string]string{"state": string(sessionpkg.StateAsleep)},
+			want: false,
+		},
+		{
+			name: "suspended",
+			meta: map[string]string{"state": string(sessionpkg.StateSuspended)},
+			want: false,
+		},
+		{
+			name: "failed-create",
+			meta: map[string]string{"state": string(sessionpkg.StateFailedCreate)},
+			want: false,
+		},
+		{
+			name: "archived",
+			meta: map[string]string{"state": string(sessionpkg.StateArchived)},
+			want: false,
+		},
+		{
+			name: "quarantined",
+			meta: map[string]string{"state": string(sessionpkg.StateQuarantined)},
+			want: false,
+		},
+		{
+			name: "close-reason",
+			meta: map[string]string{
+				"state":        string(sessionpkg.StateActive),
+				"close_reason": "orphaned",
+			},
+			want: false,
+		},
+		{
+			name: "closed-at",
+			meta: map[string]string{
+				"state":     string(sessionpkg.StateActive),
+				"closed_at": "2026-05-08T17:08:18Z",
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bead := beads.Bead{
+				Metadata: map[string]string{
+					"template":     "claude",
+					"agent_name":   "claude",
+					"session_name": "claude-terminal",
+					"pool_managed": "true",
+					"pool_slot":    "1",
+				},
+			}
+			for key, value := range tc.meta {
+				bead.Metadata[key] = value
+			}
+			if got := poolSessionBeadReusableForNewDemand(bead); got != tc.want {
+				t.Fatalf("poolSessionBeadReusableForNewDemand(state=%q close_reason=%q closed_at=%q) = %v, want %v",
+					bead.Metadata["state"], bead.Metadata["close_reason"], bead.Metadata["closed_at"], got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSelectOrCreateDependencyPoolSessionBead_SkipsDrained(t *testing.T) {
 	store := beads.NewMemStore()
 	drained, err := store.Create(beads.Bead{
