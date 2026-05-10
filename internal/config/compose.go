@@ -124,6 +124,12 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 	cityAgentsForProvenance := root.Agents
 	root.Pricing = dedupePricingByKey(root.Pricing)
 	root.CityPricing = append([]pricing.ModelPricing(nil), root.Pricing...)
+	// defaultBindings names the [defaults.rig.imports] bindings declared
+	// by the city's pack.toml. After expansion, agents whose BindingName
+	// matches one of these names are auto-imports (the user did not
+	// write the [imports.<name>] entry; gc init auto-added it). See
+	// ga-tpfc and the source enum.
+	var defaultBindings map[string]bool
 
 	// V2: if a pack.toml exists alongside city.toml, it is the city's
 	// definition layer. Parse it and merge its content (imports, agents,
@@ -165,6 +171,10 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 		var packAgents []Agent
 		for _, a := range pc.Agents {
 			if !cityAgentNames[a.Name] {
+				// Stamp source on the city pack's own [[agent]] blocks
+				// so duplicate-name errors against city.toml inline
+				// agents render a non-empty descriptor (ga-tpfc.1).
+				a.source = sourcePack
 				packAgents = append(packAgents, a)
 			}
 		}
@@ -185,6 +195,12 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 		}
 		if len(defaultRigIncludes) > 0 {
 			root.Workspace.DefaultRigIncludes = append(defaultRigIncludes, root.Workspace.DefaultRigIncludes...)
+		}
+		if len(pc.Defaults.Rig.Imports) > 0 {
+			defaultBindings = make(map[string]bool, len(pc.Defaults.Rig.Imports))
+			for name := range pc.Defaults.Rig.Imports {
+				defaultBindings[name] = true
+			}
 		}
 		// Merge pack.toml providers (pack is base, city wins).
 		if len(pc.Providers) > 0 {
@@ -593,10 +609,13 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 		prov.Warnings = append(prov.Warnings, warning)
 	}
 
+	promoteAutoImportAgentSources(root.Agents, defaultBindings, root.ImplicitImportBindings)
+
 	// Capture revision inputs after all config and pack discovery so callers
 	// can compare the loaded snapshot to future reloads without re-reading
 	// mutable files from disk.
 	prov.captureRevisionSnapshot(fs, root, cityRoot)
+
 	return root, prov, nil
 }
 
@@ -1189,7 +1208,31 @@ func parseWithMeta(data []byte, source string) (*City, toml.MetaData, []string, 
 	warnings := agentDefaultsCompatibilityWarnings(md, source)
 	normalizeLegacyOrderOverrideAliases(&cfg)
 	warnings = append(warnings, CheckUndecodedKeys(md, source)...)
+	// Stamp source=sourceInline on inline [[agent]] tables. Fragments may
+	// later set SourceDir, which remains the concrete duplicate-error source.
+	for i := range cfg.Agents {
+		cfg.Agents[i].source = sourceInline
+	}
 	return &cfg, md, warnings, nil
+}
+
+// promoteAutoImportAgentSources centralizes the two auto-import sources:
+// bindings from the city pack's [defaults.rig.imports] and bootstrap implicit
+// imports. Both paths produce normal pack-loaded agents first, then this pass
+// promotes the source stamp exactly once after composition has settled.
+func promoteAutoImportAgentSources(agents []Agent, defaultBindings, implicitBindings map[string]bool) {
+	if len(defaultBindings) == 0 && len(implicitBindings) == 0 {
+		return
+	}
+	for i := range agents {
+		a := &agents[i]
+		if a.source != sourcePack || a.BindingName == "" {
+			continue
+		}
+		if defaultBindings[a.BindingName] || implicitBindings[a.BindingName] {
+			a.source = sourceAutoImport
+		}
+	}
 }
 
 // LoadRootPackDefaultRigImports loads the canonical [defaults.rig.imports]
