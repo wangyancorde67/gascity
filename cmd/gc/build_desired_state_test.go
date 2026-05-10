@@ -4909,6 +4909,11 @@ func TestPoolSessionBeadReusableForNewDemand_StateContract(t *testing.T) {
 		want bool
 	}{
 		{
+			name: "empty state",
+			meta: map[string]string{},
+			want: true,
+		},
+		{
 			name: "active",
 			meta: map[string]string{"state": string(sessionpkg.StateActive)},
 			want: true,

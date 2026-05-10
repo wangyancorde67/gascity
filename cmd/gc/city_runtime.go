@@ -976,11 +976,8 @@ func (cr *CityRuntime) poolManagedStopSuppressionBead(sessionName string) (beads
 	if err != nil {
 		return beads.Bead{}, false, err
 	}
-	var (
-		poolMatches []beads.Bead
-		owner       beads.Bead
-		ownerCount  int
-	)
+	var openMatches []beads.Bead
+	var closedMatches []beads.Bead
 	for _, bead := range matches {
 		if !isPoolManagedSessionBead(bead) {
 			continue
@@ -988,34 +985,30 @@ func (cr *CityRuntime) poolManagedStopSuppressionBead(sessionName string) (beads
 		if strings.TrimSpace(bead.Metadata["session_name"]) != sessionName {
 			continue
 		}
-		poolMatches = append(poolMatches, bead)
-		if beadOwnsPoolSessionName(bead) {
-			owner = bead
-			ownerCount++
+		if bead.Status == "closed" {
+			closedMatches = append(closedMatches, bead)
+			continue
 		}
+		openMatches = append(openMatches, bead)
 	}
-	switch {
-	case ownerCount == 1:
-		return owner, true, nil
-	case ownerCount > 1:
-		ids := make([]string, 0, len(poolMatches))
-		for _, bead := range poolMatches {
-			if beadOwnsPoolSessionName(bead) {
-				ids = append(ids, bead.ID)
-			}
-		}
-		return beads.Bead{}, false, fmt.Errorf("multiple canonical pool session beads matched %q: %s", sessionName, strings.Join(ids, ", "))
-	case len(poolMatches) == 0:
-		return beads.Bead{}, false, nil
-	case len(poolMatches) == 1:
-		return poolMatches[0], true, nil
-	default:
-		ids := make([]string, 0, len(poolMatches))
-		for _, bead := range poolMatches {
-			ids = append(ids, bead.ID)
-		}
-		return beads.Bead{}, false, fmt.Errorf("ambiguous pool session beads matched %q without a canonical owner: %s", sessionName, strings.Join(ids, ", "))
+	if bead, ok := canonicalPoolManagedStopSuppressionBead(openMatches); ok {
+		return bead, true, nil
 	}
+	if bead, ok := canonicalPoolManagedStopSuppressionBead(closedMatches); ok {
+		return bead, true, nil
+	}
+	return beads.Bead{}, false, nil
+}
+
+func canonicalPoolManagedStopSuppressionBead(matches []beads.Bead) (beads.Bead, bool) {
+	if len(matches) == 0 {
+		return beads.Bead{}, false
+	}
+	winner := matches[0]
+	for _, bead := range matches[1:] {
+		winner = canonicalDuplicateSessionBead(winner, bead)
+	}
+	return winner, true
 }
 
 func poolDeathHookSuppressedByManagedStop(bead beads.Bead) bool {

@@ -2022,11 +2022,12 @@ func poolSessionBeadReusableForNewDemand(bead beads.Bead) bool {
 		return false
 	}
 	switch strings.TrimSpace(bead.Metadata["state"]) {
-	case "active", "awake", "creating":
+	case "", "active", "awake", "creating":
 		return true
 	}
 	return false
 }
+
 func sessionBeadHasAssignedWork(workBeads []beads.Bead, sessionBead beads.Bead) bool {
 	for _, wb := range workBeads {
 		assignee := strings.TrimSpace(wb.Assignee)

@@ -2435,7 +2435,6 @@ func TestCityRuntimeTickSkipsOnDeathForClosedCanonicalControllerDrainingSession(
 	outFile := filepath.Join(cityPath, "on-death.txt")
 	store := beads.NewMemStore()
 	owner := mustCreatePoolManagedSessionBead(t, store, "", string(sessionpkg.StateDraining), "closed")
-	mustCreatePoolManagedSessionBead(t, store, owner.Metadata["session_name"], string(sessionpkg.StateActive), "")
 
 	prevPoolRunning := map[string]bool{owner.Metadata["session_name"]: true}
 	var stderr bytes.Buffer
@@ -2470,6 +2469,97 @@ func TestCityRuntimeTickSkipsOnDeathForClosedCanonicalControllerDrainingSession(
 	}
 	if !strings.Contains(stderr.String(), owner.ID) || !strings.Contains(stderr.String(), "status=closed") {
 		t.Fatalf("stderr = %q, want closed canonical bead context", stderr.String())
+	}
+}
+
+func TestCityRuntimeTickRunsOnDeathWhenOpenDuplicatePoolBeadIsActive(t *testing.T) {
+	cityPath := t.TempDir()
+	outFile := filepath.Join(cityPath, "on-death.txt")
+	store := beads.NewMemStore()
+	closedOwner := mustCreatePoolManagedSessionBead(t, store, "", string(sessionpkg.StateDraining), "closed")
+	activeDuplicate := mustCreatePoolManagedSessionBead(t, store, closedOwner.Metadata["session_name"], string(sessionpkg.StateActive), "")
+
+	prevPoolRunning := map[string]bool{closedOwner.Metadata["session_name"]: true}
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cityPath:            cityPath,
+		cityName:            "my-city",
+		logPrefix:           "gc start",
+		cfg:                 &config.City{},
+		sp:                  runtime.NewFake(),
+		standaloneCityStore: store,
+		sessionDrains:       newDrainTracker(),
+		poolDeathHandlers: map[string]poolDeathInfo{
+			closedOwner.Metadata["session_name"]: {
+				Command: "printf fired > " + shellQuotePath(outFile),
+				Dir:     cityPath,
+			},
+		},
+		rec:    events.Discard,
+		stdout: io.Discard,
+		stderr: &stderr,
+		buildFnWithSessionBeads: func(_ *config.City, _ runtime.Provider, _ beads.Store, _ map[string]beads.Store, _ *sessionBeadSnapshot, _ *sessionReconcilerTraceCycle) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+	}
+
+	dirty := &atomic.Bool{}
+	var lastProviderName string
+	cr.tick(context.Background(), dirty, &lastProviderName, cityPath, &prevPoolRunning, "test")
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v\nstderr=%s", outFile, err, stderr.String())
+	}
+	if got := strings.TrimSpace(string(data)); got != "fired" {
+		t.Fatalf("on_death output = %q, want fired", got)
+	}
+	if strings.Contains(stderr.String(), activeDuplicate.ID) || strings.Contains(stderr.String(), closedOwner.ID) {
+		t.Fatalf("stderr = %q, want managed-stop suppression to stay disabled when an open duplicate is still active", stderr.String())
+	}
+}
+
+func TestCityRuntimeTickSkipsOnDeathForLegacyDuplicateControllerDrainingSession(t *testing.T) {
+	cityPath := t.TempDir()
+	outFile := filepath.Join(cityPath, "on-death.txt")
+	store := beads.NewMemStore()
+	const sessionName = "worker-legacy"
+	mustCreatePoolManagedSessionBead(t, store, sessionName, string(sessionpkg.StateActive), "")
+	draining := mustCreatePoolManagedSessionBead(t, store, sessionName, string(sessionpkg.StateDraining), "")
+
+	prevPoolRunning := map[string]bool{sessionName: true}
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cityPath:            cityPath,
+		cityName:            "my-city",
+		logPrefix:           "gc start",
+		cfg:                 &config.City{},
+		sp:                  runtime.NewFake(),
+		standaloneCityStore: store,
+		sessionDrains:       newDrainTracker(),
+		poolDeathHandlers: map[string]poolDeathInfo{
+			sessionName: {
+				Command: "printf fired > " + shellQuotePath(outFile),
+				Dir:     cityPath,
+			},
+		},
+		rec:    events.Discard,
+		stdout: io.Discard,
+		stderr: &stderr,
+		buildFnWithSessionBeads: func(_ *config.City, _ runtime.Provider, _ beads.Store, _ map[string]beads.Store, _ *sessionBeadSnapshot, _ *sessionReconcilerTraceCycle) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+	}
+
+	dirty := &atomic.Bool{}
+	var lastProviderName string
+	cr.tick(context.Background(), dirty, &lastProviderName, cityPath, &prevPoolRunning, "test")
+
+	if _, err := os.Stat(outFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("on_death output err = %v, want no hook execution", err)
+	}
+	if !strings.Contains(stderr.String(), draining.ID) || !strings.Contains(stderr.String(), "state=draining") {
+		t.Fatalf("stderr = %q, want latest legacy duplicate bead context for managed-stop skip", stderr.String())
 	}
 }
 
