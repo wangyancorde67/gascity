@@ -1468,8 +1468,11 @@ func TestBackupScriptIgnoresDocumentedSystemSchemasForAutoDiscoveryWithBSDGrep(t
 	if err != nil {
 		t.Fatalf("read dolt log: %v", err)
 	}
+	if !strings.Contains(string(doltLog), "backup sync prod-backup") {
+		t.Fatalf("backup should sync prod only, log:\n%s", doltLog)
+	}
 	for _, systemDB := range []string{"performance_schema", "sys"} {
-		if strings.Contains(string(doltLog), "backup sync "+systemDB+"-backup") {
+		if strings.Contains(string(doltLog), systemDB) {
 			t.Fatalf("backup auto-discovery should ignore %s, log:\n%s", systemDB, doltLog)
 		}
 	}
