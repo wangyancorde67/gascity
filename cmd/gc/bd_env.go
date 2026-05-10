@@ -75,7 +75,7 @@ func controlBdCommandRunnerForCity(cityPath string) beads.CommandRunner {
 	return bdCommandRunnerWithManagedRetry(cityPath, func(dir string) map[string]string {
 		env := bdRuntimeEnv(cityPath)
 		env["BEADS_DIR"] = filepath.Join(dir, ".beads")
-		applyControlBdEnv(env)
+		applyControllerBdEnv(env)
 		return env
 	})
 }
@@ -83,13 +83,20 @@ func controlBdCommandRunnerForCity(cityPath string) beads.CommandRunner {
 func controlBdCommandRunnerForRig(cityPath string, cfg *config.City, rigDir string) beads.CommandRunner {
 	return bdCommandRunnerWithManagedRetry(cityPath, func(_ string) map[string]string {
 		env := bdRuntimeEnvForRig(cityPath, cfg, rigDir)
-		applyControlBdEnv(env)
+		applyControllerBdEnv(env)
 		return env
 	})
 }
 
 func applyControlBdEnv(env map[string]string) {
 	env["BD_EXPORT_AUTO"] = "false"
+}
+
+func applyControllerBdEnv(env map[string]string) {
+	applyControlBdEnv(env)
+	if strings.TrimSpace(os.Getenv("BEADS_ACTOR")) == "" {
+		env["BEADS_ACTOR"] = "controller"
+	}
 }
 
 func issuePrefixForScope(scopeRoot, cityPath string, cfg *config.City) string {
