@@ -385,6 +385,18 @@ func (s *blockValidatingWorkflowStore) assertNoOpenBlockers(id string) error {
 	return nil
 }
 
+type closeReasonValidatingWorkflowStore struct {
+	*beads.MemStore
+}
+
+func (s *closeReasonValidatingWorkflowStore) CloseAll(ids []string, metadata map[string]string) (int, error) {
+	reason := metadata["close_reason"]
+	if len(reason) < 20 {
+		return 0, fmt.Errorf("close_reason length = %d, want >=20", len(reason))
+	}
+	return s.MemStore.CloseAll(ids, metadata)
+}
+
 func TestCloseWorkflowSubtreeClosesDeepestChildrenFirst(t *testing.T) {
 	store := &parentLastCloseStore{MemStore: beads.NewMemStore()}
 
@@ -497,6 +509,51 @@ func TestCloseWorkflowSubtreeOrdersBlockersBeforeBlocked(t *testing.T) {
 		}
 		if got := bead.Metadata["gc.outcome"]; got != "skipped" {
 			t.Fatalf("bead %s gc.outcome = %q, want skipped", id, got)
+		}
+	}
+}
+
+func TestCloseWorkflowSubtreeStampsCloseReason(t *testing.T) {
+	store := &closeReasonValidatingWorkflowStore{MemStore: beads.NewMemStore()}
+	root, err := store.Create(beads.Bead{
+		Title: "root",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind": "workflow",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create(root): %v", err)
+	}
+	child, err := store.Create(beads.Bead{
+		Title:    "child",
+		Type:     "task",
+		ParentID: root.ID,
+		Metadata: map[string]string{
+			"gc.root_bead_id": root.ID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create(child): %v", err)
+	}
+
+	closed, err := CloseWorkflowSubtree(store, root.ID)
+	if err != nil {
+		t.Fatalf("CloseWorkflowSubtree: %v", err)
+	}
+	if closed != 2 {
+		t.Fatalf("CloseWorkflowSubtree closed %d beads, want 2", closed)
+	}
+	for _, id := range []string{root.ID, child.ID} {
+		bead, err := store.Get(id)
+		if err != nil {
+			t.Fatalf("Get(%s): %v", id, err)
+		}
+		if got := bead.Metadata["gc.outcome"]; got != "skipped" {
+			t.Fatalf("%s gc.outcome = %q, want skipped", id, got)
+		}
+		if got := bead.Metadata["close_reason"]; got != WorkflowSubtreeClosedReason {
+			t.Fatalf("%s close_reason = %q, want %q", id, got, WorkflowSubtreeClosedReason)
 		}
 	}
 }

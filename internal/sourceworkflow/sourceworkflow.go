@@ -42,6 +42,10 @@ type ConflictError struct {
 // Used by WorkflowMatchesSource to scope cross-store singleton checks.
 const SourceStoreRefMetadataKey = "gc.source_store_ref"
 
+// WorkflowSubtreeClosedReason is stamped on workflow subtree force-closes so
+// strict stores that require a human-readable close reason accept the cleanup.
+const WorkflowSubtreeClosedReason = "source workflow cleanup: subtree force-closed by CloseWorkflowSubtree"
+
 // IsWorkflowRoot reports whether a bead is a source-workflow root. It must
 // stay in sync with sling.IsWorkflowAttachment: roots may be marked via the
 // legacy gc.kind=workflow label, via gc.formula_contract=graph.v2, or both.
@@ -434,7 +438,10 @@ func CloseWorkflowSubtree(store beads.Store, rootID string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return store.CloseAll(ordered, map[string]string{"gc.outcome": "skipped"})
+	return store.CloseAll(ordered, map[string]string{
+		"gc.outcome":   "skipped",
+		"close_reason": WorkflowSubtreeClosedReason,
+	})
 }
 
 // WorkflowBeadSnapshot captures the mutable fields of a workflow subtree
