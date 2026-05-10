@@ -4959,17 +4959,31 @@ func TestPoolSessionBeadReusableForNewDemand_StateContract(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "close-reason",
+			name: "active-stale-close-reason",
 			meta: map[string]string{
 				"state":        string(sessionpkg.StateActive),
+				"close_reason": "orphaned",
+			},
+			want: true,
+		},
+		{
+			name: "active-stale-closed-at",
+			meta: map[string]string{
+				"state":     string(sessionpkg.StateActive),
+				"closed_at": "2026-05-08T17:08:18Z",
+			},
+			want: true,
+		},
+		{
+			name: "empty-close-reason",
+			meta: map[string]string{
 				"close_reason": "orphaned",
 			},
 			want: false,
 		},
 		{
-			name: "closed-at",
+			name: "empty-closed-at",
 			meta: map[string]string{
-				"state":     string(sessionpkg.StateActive),
 				"closed_at": "2026-05-08T17:08:18Z",
 			},
 			want: false,
@@ -4995,6 +5009,47 @@ func TestPoolSessionBeadReusableForNewDemand_StateContract(t *testing.T) {
 					bead.Metadata["state"], bead.Metadata["close_reason"], bead.Metadata["closed_at"], got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSelectOrCreatePoolSessionBead_ReusesActivePoolBeadWithStaleCloseMetadata(t *testing.T) {
+	store := beads.NewMemStore()
+	active, err := store.Create(beads.Bead{
+		Title:  "claude",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":     "claude",
+			"agent_name":   "claude",
+			"session_name": "claude-slot-1",
+			"state":        string(sessionpkg.StateActive),
+			"pool_slot":    "1",
+			"pool_managed": "true",
+			"close_reason": "orphaned",
+			"closed_at":    "2026-05-08T17:08:18Z",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &sessionBeadSnapshot{}
+	snapshot.add(active)
+	cfgAgent := config.Agent{Name: "claude", MinActiveSessions: intPtr(0), MaxActiveSessions: intPtr(5)}
+	bp := &agentBuildParams{
+		beadStore:    store,
+		sessionBeads: snapshot,
+		agents:       []config.Agent{cfgAgent},
+	}
+
+	result, slot, err := selectOrCreatePoolSessionBead(bp, &cfgAgent, "claude", nil, map[string]bool{}, map[int]bool{})
+	if err != nil {
+		t.Fatalf("selectOrCreatePoolSessionBead: %v", err)
+	}
+	if result.ID != active.ID {
+		t.Fatalf("expected live pool bead with stale close metadata to be reused, got %s want %s", result.ID, active.ID)
+	}
+	if slot != 1 {
+		t.Fatalf("slot = %d, want 1", slot)
 	}
 }
 

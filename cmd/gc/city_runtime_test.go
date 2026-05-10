@@ -2525,6 +2525,8 @@ func TestCityRuntimeTickSkipsOnDeathForLegacyDuplicateControllerDrainingSession(
 	const sessionName = "worker-legacy"
 	mustCreatePoolManagedSessionBead(t, store, sessionName, string(sessionpkg.StateActive), "")
 	draining := mustCreatePoolManagedSessionBead(t, store, sessionName, string(sessionpkg.StateDraining), "")
+	drains := newDrainTracker()
+	drains.set(draining.ID, &drainState{reason: "config-drift"})
 
 	prevPoolRunning := map[string]bool{sessionName: true}
 	var stderr bytes.Buffer
@@ -2535,7 +2537,7 @@ func TestCityRuntimeTickSkipsOnDeathForLegacyDuplicateControllerDrainingSession(
 		cfg:                 &config.City{},
 		sp:                  runtime.NewFake(),
 		standaloneCityStore: store,
-		sessionDrains:       newDrainTracker(),
+		sessionDrains:       drains,
 		poolDeathHandlers: map[string]poolDeathInfo{
 			sessionName: {
 				Command: "printf fired > " + shellQuotePath(outFile),
@@ -2608,6 +2610,92 @@ func TestCityRuntimeTickRunsOnDeathForStoppedPoolSessionWithoutDeliberateSleepRe
 	}
 }
 
+func TestCityRuntimeTickSkipsOnDeathWhileManagedDrainTrackerEntryIsActive(t *testing.T) {
+	cityPath := t.TempDir()
+	outFile := filepath.Join(cityPath, "on-death.txt")
+	store := beads.NewMemStore()
+	bead := mustCreatePoolManagedSessionBead(t, store, "", string(sessionpkg.StateActive), "")
+	drains := newDrainTracker()
+	drains.set(bead.ID, &drainState{reason: "config-drift"})
+
+	prevPoolRunning := map[string]bool{bead.Metadata["session_name"]: true}
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cityPath:            cityPath,
+		cityName:            "my-city",
+		logPrefix:           "gc start",
+		cfg:                 &config.City{},
+		sp:                  runtime.NewFake(),
+		standaloneCityStore: store,
+		sessionDrains:       drains,
+		poolDeathHandlers: map[string]poolDeathInfo{
+			bead.Metadata["session_name"]: {
+				Command: "printf fired > " + shellQuotePath(outFile),
+				Dir:     cityPath,
+			},
+		},
+		rec:    events.Discard,
+		stdout: io.Discard,
+		stderr: &stderr,
+		buildFnWithSessionBeads: func(_ *config.City, _ runtime.Provider, _ beads.Store, _ map[string]beads.Store, _ *sessionBeadSnapshot, _ *sessionReconcilerTraceCycle) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+	}
+
+	dirty := &atomic.Bool{}
+	var lastProviderName string
+	cr.tick(context.Background(), dirty, &lastProviderName, cityPath, &prevPoolRunning, "test")
+
+	if _, err := os.Stat(outFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("on_death output err = %v, want no hook execution", err)
+	}
+	if !strings.Contains(stderr.String(), bead.ID) || !strings.Contains(stderr.String(), "state=active") {
+		t.Fatalf("stderr = %q, want drain-tracked bead context for managed-stop skip", stderr.String())
+	}
+}
+
+func TestCityRuntimeTickSkipsOnDeathForClosedGCSweptPoolSession(t *testing.T) {
+	cityPath := t.TempDir()
+	outFile := filepath.Join(cityPath, "on-death.txt")
+	store := beads.NewMemStore()
+	bead := mustCreatePoolManagedSessionBead(t, store, "", "gc_swept", "closed")
+
+	prevPoolRunning := map[string]bool{bead.Metadata["session_name"]: true}
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cityPath:            cityPath,
+		cityName:            "my-city",
+		logPrefix:           "gc start",
+		cfg:                 &config.City{},
+		sp:                  runtime.NewFake(),
+		standaloneCityStore: store,
+		sessionDrains:       newDrainTracker(),
+		poolDeathHandlers: map[string]poolDeathInfo{
+			bead.Metadata["session_name"]: {
+				Command: "printf fired > " + shellQuotePath(outFile),
+				Dir:     cityPath,
+			},
+		},
+		rec:    events.Discard,
+		stdout: io.Discard,
+		stderr: &stderr,
+		buildFnWithSessionBeads: func(_ *config.City, _ runtime.Provider, _ beads.Store, _ map[string]beads.Store, _ *sessionBeadSnapshot, _ *sessionReconcilerTraceCycle) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+	}
+
+	dirty := &atomic.Bool{}
+	var lastProviderName string
+	cr.tick(context.Background(), dirty, &lastProviderName, cityPath, &prevPoolRunning, "test")
+
+	if _, err := os.Stat(outFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("on_death output err = %v, want no hook execution", err)
+	}
+	if !strings.Contains(stderr.String(), bead.ID) || !strings.Contains(stderr.String(), "state=gc_swept") {
+		t.Fatalf("stderr = %q, want terminal close bead context for managed-stop skip", stderr.String())
+	}
+}
+
 func TestCityRuntimeTickRunsOnDeathWhenManagedStopLookupFails(t *testing.T) {
 	cityPath := t.TempDir()
 	outFile := filepath.Join(cityPath, "on-death.txt")
@@ -2657,7 +2745,7 @@ func TestCityRuntimeTickRunsOnDeathWhenManagedStopLookupFails(t *testing.T) {
 	}
 }
 
-func TestSkipPoolDeathHookForManagedStop_StateContract(t *testing.T) {
+func TestPoolDeathHookSuppressedByManagedStopState_Contract(t *testing.T) {
 	testCases := []struct {
 		name        string
 		state       string
@@ -2674,33 +2762,31 @@ func TestSkipPoolDeathHookForManagedStop_StateContract(t *testing.T) {
 		{name: "suspended", state: string(sessionpkg.StateSuspended), want: true},
 		{name: "failed-create", state: string(sessionpkg.StateFailedCreate), want: true},
 		{name: "draining", state: string(sessionpkg.StateDraining), want: true},
+		{name: "drained", state: string(sessionpkg.StateDrained), want: true},
 		{name: "archived-closed", state: string(sessionpkg.StateArchived), status: "closed", want: true},
 		{name: "stopped-empty", state: "stopped", want: false},
 		{name: "stopped-city-stop", state: "stopped", sleepReason: sleepReasonCityStop, want: true},
 		{name: "quarantined", state: string(sessionpkg.StateQuarantined), want: false},
+		{name: "gc-swept", state: "gc_swept", status: "closed", want: true},
+		{name: "orphaned", state: "orphaned", status: "closed", want: true},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			store := beads.NewMemStore()
-			bead := mustCreatePoolManagedSessionBead(t, store, "", tc.state, tc.status)
+			bead := beads.Bead{
+				Status: tc.status,
+				Metadata: map[string]string{
+					"state": tc.state,
+				},
+			}
 			if tc.sleepReason != "" {
-				if err := store.SetMetadata(bead.ID, "sleep_reason", tc.sleepReason); err != nil {
-					t.Fatalf("SetMetadata(%s, sleep_reason): %v", bead.ID, err)
-				}
+				bead.Metadata["sleep_reason"] = tc.sleepReason
 			}
-			bead, err := store.Get(bead.ID)
-			if err != nil {
-				t.Fatalf("Get(%s): %v", bead.ID, err)
+			if bead.Status == "" {
+				bead.Status = "open"
 			}
-			cr := &CityRuntime{standaloneCityStore: store}
-
-			skipHook, err := cr.skipPoolDeathHookForManagedStop(bead.Metadata["session_name"])
-			if err != nil {
-				t.Fatalf("skipPoolDeathHookForManagedStop(%q): %v", bead.Metadata["session_name"], err)
-			}
-			if skipHook != tc.want {
-				t.Fatalf("skipPoolDeathHookForManagedStop(%q) = %v, want %v", tc.name, skipHook, tc.want)
+			if got := poolDeathHookSuppressedByManagedStopState(bead); got != tc.want {
+				t.Fatalf("poolDeathHookSuppressedByManagedStopState(%q) = %v, want %v", tc.name, got, tc.want)
 			}
 		})
 	}

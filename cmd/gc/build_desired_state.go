@@ -2012,17 +2012,26 @@ func isFailedCreateSessionBead(bead beads.Bead) bool {
 }
 
 func poolSessionBeadReusableForNewDemand(bead beads.Bead) bool {
+	if strings.TrimSpace(bead.Status) == "closed" {
+		return false
+	}
 	if isDrainedSessionBead(bead) {
 		return false
 	}
 	if isFailedCreateSessionBead(bead) {
 		return false
 	}
+	switch strings.TrimSpace(bead.Metadata["state"]) {
+	case string(session.StateActive), string(session.StateAwake), string(session.StateCreating):
+		// syncSessionBeads clears stale close metadata on the next tick. Until
+		// that lands, keep the live slot/bead identity reusable so new demand
+		// does not allocate a duplicate pool worker for the same slot.
+		return true
+	}
 	if strings.TrimSpace(bead.Metadata["close_reason"]) != "" || strings.TrimSpace(bead.Metadata["closed_at"]) != "" {
 		return false
 	}
-	switch strings.TrimSpace(bead.Metadata["state"]) {
-	case "", "active", "awake", "creating":
+	if strings.TrimSpace(bead.Metadata["state"]) == "" {
 		return true
 	}
 	return false
