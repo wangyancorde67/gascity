@@ -2564,6 +2564,54 @@ func TestCityRuntimeTickSkipsOnDeathForLegacyDuplicateControllerDrainingSession(
 	}
 }
 
+func TestCityRuntimeTickSkipsOnDeathForDrainTrackedDuplicateWhenOwnerStillMatchesSessionName(t *testing.T) {
+	cityPath := t.TempDir()
+	outFile := filepath.Join(cityPath, "on-death.txt")
+	store := beads.NewMemStore()
+	owner := mustCreatePoolManagedSessionBead(t, store, "", string(sessionpkg.StateActive), "")
+	draining := mustCreatePoolManagedSessionBead(t, store, owner.Metadata["session_name"], string(sessionpkg.StateDraining), "")
+	drains := newDrainTracker()
+	drains.set(draining.ID, &drainState{reason: "config-drift"})
+
+	prevPoolRunning := map[string]bool{owner.Metadata["session_name"]: true}
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cityPath:            cityPath,
+		cityName:            "my-city",
+		logPrefix:           "gc start",
+		cfg:                 &config.City{},
+		sp:                  runtime.NewFake(),
+		standaloneCityStore: store,
+		sessionDrains:       drains,
+		poolDeathHandlers: map[string]poolDeathInfo{
+			owner.Metadata["session_name"]: {
+				Command: "printf fired > " + shellQuotePath(outFile),
+				Dir:     cityPath,
+			},
+		},
+		rec:    events.Discard,
+		stdout: io.Discard,
+		stderr: &stderr,
+		buildFnWithSessionBeads: func(_ *config.City, _ runtime.Provider, _ beads.Store, _ map[string]beads.Store, _ *sessionBeadSnapshot, _ *sessionReconcilerTraceCycle) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+	}
+
+	dirty := &atomic.Bool{}
+	var lastProviderName string
+	cr.tick(context.Background(), dirty, &lastProviderName, cityPath, &prevPoolRunning, "test")
+
+	if _, err := os.Stat(outFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("on_death output err = %v, want no hook execution", err)
+	}
+	if strings.Contains(stderr.String(), "bead="+owner.ID) {
+		t.Fatalf("stderr = %q, want tracked draining duplicate to beat stale owner bead", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), draining.ID) || !strings.Contains(stderr.String(), "state=draining") {
+		t.Fatalf("stderr = %q, want tracked draining duplicate context for managed-stop skip", stderr.String())
+	}
+}
+
 func TestCityRuntimeTickRunsOnDeathForStoppedPoolSessionWithoutDeliberateSleepReason(t *testing.T) {
 	cityPath := t.TempDir()
 	outFile := filepath.Join(cityPath, "on-death.txt")
@@ -2757,16 +2805,19 @@ func TestPoolDeathHookSuppressedByManagedStopState_Contract(t *testing.T) {
 		{name: "awake", state: string(sessionpkg.StateAwake), want: false},
 		{name: "creating", state: string(sessionpkg.StateCreating), want: false},
 		{name: "empty", state: "", want: false},
+		{name: "empty-closed", state: "", status: "closed", want: false},
 		{name: "asleep-empty", state: string(sessionpkg.StateAsleep), want: false},
 		{name: "asleep-idle", state: string(sessionpkg.StateAsleep), sleepReason: "idle", want: true},
 		{name: "suspended", state: string(sessionpkg.StateSuspended), want: true},
 		{name: "failed-create", state: string(sessionpkg.StateFailedCreate), want: true},
 		{name: "draining", state: string(sessionpkg.StateDraining), want: true},
 		{name: "drained", state: string(sessionpkg.StateDrained), want: true},
+		{name: "active-closed", state: string(sessionpkg.StateActive), status: "closed", want: false},
 		{name: "archived-closed", state: string(sessionpkg.StateArchived), status: "closed", want: true},
 		{name: "stopped-empty", state: "stopped", want: false},
 		{name: "stopped-city-stop", state: "stopped", sleepReason: sleepReasonCityStop, want: true},
 		{name: "quarantined", state: string(sessionpkg.StateQuarantined), want: false},
+		{name: "quarantined-closed", state: string(sessionpkg.StateQuarantined), status: "closed", want: false},
 		{name: "gc-swept", state: "gc_swept", status: "closed", want: true},
 		{name: "orphaned", state: "orphaned", status: "closed", want: true},
 	}

@@ -1025,21 +1025,21 @@ func canonicalPoolManagedStopSuppressionBead(matches []beads.Bead, dt *drainTrac
 }
 
 func betterPoolManagedStopSuppressionBead(incumbent, candidate beads.Bead, dt *drainTracker) beads.Bead {
-	incumbentOwnsName := beadOwnsPoolSessionName(incumbent)
-	candidateOwnsName := beadOwnsPoolSessionName(candidate)
-	switch {
-	case candidateOwnsName && !incumbentOwnsName:
-		return candidate
-	case incumbentOwnsName && !candidateOwnsName:
-		return incumbent
-	}
-
 	incumbentTracked := drainTrackerHasBead(dt, incumbent.ID)
 	candidateTracked := drainTrackerHasBead(dt, candidate.ID)
 	switch {
 	case candidateTracked && !incumbentTracked:
 		return candidate
 	case incumbentTracked && !candidateTracked:
+		return incumbent
+	}
+
+	incumbentOwnsName := beadOwnsPoolSessionName(incumbent)
+	candidateOwnsName := beadOwnsPoolSessionName(candidate)
+	switch {
+	case candidateOwnsName && !incumbentOwnsName:
+		return candidate
+	case incumbentOwnsName && !candidateOwnsName:
 		return incumbent
 	}
 
@@ -1078,9 +1078,6 @@ func drainTrackerHasBead(dt *drainTracker, beadID string) bool {
 }
 
 func poolDeathHookSuppressedByManagedStopState(bead beads.Bead) bool {
-	if strings.TrimSpace(bead.Status) == "closed" {
-		return true
-	}
 	switch strings.TrimSpace(bead.Metadata["state"]) {
 	case string(sessionpkg.StateDraining), string(sessionpkg.StateDrained),
 		string(sessionpkg.StateArchived), string(sessionpkg.StateSuspended),
