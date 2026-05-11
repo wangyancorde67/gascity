@@ -5205,11 +5205,12 @@ func TestDependencyPoolSessionBeadReusableForDemand_Contract(t *testing.T) {
 		{name: "asleep", meta: map[string]string{"state": string(sessionpkg.StateAsleep)}, want: true},
 		{name: "suspended", meta: map[string]string{"state": string(sessionpkg.StateSuspended)}, want: true},
 		{name: "archived", meta: map[string]string{"state": string(sessionpkg.StateArchived)}, want: true},
-		{name: "quarantined", meta: map[string]string{"state": string(sessionpkg.StateQuarantined)}, want: true},
+		{name: "empty-stale-close-metadata", meta: map[string]string{"close_reason": "orphaned", "closed_at": "2026-05-10T00:00:00Z"}, want: false},
 		{name: "draining", meta: map[string]string{"state": string(sessionpkg.StateDraining)}, want: false},
 		{name: "drained", meta: map[string]string{"state": string(sessionpkg.StateAsleep), "sleep_reason": "drained"}, want: false},
 		{name: "failed-create", meta: map[string]string{"state": string(sessionpkg.StateFailedCreate)}, want: false},
 		{name: "stopped", meta: map[string]string{"state": string(sessionpkg.BaseStateStopped)}, want: false},
+		{name: "quarantined", meta: map[string]string{"state": string(sessionpkg.StateQuarantined)}, want: false},
 		{name: "gc-swept", meta: map[string]string{"state": sessionStateGCSwept}, want: false},
 		{name: "orphaned", meta: map[string]string{"state": string(sessionpkg.BaseStateOrphaned)}, want: false},
 	}
@@ -5245,7 +5246,6 @@ func TestSelectOrCreateDependencyPoolSessionBead_ReusesParkedReusableBeads(t *te
 		{name: "asleep", state: string(sessionpkg.StateAsleep)},
 		{name: "suspended", state: string(sessionpkg.StateSuspended)},
 		{name: "archived", state: string(sessionpkg.StateArchived)},
-		{name: "quarantined", state: string(sessionpkg.StateQuarantined)},
 	}
 
 	for _, tc := range testCases {

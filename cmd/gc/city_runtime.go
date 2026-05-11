@@ -1191,10 +1191,15 @@ func poolDeathHookSuppressedByManagedStopDrainTracker(dt *drainTracker, beadID s
 
 func poolDeathHookSuppressedByManagedStopState(bead beads.Bead) bool {
 	switch strings.TrimSpace(bead.Metadata["state"]) {
-	case string(sessionpkg.StateDraining), string(sessionpkg.StateDrained),
-		string(sessionpkg.StateArchived), string(sessionpkg.StateSuspended),
+	case string(sessionpkg.StateDrained), string(sessionpkg.StateArchived),
+		string(sessionpkg.StateSuspended),
 		sessionStateGCSwept, string(sessionpkg.BaseStateOrphaned):
 		return true
+	case string(sessionpkg.StateDraining):
+		// Persisted draining state only proves a deliberate stop once the bead
+		// has already been closed. Live draining sessions preserve crash
+		// recovery until the controller's explicit stop signal is acknowledged.
+		return strings.TrimSpace(bead.Status) == "closed"
 	case string(sessionpkg.StateCreating):
 		// Keep creating fail-open. Async-start cleanup can stop a runtime while
 		// the bead is still creating, and those disappearances should preserve
