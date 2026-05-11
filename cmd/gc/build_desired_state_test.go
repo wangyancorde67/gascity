@@ -5195,6 +5195,98 @@ func TestSelectOrCreateDependencyPoolSessionBead_SkipsTerminalBeadsForNewDemand(
 	}
 }
 
+func TestDependencyPoolSessionBeadReusableForDemand_Contract(t *testing.T) {
+	testCases := []struct {
+		name string
+		meta map[string]string
+		want bool
+	}{
+		{name: "active", meta: map[string]string{"state": string(sessionpkg.StateActive)}, want: true},
+		{name: "asleep", meta: map[string]string{"state": string(sessionpkg.StateAsleep)}, want: true},
+		{name: "suspended", meta: map[string]string{"state": string(sessionpkg.StateSuspended)}, want: true},
+		{name: "archived", meta: map[string]string{"state": string(sessionpkg.StateArchived)}, want: true},
+		{name: "quarantined", meta: map[string]string{"state": string(sessionpkg.StateQuarantined)}, want: true},
+		{name: "drained", meta: map[string]string{"state": string(sessionpkg.StateAsleep), "sleep_reason": "drained"}, want: false},
+		{name: "failed-create", meta: map[string]string{"state": string(sessionpkg.StateFailedCreate)}, want: false},
+		{name: "stopped", meta: map[string]string{"state": string(sessionpkg.BaseStateStopped)}, want: false},
+		{name: "gc-swept", meta: map[string]string{"state": sessionStateGCSwept}, want: false},
+		{name: "orphaned", meta: map[string]string{"state": string(sessionpkg.BaseStateOrphaned)}, want: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bead := beads.Bead{
+				Metadata: map[string]string{
+					"template":        "claude",
+					"agent_name":      "claude-1",
+					"session_name":    "claude-dependency",
+					"dependency_only": "true",
+					"pool_managed":    "true",
+					"pool_slot":       "1",
+				},
+			}
+			for key, value := range tc.meta {
+				bead.Metadata[key] = value
+			}
+			if got := dependencyPoolSessionBeadReusableForDemand(bead); got != tc.want {
+				t.Fatalf("dependencyPoolSessionBeadReusableForDemand(state=%q sleep_reason=%q) = %v, want %v",
+					bead.Metadata["state"], bead.Metadata["sleep_reason"], got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSelectOrCreateDependencyPoolSessionBead_ReusesParkedReusableBeads(t *testing.T) {
+	testCases := []struct {
+		name  string
+		state string
+	}{
+		{name: "asleep", state: string(sessionpkg.StateAsleep)},
+		{name: "suspended", state: string(sessionpkg.StateSuspended)},
+		{name: "archived", state: string(sessionpkg.StateArchived)},
+		{name: "quarantined", state: string(sessionpkg.StateQuarantined)},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := beads.NewMemStore()
+			bead, err := store.Create(beads.Bead{
+				Title:  "claude",
+				Type:   sessionBeadType,
+				Labels: []string{sessionBeadLabel},
+				Metadata: map[string]string{
+					"template":        "claude",
+					"agent_name":      "claude-1",
+					"session_name":    "claude-dependency-1",
+					"state":           tc.state,
+					"dependency_only": "true",
+					"pool_managed":    "true",
+					"pool_slot":       "1",
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot := &sessionBeadSnapshot{}
+			snapshot.add(bead)
+			cfgAgent := config.Agent{Name: "claude", MinActiveSessions: intPtr(0), MaxActiveSessions: intPtr(5)}
+			bp := &agentBuildParams{
+				beadStore:    store,
+				sessionBeads: snapshot,
+				agents:       []config.Agent{cfgAgent},
+			}
+
+			result, err := selectOrCreateDependencyPoolSessionBead(bp, &cfgAgent, "claude")
+			if err != nil {
+				t.Fatalf("selectOrCreateDependencyPoolSessionBead: %v", err)
+			}
+			if result.ID != bead.ID {
+				t.Fatalf("state=%q should reuse parked dependency bead, got %s want %s", tc.state, result.ID, bead.ID)
+			}
+		})
+	}
+}
+
 func TestSelectOrCreatePoolSessionBead_ReusesAvailableForNewTier(t *testing.T) {
 	store := beads.NewMemStore()
 	// Existing awake session bead without assigned work — should be reused

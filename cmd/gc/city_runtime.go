@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,6 +37,8 @@ import (
 // beads are still compensated by the next startup sweep if shutdown also
 // cannot wait long enough.
 const reloadOrderDrainTimeout = 1 * time.Second
+
+const sessionStateGCSwept = "gc_swept"
 
 // CityRuntime holds all running state for a single city's reconciliation
 // loop. It encapsulates the per-city lifecycle that was previously spread
@@ -682,12 +685,14 @@ func (cr *CityRuntime) tick(
 						} else if suppressed {
 							_, _ = fmt.Fprintf(
 								cr.stderr,
-								"%s: on_death %s skipped for managed session stop (bead=%s status=%s state=%s)\n",
+								"%s: on_death %s skipped for managed session stop (bead=%s status=%s state=%s state_reason=%s close_reason=%s)\n",
 								cr.logPrefix,
 								sn,
 								strings.TrimSpace(suppressionBead.ID),
 								strings.TrimSpace(suppressionBead.Status),
 								strings.TrimSpace(suppressionBead.Metadata["state"]),
+								strings.TrimSpace(suppressionBead.Metadata["state_reason"]),
+								strings.TrimSpace(suppressionBead.Metadata["close_reason"]),
 							)
 							continue
 						}
@@ -986,6 +991,12 @@ func (cr *CityRuntime) poolManagedStopSuppressionBead(sessionName string) (beads
 		}
 		poolMatches = append(poolMatches, bead)
 	}
+	if len(poolMatches) == 0 {
+		poolMatches, err = cr.legacyPoolManagedStopSuppressionCandidates(store, sessionName)
+		if err != nil {
+			return beads.Bead{}, false, err
+		}
+	}
 	// Canonicalize across open and closed beads together. Once the provider has
 	// already reported the runtime session missing, an "active" duplicate is only
 	// stale metadata; the bead that owns the session name remains authoritative.
@@ -993,6 +1004,30 @@ func (cr *CityRuntime) poolManagedStopSuppressionBead(sessionName string) (beads
 		return bead, true, nil
 	}
 	return beads.Bead{}, false, nil
+}
+
+func (cr *CityRuntime) legacyPoolManagedStopSuppressionCandidates(store beads.Store, sessionName string) ([]beads.Bead, error) {
+	if store == nil || cr.cfg == nil {
+		return nil, nil
+	}
+	all, err := store.List(beads.ListQuery{Label: sessionBeadLabel})
+	if err != nil {
+		return nil, err
+	}
+	var matches []beads.Bead
+	for _, bead := range all {
+		if !sessionpkg.IsSessionBeadOrRepairable(bead) {
+			continue
+		}
+		if !isPoolManagedSessionBead(bead) {
+			continue
+		}
+		if !poolManagedStopMatchesLegacyRuntimeSessionName(cr.cfg, cr.cityName, bead, sessionName) {
+			continue
+		}
+		matches = append(matches, bead)
+	}
+	return matches, nil
 }
 
 func canonicalPoolManagedStopSuppressionBead(matches []beads.Bead, dt *drainTracker) (beads.Bead, bool) {
@@ -1060,6 +1095,14 @@ func betterPoolManagedStopSuppressionBead(incumbent, candidate, anchor beads.Bea
 	return incumbent
 }
 
+func poolManagedStopBeadIsNewer(candidate, incumbent beads.Bead) bool {
+	if candidate.CreatedAt.After(incumbent.CreatedAt) {
+		return true
+	}
+	return candidate.CreatedAt.Equal(incumbent.CreatedAt) &&
+		strings.TrimSpace(candidate.ID) > strings.TrimSpace(incumbent.ID)
+}
+
 func drainTrackerHasBead(dt *drainTracker, beadID string) bool {
 	if dt == nil || strings.TrimSpace(beadID) == "" {
 		return false
@@ -1067,15 +1110,48 @@ func drainTrackerHasBead(dt *drainTracker, beadID string) bool {
 	return dt.get(beadID) != nil
 }
 
+func poolManagedStopMatchesLegacyRuntimeSessionName(cfg *config.City, cityName string, bead beads.Bead, sessionName string) bool {
+	sessionName = strings.TrimSpace(sessionName)
+	if cfg == nil || cityName == "" || sessionName == "" {
+		return false
+	}
+	template := normalizedSessionTemplate(bead, cfg)
+	cfgAgent := findAgentByTemplate(cfg, template)
+	if cfgAgent == nil || !cfgAgent.SupportsInstanceExpansion() {
+		return false
+	}
+	identities := make(map[string]struct{})
+	addIdentity := func(identity string) {
+		identity = strings.TrimSpace(identity)
+		if identity == "" {
+			return
+		}
+		identities[identity] = struct{}{}
+	}
+	addIdentity(sessionBeadAgentName(bead))
+	addIdentity(bead.Metadata["alias"])
+	if slot, err := strconv.Atoi(strings.TrimSpace(bead.Metadata["pool_slot"])); err == nil && slot > 0 {
+		instanceName := poolInstanceName(cfgAgent.Name, slot, cfgAgent)
+		addIdentity(cfgAgent.QualifiedInstanceName(instanceName))
+	}
+	for identity := range identities {
+		if startupSessionName(cityName, identity, cfg.Workspace.SessionTemplate) == sessionName {
+			return true
+		}
+	}
+	return false
+}
+
 func poolManagedStopSuppressionRank(bead, anchor beads.Bead, hasAnchor bool, dt *drainTracker) int {
 	suppressed := poolDeathHookSuppressedByManagedStopState(bead)
 	tracked := drainTrackerHasBead(dt, bead.ID)
 	isAnchor := hasAnchor && strings.TrimSpace(anchor.ID) != "" && strings.TrimSpace(anchor.ID) == strings.TrimSpace(bead.ID)
-	anchorIsNewer := hasAnchor && strings.TrimSpace(anchor.ID) != "" && strings.TrimSpace(anchor.ID) != strings.TrimSpace(bead.ID) &&
-		anchor.CreatedAt.After(bead.CreatedAt)
+	anchorDominates := hasAnchor && strings.TrimSpace(anchor.ID) != "" &&
+		strings.TrimSpace(anchor.ID) != strings.TrimSpace(bead.ID) &&
+		poolManagedStopBeadIsNewer(anchor, bead)
 
 	switch {
-	case suppressed && tracked && !anchorIsNewer:
+	case suppressed && tracked && !anchorDominates:
 		// Live drain-tracker intent wins while it still points at the newest
 		// managed-stop candidate. If the tracked duplicate is older than the
 		// current authority anchor, treat the tracker as stale and fall back to
@@ -1083,7 +1159,7 @@ func poolManagedStopSuppressionRank(bead, anchor beads.Bead, hasAnchor bool, dt 
 		return 5
 	case suppressed && isAnchor:
 		return 4
-	case suppressed && hasAnchor && !isAnchor && bead.CreatedAt.After(anchor.CreatedAt):
+	case suppressed && hasAnchor && !isAnchor && poolManagedStopBeadIsNewer(bead, anchor):
 		// After a controller restart, drainTracker state is gone. A newer
 		// managed-stop duplicate still needs to beat an older active anchor so
 		// death-hook suppression survives restart.
@@ -1101,7 +1177,7 @@ func poolDeathHookSuppressedByManagedStopState(bead beads.Bead) bool {
 	switch strings.TrimSpace(bead.Metadata["state"]) {
 	case string(sessionpkg.StateDraining), string(sessionpkg.StateDrained),
 		string(sessionpkg.StateArchived), string(sessionpkg.StateSuspended),
-		"gc_swept", "orphaned":
+		sessionStateGCSwept, string(sessionpkg.BaseStateOrphaned):
 		return true
 	case string(sessionpkg.StateCreating):
 		// Keep creating fail-open. Async-start cleanup can stop a runtime while
@@ -1112,7 +1188,7 @@ func poolDeathHookSuppressedByManagedStopState(bead beads.Bead) bool {
 		// failed-create still projects as a missing runtime that can need
 		// crash recovery. Do not swallow on_death for that state.
 		return false
-	case string(sessionpkg.StateAsleep), "stopped":
+	case string(sessionpkg.StateAsleep), string(sessionpkg.BaseStateStopped):
 		return isDeliberateSleepReason(bead.Metadata["sleep_reason"])
 	case string(sessionpkg.StateQuarantined):
 		// Quarantine is a crash-recovery hold after an unexpected death, not a

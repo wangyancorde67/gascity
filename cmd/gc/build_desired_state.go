@@ -1931,9 +1931,6 @@ func selectOrCreatePoolSessionBead(
 	// states: fresh scale demand must not resurrect a stopped/drained/swept
 	// lifecycle record that is no longer a live worker identity.
 	for _, bead := range bp.sessionBeads.Open() {
-		if bead.Status == "closed" {
-			continue
-		}
 		if !poolSessionBeadReusableForNewDemand(bead) {
 			continue
 		}
@@ -2037,6 +2034,35 @@ func poolSessionBeadReusableForNewDemand(bead beads.Bead) bool {
 	return false
 }
 
+func dependencyPoolSessionBeadReusableForDemand(bead beads.Bead) bool {
+	if strings.TrimSpace(bead.Status) == "closed" {
+		return false
+	}
+	if isDrainedSessionBead(bead) {
+		return false
+	}
+	if isFailedCreateSessionBead(bead) {
+		return false
+	}
+	switch strings.TrimSpace(bead.Metadata["state"]) {
+	case "",
+		string(session.StateActive),
+		string(session.StateAwake),
+		string(session.StateCreating),
+		string(session.StateAsleep),
+		string(session.StateSuspended),
+		string(session.StateArchived),
+		string(session.StateQuarantined):
+		return true
+	case string(session.BaseStateStopped), sessionStateGCSwept, string(session.BaseStateOrphaned):
+		return false
+	}
+	if strings.TrimSpace(bead.Metadata["close_reason"]) != "" || strings.TrimSpace(bead.Metadata["closed_at"]) != "" {
+		return false
+	}
+	return false
+}
+
 func sessionBeadHasAssignedWork(workBeads []beads.Bead, sessionBead beads.Bead) bool {
 	for _, wb := range workBeads {
 		assignee := strings.TrimSpace(wb.Assignee)
@@ -2062,7 +2088,7 @@ func selectOrCreateDependencyPoolSessionBead(
 		if isManualSessionBead(bead) {
 			continue
 		}
-		if !poolSessionBeadReusableForNewDemand(bead) {
+		if !dependencyPoolSessionBeadReusableForDemand(bead) {
 			continue
 		}
 		if isNamedSessionBead(bead) {
