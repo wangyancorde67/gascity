@@ -76,6 +76,15 @@ func TestUsesImmediateDefaultSubmit_WrappedCodex(t *testing.T) {
 	}
 }
 
+func TestUsesImmediateDefaultSubmit_Kimi(t *testing.T) {
+	kimi := beads.Bead{Metadata: map[string]string{
+		"provider": "kimi",
+	}}
+	if !usesImmediateDefaultSubmit(kimi) {
+		t.Error("kimi should use immediate default submit")
+	}
+}
+
 // TestUsesImmediateDefaultSubmit_WrappedGeminiDoesNot — only codex gets
 // the immediate-default treatment; gemini (even wrapped) must not.
 func TestUsesImmediateDefaultSubmit_WrappedGeminiDoesNot(t *testing.T) {

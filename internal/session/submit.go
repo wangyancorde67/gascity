@@ -394,7 +394,7 @@ func usesImmediateDefaultSubmit(b beads.Bead, resuming ...bool) bool {
 		return false
 	}
 	switch providerKind(b) {
-	case "codex":
+	case "codex", "kimi":
 		return true
 	case "gemini":
 		return isResuming

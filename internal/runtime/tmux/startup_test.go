@@ -256,6 +256,24 @@ func TestInjectSessionRuntimeHintsEnvAddsReadyPromptPrefix(t *testing.T) {
 	}
 }
 
+func TestInjectSessionRuntimeHintsEnvAddsProviderName(t *testing.T) {
+	env := injectSessionRuntimeHintsEnv(nil, runtime.Config{
+		ProviderName: "kimi",
+	})
+	if got := env["GC_PROVIDER"]; got != "kimi" {
+		t.Fatalf("GC_PROVIDER = %q, want %q", got, "kimi")
+	}
+}
+
+func TestInjectSessionRuntimeHintsEnvPreservesExplicitProvider(t *testing.T) {
+	env := injectSessionRuntimeHintsEnv(map[string]string{"GC_PROVIDER": "custom"}, runtime.Config{
+		ProviderName: "kimi",
+	})
+	if got := env["GC_PROVIDER"]; got != "custom" {
+		t.Fatalf("GC_PROVIDER = %q, want %q", got, "custom")
+	}
+}
+
 func TestDoStartSession_FullSequence(t *testing.T) {
 	ops := &fakeStartOps{
 		hasSessionResult: true,
@@ -547,6 +565,32 @@ func TestDoStartSession_ProcessNamesOnly(t *testing.T) {
 
 	// Verify isRuntimeRunning sees the process names in zombie detection path.
 	// (Here create succeeded, so isRuntimeRunning isn't called.)
+}
+
+func TestDoStartSession_KimiSkipsStartupDialogAcceptance(t *testing.T) {
+	ops := &fakeStartOps{
+		hasSessionResult: true,
+	}
+
+	cfg := runtime.Config{
+		Command:      "kimi --yolo",
+		ProviderName: "kimi",
+		ProcessNames: []string{"kimi", "python"},
+		ReadyDelayMs: 5000,
+	}
+
+	err := doStartSession(context.Background(), ops, "test", cfg, DefaultConfig().SetupTimeout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assertCallSequence(t, ops, []string{
+		"createSession",
+		"setRemainOnExit",
+		"waitForCommand",
+		"waitForReady",
+		"hasSession",
+	})
 }
 
 func TestDoStartSession_ReadyPromptPrefixOnly(t *testing.T) {

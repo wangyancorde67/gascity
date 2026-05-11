@@ -78,7 +78,7 @@ const (
 )
 
 var builtinProviderOrder = []string{
-	"claude", "codex", "gemini", "kiro", "cursor", "copilot",
+	"claude", "codex", "gemini", "kimi", "kiro", "cursor", "copilot",
 	"amp", "opencode", "auggie", "pi", "omp",
 }
 
@@ -266,6 +266,33 @@ var builtinProviderSpecs = map[string]BuiltinProviderSpec{
 			},
 		},
 	},
+	"kimi": {
+		DisplayName:      "Kimi Code CLI",
+		Command:          "kimi",
+		Args:             []string{"--yolo", "--no-thinking"},
+		PromptMode:       "none",
+		ReadyDelayMs:     5000,
+		ProcessNames:     []string{"kimi", "python"},
+		SupportsACP:      true,
+		InstructionsFile: "AGENTS.md",
+		ResumeFlag:       "--session",
+		ResumeStyle:      "flag",
+		PrintArgs:        []string{"--quiet"},
+		TitleModel:       "kimi-k2.6",
+		ACPArgs:          []string{"acp"},
+		OptionsSchema: []BuiltinProviderOption{
+			{
+				Key:   "model",
+				Label: "Model",
+				Type:  "select",
+				Choices: []BuiltinOptionChoice{
+					{Value: "", Label: "Default"},
+					{Value: "kimi-k2.6", Label: "Kimi K2.6", FlagArgs: []string{"--model", "kimi-k2.6"}, FlagAliases: [][]string{{"-m", "kimi-k2.6"}}},
+					{Value: "kimi-k2-thinking-turbo", Label: "Kimi K2 Thinking Turbo", FlagArgs: []string{"--model", "kimi-k2-thinking-turbo"}, FlagAliases: [][]string{{"-m", "kimi-k2-thinking-turbo"}}},
+				},
+			},
+		},
+	},
 	"kiro": {
 		DisplayName:      "Kiro",
 		Command:          "kiro-cli",
@@ -391,6 +418,8 @@ func CanonicalProfileIdentity(profile string) (ProfileIdentity, bool) {
 		return newProfileIdentity(profile, "codex"), true
 	case "gemini/tmux-cli":
 		return newProfileIdentity(profile, "gemini"), true
+	case "kimi/tmux-cli":
+		return newProfileIdentity(profile, "kimi"), true
 	case "opencode/tmux-cli":
 		return newProfileIdentity(profile, "opencode"), true
 	default:

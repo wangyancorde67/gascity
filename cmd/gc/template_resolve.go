@@ -645,7 +645,9 @@ func templateParamsToConfig(tp TemplateParams) runtime.Config {
 
 func prependStartupPromptToNudge(prompt, nudge string) string {
 	if nudge != "" {
-		return prompt + "\n\n---\n\n" + nudge
+		return prompt + startupPromptNudgeSeparator + nudge
 	}
 	return prompt
 }
+
+const startupPromptNudgeSeparator = "\n\n---\n\n"

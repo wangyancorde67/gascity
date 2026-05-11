@@ -74,9 +74,9 @@ func startupRuntimeConfigMaterializationResult(tc phase2ProviderCase, tp Templat
 	case cfg.WorkDir != tp.WorkDir:
 		return workertest.Fail(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
 			fmt.Sprintf("cfg.WorkDir = %q, want %q", cfg.WorkDir, tp.WorkDir)).WithEvidence(evidence)
-	case cfg.PromptSuffix == "":
+	case startupPromptPayload(cfg) == "":
 		return workertest.Fail(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
-			"cfg.PromptSuffix = empty, want beacon prompt materialized").WithEvidence(evidence)
+			"startup prompt payload = empty, want beacon prompt materialized").WithEvidence(evidence)
 	case tc.wantPromptFlag != "" && cfg.PromptFlag != tc.wantPromptFlag:
 		return workertest.Fail(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
 			fmt.Sprintf("cfg.PromptFlag = %q, want %q", cfg.PromptFlag, tc.wantPromptFlag)).WithEvidence(evidence)
@@ -110,9 +110,9 @@ func startupRuntimeConfigMaterializationResult(tc phase2ProviderCase, tp Templat
 	case cfg.EmitsPermissionWarning != tc.wantEmitsPermission:
 		return workertest.Fail(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
 			fmt.Sprintf("cfg.EmitsPermissionWarning = %v, want %v", cfg.EmitsPermissionWarning, tc.wantEmitsPermission)).WithEvidence(evidence)
-	case cfg.Nudge != "nudge-"+tc.family:
+	case !startupNudgeMatches(tc, cfg.Nudge):
 		return workertest.Fail(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
-			fmt.Sprintf("cfg.Nudge = %q, want %q", cfg.Nudge, "nudge-"+tc.family)).WithEvidence(evidence)
+			fmt.Sprintf("cfg.Nudge = %q, want startup nudge plus %q", cfg.Nudge, "nudge-"+tc.family)).WithEvidence(evidence)
 	case !reflect.DeepEqual(cfg.PreStart, []string{"echo pre-" + tc.family}):
 		return workertest.Fail(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
 			fmt.Sprintf("cfg.PreStart = %v, want %v", cfg.PreStart, []string{"echo pre-" + tc.family})).WithEvidence(evidence)
@@ -289,11 +289,22 @@ func phase2ConfigEvidence(tc phase2ProviderCase, tp TemplateParams, cfg runtime.
 func phase2PromptPayload(tc phase2ProviderCase, prepared *preparedStart) (string, map[string]string, error) {
 	evidence := phase2PreparedEvidence(tc, prepared)
 	raw := ""
+	nudge := ""
 	if prepared != nil {
 		raw = prepared.cfg.PromptSuffix
+		nudge = prepared.cfg.Nudge
 	}
 	evidence["prompt_suffix_raw"] = raw
+	evidence["nudge_raw"] = nudge
 
+	if strings.TrimSpace(raw) == "" {
+		value := ""
+		if prepared != nil && prepared.cfg.Env[startupPromptDeliveredEnv] == "1" {
+			value = startupPromptFromNudge(nudge)
+		}
+		evidence["prompt_suffix_payload"] = value
+		return value, evidence, nil
+	}
 	value, err := singleShellArgValue(raw)
 	if err != nil {
 		evidence["prompt_suffix_parse_error"] = err.Error()
@@ -301,6 +312,43 @@ func phase2PromptPayload(tc phase2ProviderCase, prepared *preparedStart) (string
 	}
 	evidence["prompt_suffix_payload"] = value
 	return value, evidence, nil
+}
+
+func startupPromptPayload(cfg runtime.Config) string {
+	if strings.TrimSpace(cfg.PromptSuffix) == "" {
+		if cfg.Env[startupPromptDeliveredEnv] != "1" {
+			return ""
+		}
+		return startupPromptFromNudge(cfg.Nudge)
+	}
+	value, err := singleShellArgValue(cfg.PromptSuffix)
+	if err != nil {
+		return ""
+	}
+	return value
+}
+
+func startupPromptFromNudge(nudge string) string {
+	parts := strings.Split(nudge, startupPromptNudgeSeparator)
+	switch {
+	case len(parts) == 1:
+		return nudge
+	case len(parts) == 2 && strings.HasPrefix(parts[1], "User message:\n"):
+		return nudge
+	default:
+		return strings.Join(parts[:len(parts)-1], startupPromptNudgeSeparator)
+	}
+}
+
+func startupNudgeMatches(tc phase2ProviderCase, nudge string) bool {
+	want := "nudge-" + tc.family
+	if nudge == want {
+		return true
+	}
+	if index := strings.LastIndex(nudge, startupPromptNudgeSeparator); index >= 0 {
+		return nudge[index+len(startupPromptNudgeSeparator):] == want
+	}
+	return false
 }
 
 func phase2PreparedEvidence(tc phase2ProviderCase, prepared *preparedStart) map[string]string {

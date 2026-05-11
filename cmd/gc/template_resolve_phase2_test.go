@@ -89,6 +89,17 @@ func selectedPhase2ProviderCases(t *testing.T) []phase2ProviderCase {
 			wantModelOverrideArgs: []string{"--model", "gemini-2.5-pro"},
 		},
 		{
+			profileID:             "kimi/tmux-cli",
+			family:                "kimi",
+			wantCommand:           "kimi --yolo --no-thinking",
+			wantPromptMode:        "none",
+			wantReadyDelayMs:      5000,
+			wantReadyPromptPrefix: "",
+			wantProcessNames:      []string{"kimi", "python"},
+			wantModelOverride:     "kimi-k2.6",
+			wantModelOverrideArgs: []string{"--model", "kimi-k2.6"},
+		},
+		{
 			profileID:        "opencode/tmux-cli",
 			family:           "opencode",
 			wantCommand:      "opencode",
