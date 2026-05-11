@@ -965,7 +965,7 @@ func (cr *CityRuntime) poolDeathHookSuppressedByManagedStop(sessionName string) 
 	if err != nil || !found {
 		return beads.Bead{}, false, err
 	}
-	return bead, poolDeathHookSuppressedByManagedStopState(bead), nil
+	return bead, poolDeathHookSuppressedByManagedStop(bead, cr.sessionDrains), nil
 }
 
 func (cr *CityRuntime) poolManagedStopSuppressionBead(sessionName string) (beads.Bead, bool, error) {
@@ -1010,7 +1010,7 @@ func (cr *CityRuntime) legacyPoolManagedStopSuppressionCandidates(store beads.St
 	if store == nil || cr.cfg == nil {
 		return nil, nil
 	}
-	all, err := store.List(beads.ListQuery{Label: sessionBeadLabel})
+	all, err := store.List(beads.ListQuery{Label: sessionBeadLabel, IncludeClosed: true})
 	if err != nil {
 		return nil, err
 	}
@@ -1034,7 +1034,7 @@ func canonicalPoolManagedStopSuppressionBead(matches []beads.Bead, dt *drainTrac
 	if len(matches) == 0 {
 		return beads.Bead{}, false
 	}
-	anchor, hasAnchor := newestPoolManagedStopSuppressionAnchor(matches)
+	anchor, hasAnchor := newestPoolManagedStopSuppressionAnchor(matches, dt)
 	winner := matches[0]
 	for _, bead := range matches[1:] {
 		winner = betterPoolManagedStopSuppressionBead(winner, bead, anchor, hasAnchor, dt)
@@ -1042,7 +1042,7 @@ func canonicalPoolManagedStopSuppressionBead(matches []beads.Bead, dt *drainTrac
 	return winner, true
 }
 
-func newestPoolManagedStopSuppressionAnchor(matches []beads.Bead) (beads.Bead, bool) {
+func newestPoolManagedStopSuppressionAnchor(matches []beads.Bead, dt *drainTracker) (beads.Bead, bool) {
 	var (
 		owner       beads.Bead
 		hasOwner    bool
@@ -1050,7 +1050,7 @@ func newestPoolManagedStopSuppressionAnchor(matches []beads.Bead) (beads.Bead, b
 		hasFallback bool
 	)
 	for _, bead := range matches {
-		if !poolDeathHookSuppressedByManagedStopState(bead) {
+		if !poolDeathHookSuppressedByManagedStop(bead, dt) {
 			if !hasFallback || bead.CreatedAt.After(fallback.CreatedAt) || (bead.CreatedAt.Equal(fallback.CreatedAt) && strings.TrimSpace(bead.ID) > strings.TrimSpace(fallback.ID)) {
 				fallback = bead
 				hasFallback = true
@@ -1143,7 +1143,7 @@ func poolManagedStopMatchesLegacyRuntimeSessionName(cfg *config.City, cityName s
 }
 
 func poolManagedStopSuppressionRank(bead, anchor beads.Bead, hasAnchor bool, dt *drainTracker) int {
-	suppressed := poolDeathHookSuppressedByManagedStopState(bead)
+	suppressed := poolDeathHookSuppressedByManagedStop(bead, dt)
 	tracked := drainTrackerHasBead(dt, bead.ID)
 	isAnchor := hasAnchor && strings.TrimSpace(anchor.ID) != "" && strings.TrimSpace(anchor.ID) == strings.TrimSpace(bead.ID)
 	anchorDominates := hasAnchor && strings.TrimSpace(anchor.ID) != "" &&
@@ -1171,6 +1171,22 @@ func poolManagedStopSuppressionRank(bead, anchor beads.Bead, hasAnchor bool, dt 
 	default:
 		return 0
 	}
+}
+
+func poolDeathHookSuppressedByManagedStop(bead beads.Bead, dt *drainTracker) bool {
+	return poolDeathHookSuppressedByManagedStopState(bead) ||
+		poolDeathHookSuppressedByManagedStopDrainTracker(dt, bead.ID)
+}
+
+func poolDeathHookSuppressedByManagedStopDrainTracker(dt *drainTracker, beadID string) bool {
+	if dt == nil || strings.TrimSpace(beadID) == "" {
+		return false
+	}
+	ds := dt.get(beadID)
+	if ds == nil || !ds.ackSet {
+		return false
+	}
+	return isDeliberateSleepReason(ds.reason)
 }
 
 func poolDeathHookSuppressedByManagedStopState(bead beads.Bead) bool {
