@@ -9,6 +9,13 @@ func TestDerivedResumeSessionKeyOpenCodeUsesProviderSessionID(t *testing.T) {
 	}
 }
 
+func TestDerivedResumeSessionKeyKimiUsesProviderSessionID(t *testing.T) {
+	got := derivedResumeSessionKey("kimi/tmux-cli", "fe8717c9-1903-4bd4-b8e5-159caeb56f1a")
+	if got != "fe8717c9-1903-4bd4-b8e5-159caeb56f1a" {
+		t.Fatalf("derivedResumeSessionKey(kimi) = %q, want provider session id", got)
+	}
+}
+
 func TestDerivedResumeSessionKeyNonResumeProviderStaysEmpty(t *testing.T) {
 	got := derivedResumeSessionKey("gemini/tmux-cli", "ses_21523e55fffeqoQOyaIoQtfdf5")
 	if got != "" {

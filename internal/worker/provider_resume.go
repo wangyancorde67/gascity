@@ -13,7 +13,7 @@ func derivedResumeSessionKey(provider, providerSessionID string) string {
 		return ""
 	}
 	providerFamily := strings.ToLower(strings.TrimSpace(provider))
-	if strings.Contains(providerFamily, "opencode") {
+	if strings.Contains(providerFamily, "kimi") || strings.Contains(providerFamily, "opencode") {
 		return providerSessionID
 	}
 	if !strings.Contains(providerFamily, "codex") {
