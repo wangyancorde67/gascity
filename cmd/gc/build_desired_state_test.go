@@ -5206,6 +5206,7 @@ func TestDependencyPoolSessionBeadReusableForDemand_Contract(t *testing.T) {
 		{name: "suspended", meta: map[string]string{"state": string(sessionpkg.StateSuspended)}, want: true},
 		{name: "archived", meta: map[string]string{"state": string(sessionpkg.StateArchived)}, want: true},
 		{name: "quarantined", meta: map[string]string{"state": string(sessionpkg.StateQuarantined)}, want: true},
+		{name: "draining", meta: map[string]string{"state": string(sessionpkg.StateDraining)}, want: false},
 		{name: "drained", meta: map[string]string{"state": string(sessionpkg.StateAsleep), "sleep_reason": "drained"}, want: false},
 		{name: "failed-create", meta: map[string]string{"state": string(sessionpkg.StateFailedCreate)}, want: false},
 		{name: "stopped", meta: map[string]string{"state": string(sessionpkg.BaseStateStopped)}, want: false},
@@ -5284,6 +5285,43 @@ func TestSelectOrCreateDependencyPoolSessionBead_ReusesParkedReusableBeads(t *te
 				t.Fatalf("state=%q should reuse parked dependency bead, got %s want %s", tc.state, result.ID, bead.ID)
 			}
 		})
+	}
+}
+
+func TestSelectOrCreateDependencyPoolSessionBead_SkipsDrainingBeadsForNewDemand(t *testing.T) {
+	store := beads.NewMemStore()
+	bead, err := store.Create(beads.Bead{
+		Title:  "claude",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":        "claude",
+			"agent_name":      "claude-1",
+			"session_name":    "claude-dependency-draining",
+			"state":           string(sessionpkg.StateDraining),
+			"dependency_only": "true",
+			"pool_managed":    "true",
+			"pool_slot":       "1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &sessionBeadSnapshot{}
+	snapshot.add(bead)
+	cfgAgent := config.Agent{Name: "claude", MinActiveSessions: intPtr(0), MaxActiveSessions: intPtr(5)}
+	bp := &agentBuildParams{
+		beadStore:    store,
+		sessionBeads: snapshot,
+		agents:       []config.Agent{cfgAgent},
+	}
+
+	result, err := selectOrCreateDependencyPoolSessionBead(bp, &cfgAgent, "claude")
+	if err != nil {
+		t.Fatalf("selectOrCreateDependencyPoolSessionBead: %v", err)
+	}
+	if result.ID == bead.ID {
+		t.Fatal("draining dependency bead should not be reused for new demand")
 	}
 }
 

@@ -2044,6 +2044,10 @@ func dependencyPoolSessionBeadReusableForDemand(bead beads.Bead) bool {
 	if isFailedCreateSessionBead(bead) {
 		return false
 	}
+	// Dependency-floor demand intentionally differs from fresh tier demand:
+	// parked identities (asleep/suspended/archived/quarantined) can be reused
+	// to preserve their concrete session slot, but draining/terminal states
+	// must never absorb new demand because they are already leaving service.
 	switch strings.TrimSpace(bead.Metadata["state"]) {
 	case "",
 		string(session.StateActive),
@@ -2054,10 +2058,10 @@ func dependencyPoolSessionBeadReusableForDemand(bead beads.Bead) bool {
 		string(session.StateArchived),
 		string(session.StateQuarantined):
 		return true
-	case string(session.BaseStateStopped), sessionStateGCSwept, string(session.BaseStateOrphaned):
-		return false
-	}
-	if strings.TrimSpace(bead.Metadata["close_reason"]) != "" || strings.TrimSpace(bead.Metadata["closed_at"]) != "" {
+	case string(session.StateDraining),
+		string(session.BaseStateStopped),
+		sessionStateGCSwept,
+		string(session.BaseStateOrphaned):
 		return false
 	}
 	return false
