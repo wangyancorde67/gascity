@@ -107,15 +107,7 @@ func processRetryControl(store beads.Store, bead beads.Bead, opts ProcessOptions
 		}
 		nextAttempt := attemptNum + 1
 		if err := spawnNextAttempt(context.Background(), store, bead, nextAttempt, opts); err != nil {
-			// Controller-internal failure → close with hard error.
-			_ = store.SetMetadataBatch(bead.ID, map[string]string{
-				"gc.controller_error":  err.Error(),
-				"gc.final_disposition": "controller_error",
-			})
-			_ = setOutcomeAndClose(store, bead.ID, "fail")
-			// Reconcile any enclosing scope so a controller_error terminal
-			// closure does not leave the scope body stalled.
-			_, _ = reconcileClosedScopeMember(store, bead.ID)
+			markControllerSpawnError(store, bead.ID, err)
 			return ControlResult{}, fmt.Errorf("%s: spawning attempt %d: %w", bead.ID, nextAttempt, err)
 		}
 
@@ -214,14 +206,7 @@ func processRalphControl(store beads.Store, bead beads.Bead, opts ProcessOptions
 	}
 	nextIteration := iterationNum + 1
 	if err := spawnNextAttempt(context.Background(), store, bead, nextIteration, opts); err != nil {
-		_ = store.SetMetadataBatch(bead.ID, map[string]string{
-			"gc.controller_error":  err.Error(),
-			"gc.final_disposition": "controller_error",
-		})
-		_ = setOutcomeAndClose(store, bead.ID, "fail")
-		// Reconcile any enclosing scope so a controller_error terminal
-		// closure does not leave the scope body stalled.
-		_, _ = reconcileClosedScopeMember(store, bead.ID)
+		markControllerSpawnError(store, bead.ID, err)
 		return ControlResult{}, fmt.Errorf("%s: spawning iteration %d: %w", bead.ID, nextIteration, err)
 	}
 
@@ -239,6 +224,52 @@ func ensureBlockingDependency(store beads.Store, issueID, dependsOnID string) er
 		}
 	}
 	return store.DepAdd(issueID, dependsOnID, "blocks")
+}
+
+func markControllerSpawnError(store beads.Store, beadID string, err error) {
+	metadata := map[string]string{
+		"gc.controller_error": err.Error(),
+	}
+	if isTransientControllerError(err) {
+		metadata["gc.controller_error_class"] = "transient"
+		metadata["gc.controller_retryable"] = "true"
+		_ = store.SetMetadataBatch(beadID, metadata)
+		return
+	}
+
+	metadata["gc.controller_error_class"] = "hard"
+	metadata["gc.final_disposition"] = "controller_error"
+	_ = store.SetMetadataBatch(beadID, metadata)
+	_ = setOutcomeAndClose(store, beadID, "fail")
+	// Reconcile any enclosing scope so a controller_error terminal closure
+	// does not leave the scope body stalled.
+	_, _ = reconcileClosedScopeMember(store, beadID)
+}
+
+func isTransientControllerError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	transientNeedles := []string{
+		"i/o timeout",
+		"context deadline exceeded",
+		"invalid connection",
+		"connection refused",
+		"connection reset by peer",
+		"broken pipe",
+		"bad connection",
+		"server has gone away",
+		"too many connections",
+		"lock wait timeout",
+		"deadlock found",
+	}
+	for _, needle := range transientNeedles {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func handleRetryExhaustion(store beads.Store, beadID string, attemptNum int, reason, onExhausted, attemptLog string) (ControlResult, error) {
