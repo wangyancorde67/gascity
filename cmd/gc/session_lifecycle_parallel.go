@@ -1010,9 +1010,6 @@ func runPreparedStartCandidate(
 
 func appendInitialMessageToStartupNudge(nudge, msg string) string {
 	userMessage := "User message:\n" + msg
-	if before, after, ok := strings.Cut(nudge, startupPromptNudgeSeparator); ok {
-		return before + startupPromptNudgeSeparator + userMessage + startupPromptNudgeSeparator + after
-	}
 	if nudge != "" {
 		return nudge + startupPromptNudgeSeparator + userMessage
 	}

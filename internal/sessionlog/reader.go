@@ -373,6 +373,8 @@ func ReadProviderFileNewer(provider, path string, tailCompactions int, afterMess
 		return ReadCodexFile(path, tailCompactions)
 	case "gemini":
 		return ReadGeminiFile(path, tailCompactions)
+	case "kimi":
+		return ReadKimiFile(path, tailCompactions)
 	case "opencode":
 		return ReadOpenCodeFile(path, tailCompactions)
 	default:
@@ -389,6 +391,8 @@ func ReadProviderFileRawNewer(provider, path string, tailCompactions int, afterM
 		return ReadCodexFile(path, tailCompactions)
 	case "gemini":
 		return ReadGeminiFile(path, tailCompactions)
+	case "kimi":
+		return ReadKimiFile(path, tailCompactions)
 	case "opencode":
 		return ReadOpenCodeFile(path, tailCompactions)
 	default:

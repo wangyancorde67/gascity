@@ -76,12 +76,24 @@ func TestUsesImmediateDefaultSubmit_WrappedCodex(t *testing.T) {
 	}
 }
 
-func TestUsesImmediateDefaultSubmit_Kimi(t *testing.T) {
+func TestUsesImmediateDefaultSubmit_KimiWaitsForIdle(t *testing.T) {
 	kimi := beads.Bead{Metadata: map[string]string{
 		"provider": "kimi",
 	}}
-	if !usesImmediateDefaultSubmit(kimi) {
-		t.Error("kimi should use immediate default submit")
+	if usesImmediateDefaultSubmit(kimi) {
+		t.Error("kimi must use the idle-wait submit path")
+	}
+}
+
+func TestWaitsForIdleAfterInterrupt_Kimi(t *testing.T) {
+	kimi := beads.Bead{Metadata: map[string]string{
+		"provider": "kimi",
+	}}
+	if waitsForIdleAfterInterrupt(kimi) {
+		t.Error("kimi interrupt handling should not opt into codex/gemini interrupt-boundary wait")
+	}
+	if usesSoftEscapeInterrupt(kimi) {
+		t.Error("kimi interrupt handling should not use soft escape")
 	}
 }
 

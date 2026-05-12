@@ -16,6 +16,21 @@ func TestDerivedResumeSessionKeyKimiUsesProviderSessionID(t *testing.T) {
 	}
 }
 
+func TestDerivedResumeSessionKeyCodexExtractsThreadID(t *testing.T) {
+	threadID := "019e1b65-5457-7301-a550-57a3d0d0919a"
+	got := derivedResumeSessionKey("codex/tmux-cli", "rollout-2026-05-12T08-54-46-"+threadID+".jsonl")
+	if got != threadID {
+		t.Fatalf("derivedResumeSessionKey(codex) = %q, want %q", got, threadID)
+	}
+}
+
+func TestDerivedResumeSessionKeyClaudeStaysEmpty(t *testing.T) {
+	got := derivedResumeSessionKey("claude/tmux-cli", "gc-123")
+	if got != "" {
+		t.Fatalf("derivedResumeSessionKey(claude) = %q, want empty", got)
+	}
+}
+
 func TestDerivedResumeSessionKeyNonResumeProviderStaysEmpty(t *testing.T) {
 	got := derivedResumeSessionKey("gemini/tmux-cli", "ses_21523e55fffeqoQOyaIoQtfdf5")
 	if got != "" {

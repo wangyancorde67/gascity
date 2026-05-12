@@ -55,9 +55,10 @@ func ReadKimiFile(path string, tailCompactions int) (*Session, error) {
 	diagnostics.MalformedTail = lastNonEmptyLineMalformed
 
 	sess := &Session{
-		ID:          kimiSessionID(path),
-		Messages:    messages,
-		Diagnostics: diagnostics,
+		ID:                 kimiSessionID(path),
+		Messages:           messages,
+		OrphanedToolUseIDs: findOrphanedToolUses(messages, collectAllToolResultIDs(messages)),
+		Diagnostics:        diagnostics,
 	}
 	if tailCompactions > 0 {
 		paginated, info := sliceAtCompactBoundaries(messages, tailCompactions, "", "")
@@ -97,6 +98,25 @@ func FindKimiSessionFile(searchPaths []string, workDir string) string {
 	return bestPath
 }
 
+// FindKimiSessionFileByID searches Kimi's session directory for the exact
+// session ID under the workdir hash.
+func FindKimiSessionFileByID(searchPaths []string, workDir, sessionID string) string {
+	workHash := kimiWorkDirHash(workDir)
+	sessionID = safeKimiSessionDirName(sessionID)
+	if workHash == "" || sessionID == "" {
+		return ""
+	}
+	for _, root := range mergeKimiSearchPaths(searchPaths) {
+		path := filepath.Join(root, workHash, sessionID, "context.jsonl")
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		return path
+	}
+	return ""
+}
+
 func findKimiSessionFileIn(root, workHash string) string {
 	workRoot := filepath.Join(root, workHash)
 	entries, err := os.ReadDir(workRoot)
@@ -134,11 +154,16 @@ func convertKimiContextEntry(raw kimiContextEntry, rawLine []byte, idx int, sess
 	role := strings.ToLower(strings.TrimSpace(raw.Role))
 	switch role {
 	case "user", "assistant", "system":
+	case "tool":
+		return convertKimiToolEntry(raw, rawLine, idx, sessionID)
 	default:
 		return nil
 	}
 
 	content := kimiMessageContent(raw.Content)
+	if role == "assistant" && len(raw.ToolCalls) > 0 {
+		content = mustMarshal(kimiAssistantContentBlocks(raw.Content, raw.ToolCalls))
+	}
 	entryType := role
 	return &Entry{
 		UUID:      fmt.Sprintf("kimi-%d", idx),
@@ -147,6 +172,26 @@ func convertKimiContextEntry(raw kimiContextEntry, rawLine []byte, idx int, sess
 		Message: mustMarshal(MessageContent{
 			Role:    role,
 			Content: content,
+		}),
+		Raw: append(json.RawMessage(nil), rawLine...),
+	}
+}
+
+func convertKimiToolEntry(raw kimiContextEntry, rawLine []byte, idx int, sessionID string) *Entry {
+	toolCallID := strings.TrimSpace(raw.ToolCallID)
+	block := ContentBlock{
+		Type:      "tool_result",
+		ToolUseID: toolCallID,
+		Content:   kimiMessageContent(raw.Content),
+	}
+	return &Entry{
+		UUID:      fmt.Sprintf("kimi-%d", idx),
+		Type:      "result",
+		SessionID: sessionID,
+		ToolUseID: toolCallID,
+		Message: mustMarshal(MessageContent{
+			Role:    "user",
+			Content: mustMarshal([]ContentBlock{block}),
 		}),
 		Raw: append(json.RawMessage(nil), rawLine...),
 	}
@@ -167,6 +212,71 @@ func kimiMessageContent(raw json.RawMessage) json.RawMessage {
 	return mustMarshal(strings.TrimSpace(string(raw)))
 }
 
+func kimiAssistantContentBlocks(rawContent json.RawMessage, toolCalls []kimiToolCall) []ContentBlock {
+	blocks := kimiContentBlocks(rawContent)
+	blocks = append(blocks, kimiToolUseBlocks(toolCalls)...)
+	return blocks
+}
+
+func kimiContentBlocks(raw json.RawMessage) []ContentBlock {
+	if len(raw) == 0 {
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil
+		}
+		return []ContentBlock{{Type: "text", Text: text}}
+	}
+	var blocks []ContentBlock
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		return blocks
+	}
+	text = strings.TrimSpace(string(raw))
+	if text == "" || text == "null" {
+		return nil
+	}
+	return []ContentBlock{{Type: "text", Text: text}}
+}
+
+func kimiToolUseBlocks(toolCalls []kimiToolCall) []ContentBlock {
+	blocks := make([]ContentBlock, 0, len(toolCalls))
+	for _, call := range toolCalls {
+		callID := strings.TrimSpace(call.ID)
+		name := strings.TrimSpace(call.Function.Name)
+		if callID == "" && name == "" && len(call.Function.Arguments) == 0 {
+			continue
+		}
+		blocks = append(blocks, ContentBlock{
+			Type:  "tool_use",
+			ID:    callID,
+			Name:  name,
+			Input: kimiToolCallInput(call.Function.Arguments),
+		})
+	}
+	return blocks
+}
+
+func kimiToolCallInput(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err == nil {
+		encoded = strings.TrimSpace(encoded)
+		if encoded == "" {
+			return nil
+		}
+		if json.Valid([]byte(encoded)) {
+			return json.RawMessage(encoded)
+		}
+		return mustMarshal(encoded)
+	}
+	return append(json.RawMessage(nil), raw...)
+}
+
 func kimiSessionID(path string) string {
 	dir := filepath.Base(filepath.Dir(path))
 	if strings.TrimSpace(dir) != "" && dir != "." {
@@ -181,8 +291,18 @@ func kimiWorkDirHash(workDir string) string {
 	if workDir == "" {
 		return ""
 	}
+	// Kimi CLI 1.42.0 stores sessions under md5(WorkDirMeta.path), where
+	// WorkDirMeta.path is the lexical KaosPath string rather than a realpath.
 	sum := md5.Sum([]byte(filepath.Clean(workDir)))
 	return hex.EncodeToString(sum[:])
+}
+
+func safeKimiSessionDirName(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || strings.Contains(sessionID, "..") || strings.ContainsAny(sessionID, `/\`) {
+		return ""
+	}
+	return filepath.Base(sessionID)
 }
 
 func mergeKimiSearchPaths(searchPaths []string) []string {
@@ -201,6 +321,19 @@ func mergeKimiSearchPaths(searchPaths []string) []string {
 }
 
 type kimiContextEntry struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"`
+	ToolCallID string          `json:"tool_call_id"`
+	ToolCalls  []kimiToolCall  `json:"tool_calls"`
+}
+
+type kimiToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function kimiToolFunction `json:"function"`
+}
+
+type kimiToolFunction struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
 }

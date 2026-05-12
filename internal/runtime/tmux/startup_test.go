@@ -593,6 +593,58 @@ func TestDoStartSession_KimiSkipsStartupDialogAcceptance(t *testing.T) {
 	})
 }
 
+func TestShouldAcceptStartupDialogsProviderResolution(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  runtime.Config
+		want bool
+	}{
+		{
+			name: "explicit kimi skips startup dialogs",
+			cfg: runtime.Config{
+				ProviderName: "kimi",
+				ProcessNames: []string{"kimi"},
+			},
+			want: false,
+		},
+		{
+			name: "wrapped command resolves kimi",
+			cfg: runtime.Config{
+				Command:      "/usr/local/bin/kimi --yolo",
+				ProcessNames: []string{"kimi"},
+			},
+			want: false,
+		},
+		{
+			name: "empty command keeps conservative dialog acceptance",
+			cfg: runtime.Config{
+				ProcessNames: []string{"unknown"},
+			},
+			want: true,
+		},
+		{
+			name: "explicit non-kimi accepts startup dialogs",
+			cfg: runtime.Config{
+				ProviderName: "codex",
+				ProcessNames: []string{"codex"},
+			},
+			want: true,
+		},
+		{
+			name: "no startup dialog hint skips acceptance",
+			cfg:  runtime.Config{},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldAcceptStartupDialogs(tt.cfg); got != tt.want {
+				t.Fatalf("shouldAcceptStartupDialogs() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDoStartSession_ReadyPromptPrefixOnly(t *testing.T) {
 	ops := &fakeStartOps{
 		hasSessionResult: true,

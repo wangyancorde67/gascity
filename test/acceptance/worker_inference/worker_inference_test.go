@@ -3558,6 +3558,9 @@ func sessionStateSnapshot(cityDir, identity, expectedSessionName string, require
 	if !sessionStateCountsAsRunning(liveSession.State) {
 		if strings.EqualFold(strings.TrimSpace(liveSession.State), "asleep") {
 			if live, liveErr := tmuxSessionLive(cityDir, liveSession.SessionName); liveErr == nil && live {
+				// Wake/start transitions can briefly report the persisted session as
+				// asleep after tmux is already live; runtime liveness is authoritative
+				// for this acceptance helper's "running yet" check.
 				return liveSession, diag, nil
 			}
 		}

@@ -277,7 +277,7 @@ var builtinProviderSpecs = map[string]BuiltinProviderSpec{
 		InstructionsFile: "AGENTS.md",
 		ResumeFlag:       "--session",
 		ResumeStyle:      "flag",
-		PrintArgs:        []string{"--quiet"},
+		PrintArgs:        []string{"--quiet", "--prompt"},
 		TitleModel:       "kimi-k2.6",
 		ACPArgs:          []string{"acp"},
 		OptionsSchema: []BuiltinProviderOption{

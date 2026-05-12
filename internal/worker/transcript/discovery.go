@@ -11,7 +11,7 @@ import (
 // transcript identifier that should be preferred over workdir-only discovery.
 func SupportsIDLookup(provider string) bool {
 	switch providerFamily(provider) {
-	case "codex", "gemini", "kimi", "opencode":
+	case "codex", "gemini", "opencode":
 		return false
 	default:
 		return true
@@ -33,6 +33,9 @@ func DiscoverPath(searchPaths []string, provider, workDir, gcSessionID string) s
 func DiscoverKeyedPath(searchPaths []string, provider, workDir, gcSessionID string) string {
 	if strings.TrimSpace(gcSessionID) == "" || !SupportsIDLookup(provider) {
 		return ""
+	}
+	if providerFamily(provider) == "kimi" {
+		return sessionlog.FindKimiSessionFileByID(searchPaths, workDir, gcSessionID)
 	}
 	return sessionlog.FindSessionFileByID(searchPaths, workDir, gcSessionID)
 }

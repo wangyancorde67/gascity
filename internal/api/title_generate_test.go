@@ -1,7 +1,11 @@
 package api
 
 import (
+	"bytes"
+	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -156,6 +160,51 @@ func TestMaybeGenerateTitleAsync_MockProvider(t *testing.T) {
 	}
 	if got.Title != "Generated Title" {
 		t.Errorf("title = %q, want %q (model-generated title from mock provider)", got.Title, "Generated Title")
+	}
+}
+
+func TestGenerateTitle_BuiltinKimiPromptFlagArgs(t *testing.T) {
+	dir := t.TempDir()
+	argvPath := filepath.Join(dir, "argv")
+	script := filepath.Join(dir, "mock-kimi")
+	scriptBody := fmt.Sprintf("#!/bin/sh\n: > %q\nfor arg in \"$@\"; do printf '%%s\\000' \"$arg\" >> %q; done\necho \"Generated Title\"\n", argvPath, argvPath)
+	if err := os.WriteFile(script, []byte(scriptBody), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	spec := config.BuiltinProviders()["kimi"]
+	provider := &config.ResolvedProvider{
+		Command:       script,
+		Args:          spec.Args,
+		PrintArgs:     spec.PrintArgs,
+		TitleModel:    spec.TitleModel,
+		OptionsSchema: spec.OptionsSchema,
+	}
+
+	got := generateTitle(provider, "fix the login redirect loop", "")
+	if got != "Generated Title" {
+		t.Fatalf("generateTitle() = %q, want Generated Title", got)
+	}
+	rawArgs, err := os.ReadFile(argvPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := bytes.Split(bytes.TrimSuffix(rawArgs, []byte{0}), []byte{0})
+	args := make([]string, len(fields))
+	for i, field := range fields {
+		args[i] = string(field)
+	}
+	want := []string{
+		"--yolo",
+		"--no-thinking",
+		"--model",
+		"kimi-k2.6",
+		"--quiet",
+		"--prompt",
+		titlePrompt + "fix the login redirect loop",
+	}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("kimi title argv = %#v, want %#v", args, want)
 	}
 }
 

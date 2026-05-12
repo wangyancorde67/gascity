@@ -198,11 +198,11 @@ func writeToolTranscript(t *testing.T, profile Profile, openTail bool) string {
 	case ProfileKimiTmuxCLI:
 		lines := []string{
 			`{"role":"user","content":"read the file"}`,
-			`{"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"Read","input":{"path":"README.md"}}]}`,
+			`{"role":"assistant","content":[],"tool_calls":[{"type":"function","id":"call-1","function":{"name":"Read","arguments":"{\"path\":\"README.md\"}"}}]}`,
 		}
 		if !openTail {
 			lines = append(lines,
-				`{"role":"assistant","content":[{"type":"tool_result","tool_use_id":"call-1","content":"file data"}]}`,
+				`{"role":"tool","content":"file data","tool_call_id":"call-1"}`,
 				`{"role":"assistant","content":"done"}`,
 			)
 		}

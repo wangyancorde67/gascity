@@ -133,7 +133,7 @@ type ProviderSpec struct {
 	// PrintArgs are CLI arguments that enable one-shot non-interactive mode.
 	// The provider prints its response to stdout and exits. When empty, the
 	// provider does not support one-shot invocation.
-	// Examples: ["-p"] (claude, gemini), ["exec"] (codex)
+	// Examples: ["-p"] (claude, gemini), ["exec"] (codex), ["--quiet", "--prompt"] (kimi)
 	PrintArgs []string `toml:"print_args,omitempty"`
 	// TitleModel is the OptionsSchema model key used for title generation.
 	// Resolved via the "model" option in OptionsSchema to get FlagArgs.

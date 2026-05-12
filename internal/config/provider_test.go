@@ -175,6 +175,12 @@ func TestBuiltinProvidersKimi(t *testing.T) {
 	if !reflect.DeepEqual(p.ACPArgs, []string{"acp"}) {
 		t.Errorf("ACPArgs = %v, want [acp]", p.ACPArgs)
 	}
+	if !reflect.DeepEqual(p.PrintArgs, []string{"--quiet", "--prompt"}) {
+		t.Errorf("PrintArgs = %v, want [--quiet --prompt]", p.PrintArgs)
+	}
+	if p.TitleModel != "kimi-k2.6" {
+		t.Errorf("TitleModel = %q, want kimi-k2.6", p.TitleModel)
+	}
 }
 
 func TestBuiltinProvidersCursor(t *testing.T) {

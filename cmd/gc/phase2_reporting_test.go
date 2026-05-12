@@ -141,6 +141,9 @@ func initialMessageFirstStartResult(tc phase2ProviderCase, prepared *preparedSta
 			fmt.Sprintf("PromptSuffix encoding invalid: %v", err)).WithEvidence(evidence)
 	}
 	want := "Base worker prompt\n\n---\n\nUser message:\nDo the first task."
+	if prepared != nil && strings.TrimSpace(prepared.cfg.PromptSuffix) == "" && prepared.cfg.Env[startupPromptDeliveredEnv] == "1" {
+		want = "Base worker prompt\n\n---\n\nnudge-" + tc.family + "\n\n---\n\nUser message:\nDo the first task."
+	}
 	switch {
 	case got != want:
 		return workertest.Fail(tc.profileID, workertest.RequirementInputInitialMessageFirstStart,
@@ -333,7 +336,7 @@ func startupPromptFromNudge(nudge string) string {
 	switch {
 	case len(parts) == 1:
 		return nudge
-	case len(parts) == 2 && strings.HasPrefix(parts[1], "User message:\n"):
+	case strings.HasPrefix(parts[len(parts)-1], "User message:\n"):
 		return nudge
 	default:
 		return strings.Join(parts[:len(parts)-1], startupPromptNudgeSeparator)
