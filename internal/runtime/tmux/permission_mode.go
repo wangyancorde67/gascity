@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gastownhall/gascity/internal/runtime"
 )
@@ -193,21 +194,39 @@ func parseClaudePermissionMode(pane string) (runtime.PermissionMode, bool) {
 		if line == "" {
 			continue
 		}
-		if !strings.Contains(line, "permission") && !strings.Contains(line, "shift+tab") && !strings.Contains(line, "mode") {
+		compactLabel := compactClaudePermissionModeLabel(line)
+		hasFooterContext := strings.Contains(line, "permission") || strings.Contains(line, "shift+tab") || strings.Contains(line, "mode")
+		if !hasFooterContext && compactLabel == "" {
 			continue
 		}
 		switch {
-		case strings.Contains(line, "bypass permissions"):
+		case strings.Contains(line, "bypass permissions") || compactLabel == "bypass permissions":
 			return runtime.PermissionModeBypassPermissions, true
-		case strings.Contains(line, "accept edits"):
+		case (hasFooterContext && strings.Contains(line, "accept edits")) || compactLabel == "accept edits":
 			return runtime.PermissionModeAcceptEdits, true
-		case strings.Contains(line, "plan mode") || strings.Contains(line, "plan"):
+		case strings.Contains(line, "plan mode") || compactLabel == "plan":
 			return runtime.PermissionModePlan, true
-		case strings.Contains(line, "default mode") || strings.Contains(line, "normal mode"):
+		case strings.Contains(line, "default mode") || strings.Contains(line, "normal mode") || compactLabel == "default" || compactLabel == "normal":
 			return runtime.PermissionModeDefault, true
 		}
 	}
 	return "", false
+}
+
+func compactClaudePermissionModeLabel(line string) string {
+	var b strings.Builder
+	for _, r := range line {
+		if unicode.IsLetter(r) || unicode.IsSpace(r) {
+			b.WriteRune(r)
+		}
+	}
+	label := strings.Join(strings.Fields(strings.ToLower(b.String())), " ")
+	switch label {
+	case "default", "normal", "accept edits", "plan", "bypass permissions":
+		return label
+	default:
+		return ""
+	}
 }
 
 func (p *Provider) sendClaudePermissionModeCycleKey(name string) error {

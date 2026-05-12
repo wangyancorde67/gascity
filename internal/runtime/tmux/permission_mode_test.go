@@ -66,6 +66,44 @@ func TestPermissionModeCycleRejectsUnadvertisedTarget(t *testing.T) {
 	}
 }
 
+func TestParseClaudePermissionModeAcceptsCompactFooterLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		pane string
+		want runtime.PermissionMode
+	}{
+		{name: "default", pane: "\nDefault\n", want: runtime.PermissionModeDefault},
+		{name: "normal", pane: "\nNormal\n", want: runtime.PermissionModeDefault},
+		{name: "accept edits", pane: "\nAccept Edits\n", want: runtime.PermissionModeAcceptEdits},
+		{name: "plan", pane: "\nPlan\n", want: runtime.PermissionModePlan},
+		{name: "bypass permissions", pane: "\nBypass Permissions\n", want: runtime.PermissionModeBypassPermissions},
+		{name: "boxed label", pane: "\n| Accept Edits |\n", want: runtime.PermissionModeAcceptEdits},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseClaudePermissionMode(tt.pane)
+			if !ok || got != tt.want {
+				t.Fatalf("parseClaudePermissionMode(%q) = %q, %v; want %q, true", tt.pane, got, ok, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseClaudePermissionModeRejectsProseWithoutFooterContext(t *testing.T) {
+	tests := []string{
+		"we need a plan",
+		"please accept edits before submitting",
+		"default branch is main",
+	}
+	for _, pane := range tests {
+		t.Run(pane, func(t *testing.T) {
+			if got, ok := parseClaudePermissionMode(pane); ok {
+				t.Fatalf("parseClaudePermissionMode(%q) = %q, true; want unsupported", pane, got)
+			}
+		})
+	}
+}
+
 func TestPermissionModeCycleSendsBackTab(t *testing.T) {
 	fe := &fakeExecutor{}
 	tm := NewTmux()

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -1059,6 +1060,7 @@ func patchHumaBinaryCitySuspended(t *testing.T, baseURL, cityName string, suspen
 func closeHumaBinaryCitySessions(t *testing.T, baseURL, cityName string) {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
+	lastStates := map[string]string{}
 	for {
 		sessions, ok := listHumaBinaryCitySessions(t, baseURL, cityName)
 		if !ok {
@@ -1069,17 +1071,37 @@ func closeHumaBinaryCitySessions(t *testing.T, baseURL, cityName string) {
 			if sess.ID == "" || sess.State == "closed" {
 				continue
 			}
+			lastStates[sess.ID] = sess.State
 			remaining++
+			if sess.State == "" || sess.State == "creating" || sess.State == "active" || sess.State == "awake" || sess.State == "draining" {
+				continue
+			}
 			closeHumaBinaryCitySession(t, baseURL, cityName, sess.ID)
 		}
 		if remaining == 0 {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out closing %d session(s) in city %q", remaining, cityName)
+			t.Fatalf("timed out closing %d session(s) in city %q; last states: %s", remaining, cityName, formatHumaBinarySessionStates(lastStates))
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+func formatHumaBinarySessionStates(states map[string]string) string {
+	if len(states) == 0 {
+		return "<none>"
+	}
+	ids := make([]string, 0, len(states))
+	for id := range states {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, id+"="+states[id])
+	}
+	return strings.Join(parts, ", ")
 }
 
 type humaBinarySessionListItem struct {
