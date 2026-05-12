@@ -76,7 +76,7 @@ and should not be re-designed from scratch.
 
 - The old proposed `gc peek` is implemented as `gc session peek <target>
   --lines N`.
-- The old proposed top-level `gc nudge` is implemented as `gc session nudge
+- The old proposed top-level nudge command is implemented as `gc session nudge
   <target> <message...>`.
 - Delivery modes exist via `gc session nudge --delivery
   immediate|wait-idle|queue`.

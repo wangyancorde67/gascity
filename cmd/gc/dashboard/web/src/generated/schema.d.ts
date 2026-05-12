@@ -2525,7 +2525,7 @@ export interface components {
             /** @description Event type. */
             type: string;
         };
-        EventPayload: components["schemas"]["AdapterEventPayload"] | components["schemas"]["BeadEventPayload"] | components["schemas"]["BoundEventPayload"] | components["schemas"]["CityCreateSucceededPayload"] | components["schemas"]["CityLifecyclePayload"] | components["schemas"]["CityUnregisterSucceededPayload"] | components["schemas"]["GroupCreatedEventPayload"] | components["schemas"]["InboundEventPayload"] | components["schemas"]["MailEventPayload"] | components["schemas"]["NoPayload"] | components["schemas"]["OutboundEventPayload"] | components["schemas"]["RequestFailedPayload"] | components["schemas"]["SessionCreateSucceededPayload"] | components["schemas"]["SessionMessageSucceededPayload"] | components["schemas"]["SessionSubmitSucceededPayload"] | components["schemas"]["SessionUpdatedPayload"] | components["schemas"]["UnboundEventPayload"] | components["schemas"]["WorkerOperationEventPayload"];
+        EventPayload: components["schemas"]["AdapterEventPayload"] | components["schemas"]["BeadEventPayload"] | components["schemas"]["BoundEventPayload"] | components["schemas"]["CityCreateSucceededPayload"] | components["schemas"]["CityLifecyclePayload"] | components["schemas"]["CityUnregisterSucceededPayload"] | components["schemas"]["GroupCreatedEventPayload"] | components["schemas"]["InboundEventPayload"] | components["schemas"]["MailEventPayload"] | components["schemas"]["NoPayload"] | components["schemas"]["OutboundEventPayload"] | components["schemas"]["RequestFailedPayload"] | components["schemas"]["SessionCreateSucceededPayload"] | components["schemas"]["SessionLifecyclePayload"] | components["schemas"]["SessionMessageSucceededPayload"] | components["schemas"]["SessionSubmitSucceededPayload"] | components["schemas"]["SessionUpdatedPayload"] | components["schemas"]["UnboundEventPayload"] | components["schemas"]["WorkerOperationEventPayload"];
         EventStreamEnvelope: {
             actor: string;
             message?: string;
@@ -3690,6 +3690,14 @@ export interface components {
             last_activity?: string;
             name: string;
         };
+        SessionLifecyclePayload: {
+            /** @description Short human-readable reason. */
+            reason?: string;
+            /** @description Canonical session bead ID. Always present. */
+            session_id: string;
+            /** @description Session template name when known at the emission site. */
+            template?: string;
+        };
         SessionMessageInputBody: {
             /** @description Message text to send. */
             message: string;
@@ -4760,7 +4768,7 @@ export interface components {
         TypedEventStreamEnvelopeSessionCrashed: {
             actor: string;
             message?: string;
-            payload: components["schemas"]["NoPayload"];
+            payload: components["schemas"]["SessionLifecyclePayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;
@@ -4828,7 +4836,7 @@ export interface components {
         TypedEventStreamEnvelopeSessionStopped: {
             actor: string;
             message?: string;
-            payload: components["schemas"]["NoPayload"];
+            payload: components["schemas"]["SessionLifecyclePayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;
@@ -5584,7 +5592,7 @@ export interface components {
             actor: string;
             city: string;
             message?: string;
-            payload: components["schemas"]["NoPayload"];
+            payload: components["schemas"]["SessionLifecyclePayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;
@@ -5656,7 +5664,7 @@ export interface components {
             actor: string;
             city: string;
             message?: string;
-            payload: components["schemas"]["NoPayload"];
+            payload: components["schemas"]["SessionLifecyclePayload"];
             /** Format: int64 */
             seq: number;
             subject?: string;

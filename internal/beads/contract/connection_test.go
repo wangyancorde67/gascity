@@ -1134,7 +1134,8 @@ func TestManagedCityHost_EnvTrimmed(t *testing.T) {
 // managed-city resolve honors GC_DOLT_HOST with a value distinguishable from
 // the unset default.
 func TestResolveDoltConnectionTargetManagedCity_EnvOverride(t *testing.T) {
-	t.Setenv(ManagedCityHostEnv, "127.0.0.2")
+	const overrideHost = "localhost"
+	t.Setenv(ManagedCityHostEnv, overrideHost)
 	fs := fsys.OSFS{}
 	city := t.TempDir()
 	writeCanonicalConfig(t, fs, city, ConfigState{
@@ -1143,14 +1144,14 @@ func TestResolveDoltConnectionTargetManagedCity_EnvOverride(t *testing.T) {
 		EndpointStatus: EndpointStatusVerified,
 	})
 	writeCanonicalMetadata(t, fs, city, "hq")
-	port := writeReachableRuntimeStateOnHost(t, fs, city, "127.0.0.2")
+	port := writeReachableRuntimeState(t, fs, city)
 
 	target, err := ResolveDoltConnectionTarget(fs, city, city)
 	if err != nil {
 		t.Fatalf("ResolveDoltConnectionTarget() error = %v", err)
 	}
-	if target.Host != "127.0.0.2" || target.Port != port {
-		t.Fatalf("target = %+v, want host 127.0.0.2 port %q", target, port)
+	if target.Host != overrideHost || target.Port != port {
+		t.Fatalf("target = %+v, want host %s port %q", target, overrideHost, port)
 	}
 }
 

@@ -183,21 +183,22 @@ func setupGraphWorkflowCity(t *testing.T, mode string) string {
 	} else {
 		cityName = tmuxtest.NewGuard(t).CityName()
 	}
-	cityDir := filepath.Join(t.TempDir(), cityName)
+	root := shortTempDir(t)
+	cityDir := filepath.Join(root, cityName)
 
 	startCommand := "GC_GRAPH_MODE=" + mode + " bash " + agentScript("graph-dispatch.sh")
 	cityToml := fmt.Sprintf(
 		"[workspace]\nname = %q\n\n[session]\nprovider = \"subprocess\"\n\n[daemon]\nformula_v2 = true\npatrol_interval = \"100ms\"\n\n[[agent]]\nname = \"worker\"\nmax_active_sessions = 1\nstart_command = %q\n\n[[named_session]]\ntemplate = \"worker\"\nmode = \"always\"\n",
 		cityName, startCommand,
 	)
-	configPath := filepath.Join(t.TempDir(), "graph-workflow.toml")
+	configPath := filepath.Join(root, "graph-workflow.toml")
 	if err := os.WriteFile(configPath, []byte(cityToml), 0o644); err != nil {
 		t.Fatalf("writing graph workflow config: %v", err)
 	}
 
 	out, err := runGCDoltWithEnv(env, "", "init", "--skip-provider-readiness", "--file", configPath, cityDir)
 	if err != nil {
-		t.Fatalf("gc init --file failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc init --file failed: %v\noutput: %s\ndiagnostics:\n%s", err, out, graphWorkflowInitDiagnostics(env, cityDir))
 	}
 	registerCityCommandEnv(cityDir, env)
 	t.Cleanup(func() {
@@ -217,6 +218,32 @@ func setupGraphWorkflowCity(t *testing.T, mode string) string {
 	})
 
 	return cityDir
+}
+
+func graphWorkflowInitDiagnostics(env []string, cityDir string) string {
+	var b strings.Builder
+	writeCommandDiagnostic := func(label string, args ...string) {
+		out, err := runGCDoltWithEnv(env, "", args...)
+		if err != nil {
+			fmt.Fprintf(&b, "%s failed: %v\n%s\n", label, err, out)
+			return
+		}
+		fmt.Fprintf(&b, "%s:\n%s\n", label, out)
+	}
+	writeFileDiagnostic := func(label, path string) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintf(&b, "%s read failed: %v\n", label, err)
+			return
+		}
+		fmt.Fprintf(&b, "%s:\n%s\n", label, string(data))
+	}
+
+	writeCommandDiagnostic("supervisor status", "supervisor", "status")
+	writeCommandDiagnostic("supervisor logs", "supervisor", "logs", "--lines", "200")
+	writeFileDiagnostic("session reconciler trace", filepath.Join(cityDir, ".gc", "runtime", "session-reconciler-trace", "head.json"))
+	writeFileDiagnostic("control dispatcher trace", citylayout.ControlDispatcherTraceDefaultPath(cityDir))
+	return b.String()
 }
 
 func startScopedWorkflow(t *testing.T, cityDir string) (string, string) {

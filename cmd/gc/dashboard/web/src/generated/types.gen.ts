@@ -745,7 +745,7 @@ export type EventEmitRequest = {
     type: string;
 };
 
-export type EventPayload = AdapterEventPayload | BeadEventPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | NoPayload | OutboundEventPayload | RequestFailedPayload | SessionCreateSucceededPayload | SessionMessageSucceededPayload | SessionSubmitSucceededPayload | SessionUpdatedPayload | UnboundEventPayload | WorkerOperationEventPayload;
+export type EventPayload = AdapterEventPayload | BeadEventPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | NoPayload | OutboundEventPayload | RequestFailedPayload | SessionCreateSucceededPayload | SessionLifecyclePayload | SessionMessageSucceededPayload | SessionSubmitSucceededPayload | SessionUpdatedPayload | UnboundEventPayload | WorkerOperationEventPayload;
 
 export type EventStreamEnvelope = {
     actor: string;
@@ -2355,6 +2355,21 @@ export type SessionInfo = {
     name: string;
 };
 
+export type SessionLifecyclePayload = {
+    /**
+     * Short human-readable reason.
+     */
+    reason?: string;
+    /**
+     * Canonical session bead ID. Always present.
+     */
+    session_id: string;
+    /**
+     * Session template name when known at the emission site.
+     */
+    template?: string;
+};
+
 export type SessionMessageInputBody = {
     /**
      * Message text to send.
@@ -3533,7 +3548,7 @@ export type TypedEventStreamEnvelopeRequestResultSessionSubmit = {
 export type TypedEventStreamEnvelopeSessionCrashed = {
     actor: string;
     message?: string;
-    payload: NoPayload;
+    payload: SessionLifecyclePayload;
     seq: number;
     subject?: string;
     ts: string;
@@ -3589,7 +3604,7 @@ export type TypedEventStreamEnvelopeSessionQuarantined = {
 export type TypedEventStreamEnvelopeSessionStopped = {
     actor: string;
     message?: string;
-    payload: NoPayload;
+    payload: SessionLifecyclePayload;
     seq: number;
     subject?: string;
     ts: string;
@@ -4313,7 +4328,7 @@ export type TypedTaggedEventStreamEnvelopeSessionCrashed = {
     actor: string;
     city: string;
     message?: string;
-    payload: NoPayload;
+    payload: SessionLifecyclePayload;
     seq: number;
     subject?: string;
     ts: string;
@@ -4373,7 +4388,7 @@ export type TypedTaggedEventStreamEnvelopeSessionStopped = {
     actor: string;
     city: string;
     message?: string;
-    payload: NoPayload;
+    payload: SessionLifecyclePayload;
     seq: number;
     subject?: string;
     ts: string;
