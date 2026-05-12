@@ -514,6 +514,7 @@ func TestCityRuntimeRunStartupPreflightsManagedDoltBeforeSessionSnapshot(t *test
 	cr.setControllerState(cs)
 	orderEvents.reset()
 	managedPort = ""
+	t.Setenv("GC_BEADS", "bd")
 
 	cr.run(ctx)
 

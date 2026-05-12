@@ -3107,6 +3107,52 @@ func TestRunWorkflowServeSkipsUnexpectedNonControlOnly(t *testing.T) {
 	}
 }
 
+func TestRunWorkflowServeTreatsTransientControllerSpawnPendingAsNonFatal(t *testing.T) {
+	clearGCEnv(t)
+	disableManagedDoltRecoveryForTest(t)
+
+	cityDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\nformula_v2 = true\n"), 0o644); err != nil {
+		t.Fatalf("write city.toml: %v", err)
+	}
+	t.Setenv("GC_CITY", cityDir)
+
+	prevCityFlag := cityFlag
+	prevList := workflowServeList
+	prevControl := controlDispatcherServe
+	prevInterval := workflowServeIdlePollInterval
+	prevAttempts := workflowServeIdlePollAttempts
+	cityFlag = ""
+	workflowServeIdlePollInterval = 0
+	workflowServeIdlePollAttempts = 0
+	t.Cleanup(func() {
+		cityFlag = prevCityFlag
+		workflowServeList = prevList
+		controlDispatcherServe = prevControl
+		workflowServeIdlePollInterval = prevInterval
+		workflowServeIdlePollAttempts = prevAttempts
+	})
+
+	calls := 0
+	workflowServeList = func(_, _ string, _ map[string]string) ([]hookBead, error) {
+		calls++
+		if calls == 1 {
+			return []hookBead{{ID: "gc-retry-control", Metadata: map[string]string{"gc.kind": "retry"}}}, nil
+		}
+		return nil, nil
+	}
+	controlDispatcherServe = func(_, _ string, beadID string, _ io.Writer, _ io.Writer) error {
+		if beadID != "gc-retry-control" {
+			t.Fatalf("controlDispatcherServe beadID = %q, want gc-retry-control", beadID)
+		}
+		return fmt.Errorf("classified transient controller spawn: %w", dispatch.ErrControlPending)
+	}
+
+	if err := runWorkflowServe("", false, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runWorkflowServe: %v", err)
+	}
+}
+
 func TestRunWorkflowServeSkipsLegacyOversizedControlAndProcessesLaterReady(t *testing.T) {
 	clearGCEnv(t)
 	disableManagedDoltRecoveryForTest(t)
