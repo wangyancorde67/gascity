@@ -131,6 +131,7 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	d.Register(&doctor.CityStructureCheck{})
 	d.Register(&doctor.CityConfigCheck{})
 	registerV2DeprecationChecks(d)
+	d.Register(newBuiltinPackRegistryMigrationCheck(cityPath))
 	d.Register(&doctor.ImplicitImportCacheCheck{})
 	d.Register(&doctor.DeprecatedAttachmentFieldsCheck{})
 

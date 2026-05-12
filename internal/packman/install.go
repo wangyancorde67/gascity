@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/gastownhall/gascity/internal/builtinpacks"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 )
@@ -43,8 +44,14 @@ func ReadCachedPackImports(source, commit string) (map[string]config.Import, err
 	}
 	var imports map[string]config.Import
 	if err := config.WithRepoCacheReadLock(root, func() error {
-		if err := validateCachedRepoCheckout(cachePath, commit); err != nil {
-			return err
+		if builtinpacks.IsSource(source) {
+			if err := builtinpacks.ValidateSyntheticRepo(cachePath, commit); err != nil {
+				return err
+			}
+		} else {
+			if err := validateCachedRepoCheckout(cachePath, commit); err != nil {
+				return err
+			}
 		}
 		var readErr error
 		imports, readErr = readPackImports(packPath)

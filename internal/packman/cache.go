@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/gastownhall/gascity/internal/builtinpacks"
 	"github.com/gastownhall/gascity/internal/config"
 )
 
@@ -56,8 +57,27 @@ func EnsureRepoInCache(source, commit string) (string, error) {
 		return "", fmt.Errorf("creating repo cache root: %w", err)
 	}
 	return config.WithRepoCacheWriteLock(root, func() (string, error) {
+		if builtinpacks.IsSource(source) {
+			return ensureBundledRepoInCacheLocked(source, commit, cachePath)
+		}
 		return ensureRepoInCacheLocked(source, commit, parsed, cachePath)
 	})
+}
+
+func ensureBundledRepoInCacheLocked(source, commit, cachePath string) (string, error) {
+	if err := builtinpacks.ValidateSyntheticRepo(cachePath, commit); err == nil {
+		if err := validateCachedPackRoot(source, cachePath); err != nil {
+			return "", err
+		}
+		return cachePath, nil
+	}
+	if err := builtinpacks.MaterializeSyntheticRepo(cachePath, commit); err != nil {
+		return "", err
+	}
+	if err := validateCachedPackRoot(source, cachePath); err != nil {
+		return "", err
+	}
+	return cachePath, nil
 }
 
 func ensureRepoInCacheLocked(source, commit string, parsed remoteSource, cachePath string) (string, error) {

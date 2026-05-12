@@ -1,5 +1,6 @@
 // Package bootstrap reconciles legacy user-global implicit-import state for
-// compatibility tooling. Launch-time system packs now come from .gc/system/packs.
+// compatibility tooling. Launch-time bundled packs now come from explicit pack
+// registry imports.
 package bootstrap
 
 import (
@@ -33,15 +34,16 @@ type Entry struct {
 }
 
 // BootstrapPacks is the currently-supported compatibility set. It is empty for
-// the gc import launch path: cities rely on .gc/system/packs and explicit
-// [imports], not user-global implicit imports. Tests may override this list to
-// exercise the compatibility materialization path.
+// the gc import launch path: cities rely on explicit [imports], not
+// user-global implicit imports. Tests may override this list to exercise the
+// compatibility materialization path.
 var BootstrapPacks []Entry
 
 // RetiredBootstrapPacks are legacy implicit imports that older gc releases
 // wrote into ~/.gc/implicit-import.toml. EnsureBootstrap prunes matching
 // entries so upgraded installs stop carrying stale launch-only state forever.
 var RetiredBootstrapPacks = []Entry{
+	{Name: "core", Source: "github.com/gastownhall/gc-core"},
 	{Name: "import", Source: "github.com/gastownhall/gc-import"},
 	{Name: "registry", Source: "github.com/gastownhall/gc-registry"},
 }

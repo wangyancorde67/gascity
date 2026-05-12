@@ -27,22 +27,11 @@ func loadConfigCommandCityConfig(cityPath string) (*config.City, *config.Provena
 }
 
 func loadCityConfigWithBuiltinPacks(cityPath string, includes ...string) (*config.City, *config.Provenance, error) {
-	allIncludes, err := cityConfigIncludesWithBuiltinPacks(cityPath, includes...)
-	if err != nil {
-		return nil, nil, err
-	}
-	return config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"), allIncludes...)
+	return config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"), includes...)
 }
 
-func cityConfigIncludesWithBuiltinPacks(cityPath string, includes ...string) ([]string, error) {
-	if err := MaterializeBuiltinPacks(cityPath); err != nil {
-		return nil, fmt.Errorf("materializing builtin packs: %w", err)
-	}
-	builtinIncludes := builtinPackIncludes(cityPath)
-	allIncludes := make([]string, 0, len(includes)+len(builtinIncludes))
-	allIncludes = append(allIncludes, includes...)
-	allIncludes = append(allIncludes, builtinIncludes...)
-	return allIncludes, nil
+func cityConfigIncludesWithBuiltinPacks(_ string, includes ...string) []string {
+	return append([]string(nil), includes...)
 }
 
 func newConfigCmd(stdout, stderr io.Writer) *cobra.Command {

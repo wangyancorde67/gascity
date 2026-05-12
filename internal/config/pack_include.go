@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/gastownhall/gascity/internal/builtinpacks"
 	"github.com/gastownhall/gascity/internal/citylayout"
 )
 
@@ -213,16 +214,7 @@ func resolveLockedRemoteImport(source, cityRoot string) (string, bool, error) {
 	cacheRoot := filepath.Join(home, ".gc", "cache", "repos")
 	cacheDir := filepath.Join(cacheRoot, RepoCacheKey(source, entry.Commit))
 	if err := WithRepoCacheReadLock(cacheRoot, func() error {
-		if _, err := os.Stat(filepath.Join(cacheDir, ".git")); err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("remote import %s is locked but not cached at %s; run \"gc import install\"", source, cacheDir)
-			}
-			return fmt.Errorf("checking cached import %s: %w", source, err)
-		}
-		if err := validateLockedRemoteCache(source, cacheDir, entry.Commit); err != nil {
-			return err
-		}
-		return nil
+		return validateInstalledRemoteCache(source, cacheDir, entry.Commit)
 	}); err != nil {
 		return "", false, err
 	}
@@ -256,20 +248,29 @@ func resolveInstalledRemoteImport(source, cityRoot string) (string, error) {
 	cacheRoot := filepath.Join(home, ".gc", "cache", "repos")
 	cacheDir := filepath.Join(cacheRoot, RepoCacheKey(source, entry.Commit))
 	if err := WithRepoCacheReadLock(cacheRoot, func() error {
-		if _, err := os.Stat(filepath.Join(cacheDir, ".git")); err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("remote import %s is locked but not cached at %s; run \"gc import install\"", source, cacheDir)
-			}
-			return fmt.Errorf("checking cached import %s: %w", source, err)
-		}
-		if err := validateLockedRemoteCache(source, cacheDir, entry.Commit); err != nil {
-			return err
-		}
-		return nil
+		return validateInstalledRemoteCache(source, cacheDir, entry.Commit)
 	}); err != nil {
 		return "", err
 	}
 	return cacheDir, nil
+}
+
+func validateInstalledRemoteCache(source, cacheDir, commit string) error {
+	if builtinpacks.IsSource(source) {
+		if err := builtinpacks.ValidateSyntheticRepo(cacheDir, commit); err == nil {
+			return nil
+		}
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, ".git")); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("remote import %s is locked but not cached at %s; run \"gc import install\"", source, cacheDir)
+		}
+		return fmt.Errorf("checking cached import %s: %w", source, err)
+	}
+	if err := validateLockedRemoteCache(source, cacheDir, commit); err != nil {
+		return err
+	}
+	return nil
 }
 
 func validateLockedRemoteCache(source, cacheDir, commit string) error {
