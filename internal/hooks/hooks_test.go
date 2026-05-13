@@ -67,11 +67,19 @@ func TestValidateRejectsUnsupported(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate should reject amp, auggie, and bogus")
 	}
-	if !strings.Contains(err.Error(), "amp (no hook mechanism)") {
-		t.Errorf("error should mention amp: %v", err)
+	// Amp and Auggie CLIs both DO expose hook mechanisms in their own
+	// docs; Gas Town just has not wired hook installation for them yet.
+	// The error message must reflect that accurately so users know to
+	// track gap 4 of #672 instead of believing the providers themselves
+	// are hookless.
+	if !strings.Contains(err.Error(), "amp (hooks not yet wired") {
+		t.Errorf("error should mention amp is unwired: %v", err)
 	}
-	if !strings.Contains(err.Error(), "auggie (no hook mechanism)") {
-		t.Errorf("error should mention auggie: %v", err)
+	if !strings.Contains(err.Error(), "auggie (hooks not yet wired") {
+		t.Errorf("error should mention auggie is unwired: %v", err)
+	}
+	if !strings.Contains(err.Error(), "#672") {
+		t.Errorf("error should reference the tracking audit issue: %v", err)
 	}
 	if !strings.Contains(err.Error(), "bogus (unknown)") {
 		t.Errorf("error should mention bogus: %v", err)
