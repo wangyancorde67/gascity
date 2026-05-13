@@ -5871,6 +5871,9 @@
           "activity": {
             "type": "string"
           },
+          "agent_kind": {
+            "type": "string"
+          },
           "alias": {
             "type": "string"
           },

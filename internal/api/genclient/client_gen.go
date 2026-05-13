@@ -2332,6 +2332,7 @@ type SessionRespondOutputBody struct {
 type SessionResponse struct {
 	ActiveBead             *string                 `json:"active_bead,omitempty"`
 	Activity               *string                 `json:"activity,omitempty"`
+	AgentKind              *string                 `json:"agent_kind,omitempty"`
 	Alias                  *string                 `json:"alias,omitempty"`
 	Attached               bool                    `json:"attached"`
 	ConfiguredNamedSession *bool                   `json:"configured_named_session,omitempty"`
