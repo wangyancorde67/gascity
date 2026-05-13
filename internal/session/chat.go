@@ -121,6 +121,8 @@ var (
 	ErrSessionClosed = errors.New("session is closed")
 	// ErrSessionInactive reports that the requested session has no live runtime.
 	ErrSessionInactive = errors.New("session is not active")
+	// ErrSessionActive reports that the requested session currently has or is starting a live runtime.
+	ErrSessionActive = errors.New("session is active")
 	// ErrResumeRequired reports that the session cannot be resumed without an
 	// explicit resume command.
 	ErrResumeRequired = errors.New("session requires resume command")
@@ -147,6 +149,11 @@ var (
 	sessionMutationLocksMu sync.Mutex
 	sessionMutationLocks   = map[string]*sessionMutationLockEntry{}
 )
+
+// WithSessionMutationLock serializes metadata mutations for one session bead.
+func WithSessionMutationLock(id string, fn func() error) error {
+	return withSessionMutationLock(id, fn)
+}
 
 func withSessionMutationLock(id string, fn func() error) error {
 	lock := acquireSessionMutationLock(id)
