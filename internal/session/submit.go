@@ -304,7 +304,7 @@ func usesSoftEscapeInterrupt(b beads.Bead) bool {
 		return true
 	}
 	switch providerKind(b) {
-	case "codex":
+	case "codex", "kimi":
 		return true
 	default:
 		return false
@@ -319,7 +319,7 @@ func waitsForIdleAfterInterrupt(b beads.Bead) bool {
 		return false
 	}
 	switch providerKind(b) {
-	case "claude", "codex", "gemini":
+	case "claude", "codex", "gemini", "kimi":
 		return true
 	default:
 		return false

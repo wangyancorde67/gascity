@@ -201,6 +201,8 @@ type ProviderPatch struct {
 	PromptFlag *string `toml:"prompt_flag,omitempty"`
 	// ReadyDelayMs overrides the ready delay in milliseconds.
 	ReadyDelayMs *int `toml:"ready_delay_ms,omitempty" jsonschema:"minimum=0"`
+	// AcceptStartupDialogs overrides startup dialog acceptance behavior.
+	AcceptStartupDialogs *bool `toml:"accept_startup_dialogs,omitempty"`
 	// Env adds or overrides environment variables.
 	Env map[string]string `toml:"env,omitempty"`
 	// EnvRemove lists env var keys to remove.
@@ -528,6 +530,9 @@ func applyProviderPatch(cfg *City, patch *ProviderPatch) error {
 		if patch.ReadyDelayMs != nil {
 			newSpec.ReadyDelayMs = *patch.ReadyDelayMs
 		}
+		if patch.AcceptStartupDialogs != nil {
+			newSpec.AcceptStartupDialogs = cloneBoolPtr(patch.AcceptStartupDialogs)
+		}
 		if len(patch.Env) > 0 {
 			newSpec.Env = make(map[string]string, len(patch.Env))
 			for k, v := range patch.Env {
@@ -570,6 +575,9 @@ func applyProviderPatch(cfg *City, patch *ProviderPatch) error {
 	}
 	if patch.ReadyDelayMs != nil {
 		spec.ReadyDelayMs = *patch.ReadyDelayMs
+	}
+	if patch.AcceptStartupDialogs != nil {
+		spec.AcceptStartupDialogs = cloneBoolPtr(patch.AcceptStartupDialogs)
 	}
 	// Env: additive merge.
 	if len(patch.Env) > 0 {

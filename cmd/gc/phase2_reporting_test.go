@@ -23,6 +23,8 @@ func newPhase2Reporter(t *testing.T, suite string) *workertest.SuiteReporter {
 	})
 }
 
+func phase2BoolPtr(b bool) *bool { return &b }
+
 func startupCommandMaterializationResult(tc phase2ProviderCase, tp TemplateParams) workertest.Result {
 	evidence := phase2TemplateEvidence(tc, tp)
 	wantPromptMode := tc.wantPromptMode
@@ -110,6 +112,10 @@ func startupRuntimeConfigMaterializationResult(tc phase2ProviderCase, tp Templat
 	case cfg.EmitsPermissionWarning != tc.wantEmitsPermission:
 		return workertest.Fail(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
 			fmt.Sprintf("cfg.EmitsPermissionWarning = %v, want %v", cfg.EmitsPermissionWarning, tc.wantEmitsPermission)).WithEvidence(evidence)
+	case !phase2BoolPtrsEqual(cfg.AcceptStartupDialogs, tc.wantAcceptDialogs):
+		return workertest.Fail(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
+			fmt.Sprintf("cfg.AcceptStartupDialogs = %s, want %s",
+				phase2BoolPtrString(cfg.AcceptStartupDialogs), phase2BoolPtrString(tc.wantAcceptDialogs))).WithEvidence(evidence)
 	case !startupNudgeMatches(tc, cfg.Nudge):
 		return workertest.Fail(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
 			fmt.Sprintf("cfg.Nudge = %q, want startup nudge plus %q", cfg.Nudge, "nudge-"+tc.family)).WithEvidence(evidence)
@@ -132,6 +138,20 @@ func startupRuntimeConfigMaterializationResult(tc phase2ProviderCase, tp Templat
 		return workertest.Pass(tc.profileID, workertest.RequirementStartupRuntimeConfigMaterialization,
 			"templateParamsToConfig preserved the resolved startup materialization").WithEvidence(evidence)
 	}
+}
+
+func phase2BoolPtrsEqual(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func phase2BoolPtrString(value *bool) string {
+	if value == nil {
+		return "<nil>"
+	}
+	return strconv.FormatBool(*value)
 }
 
 func initialMessageFirstStartResult(tc phase2ProviderCase, prepared *preparedStart) workertest.Result {
@@ -282,6 +302,7 @@ func phase2ConfigEvidence(tc phase2ProviderCase, tp TemplateParams, cfg runtime.
 	evidence["cfg_ready_prompt_prefix"] = cfg.ReadyPromptPrefix
 	evidence["cfg_process_names"] = strings.Join(cfg.ProcessNames, ",")
 	evidence["cfg_emits_permission_warning"] = strconv.FormatBool(cfg.EmitsPermissionWarning)
+	evidence["cfg_accept_startup_dialogs"] = phase2BoolPtrString(cfg.AcceptStartupDialogs)
 	evidence["gc_dir"] = cfg.Env["GC_DIR"]
 	evidence["gc_template"] = cfg.Env["GC_TEMPLATE"]
 	evidence["gc_session_name"] = cfg.Env["GC_SESSION_NAME"]

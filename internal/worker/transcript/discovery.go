@@ -26,6 +26,9 @@ func DiscoverPath(searchPaths []string, provider, workDir, gcSessionID string) s
 	if strings.TrimSpace(gcSessionID) != "" && SupportsIDLookup(provider) {
 		return ""
 	}
+	if providerFamily(provider) == "kimi" {
+		return sessionlog.FindKimiSessionFileIfUnambiguous(searchPaths, workDir)
+	}
 	return sessionlog.FindSessionFileForProvider(searchPaths, provider, workDir)
 }
 
@@ -44,7 +47,13 @@ func DiscoverKeyedPath(searchPaths []string, provider, workDir, gcSessionID stri
 // use when a keyed transcript lookup misses.
 func DiscoverFallbackPath(searchPaths []string, provider, workDir, gcSessionID string) string {
 	if strings.TrimSpace(gcSessionID) != "" && SupportsIDLookup(provider) {
+		if providerFamily(provider) == "kimi" {
+			return ""
+		}
 		return sessionlog.FindProviderFallbackSessionFile(searchPaths, provider, workDir)
+	}
+	if providerFamily(provider) == "kimi" {
+		return sessionlog.FindKimiSessionFileIfUnambiguous(searchPaths, workDir)
 	}
 	return sessionlog.FindSessionFileForProvider(searchPaths, provider, workDir)
 }

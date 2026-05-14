@@ -282,7 +282,7 @@ func ReadProviderFileOlder(provider, path string, tailCompactions int, beforeMes
 	case "gemini":
 		return ReadGeminiFile(path, tailCompactions)
 	case "kimi":
-		return ReadKimiFile(path, tailCompactions)
+		return ReadKimiFilePage(path, tailCompactions, beforeMessageID, "")
 	case "opencode":
 		return ReadOpenCodeFile(path, tailCompactions)
 	default:
@@ -300,7 +300,7 @@ func ReadProviderFileRawOlder(provider, path string, tailCompactions int, before
 	case "gemini":
 		return ReadGeminiFile(path, tailCompactions)
 	case "kimi":
-		return ReadKimiFile(path, tailCompactions)
+		return ReadKimiFilePage(path, tailCompactions, beforeMessageID, "")
 	case "opencode":
 		return ReadOpenCodeFile(path, tailCompactions)
 	default:
@@ -374,7 +374,7 @@ func ReadProviderFileNewer(provider, path string, tailCompactions int, afterMess
 	case "gemini":
 		return ReadGeminiFile(path, tailCompactions)
 	case "kimi":
-		return ReadKimiFile(path, tailCompactions)
+		return ReadKimiFilePage(path, tailCompactions, "", afterMessageID)
 	case "opencode":
 		return ReadOpenCodeFile(path, tailCompactions)
 	default:
@@ -392,7 +392,7 @@ func ReadProviderFileRawNewer(provider, path string, tailCompactions int, afterM
 	case "gemini":
 		return ReadGeminiFile(path, tailCompactions)
 	case "kimi":
-		return ReadKimiFile(path, tailCompactions)
+		return ReadKimiFilePage(path, tailCompactions, "", afterMessageID)
 	case "opencode":
 		return ReadOpenCodeFile(path, tailCompactions)
 	default:

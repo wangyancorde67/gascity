@@ -16,6 +16,8 @@ import (
 	"github.com/gastownhall/gascity/internal/shellquote"
 )
 
+func boolPtr(b bool) *bool { return &b }
+
 func fallbackPromptDir(tmpRoot string) string {
 	return filepath.Join(tmpRoot, fmt.Sprintf(".gc-%d", os.Getuid()), "tmux-prompts")
 }
@@ -573,10 +575,11 @@ func TestDoStartSession_KimiSkipsStartupDialogAcceptance(t *testing.T) {
 	}
 
 	cfg := runtime.Config{
-		Command:      "kimi --yolo",
-		ProviderName: "kimi",
-		ProcessNames: []string{"kimi", "python"},
-		ReadyDelayMs: 5000,
+		Command:              "sh -c 'exec kimi --yolo --no-thinking'",
+		ProviderName:         "wrapped-kimi",
+		ProcessNames:         []string{"kimi", "python"},
+		ReadyDelayMs:         5000,
+		AcceptStartupDialogs: boolPtr(false),
 	}
 
 	err := doStartSession(context.Background(), ops, "test", cfg, DefaultConfig().SetupTimeout)
@@ -593,6 +596,30 @@ func TestDoStartSession_KimiSkipsStartupDialogAcceptance(t *testing.T) {
 	})
 }
 
+func TestDoStartSession_AcceptStartupDialogsOnly(t *testing.T) {
+	ops := &fakeStartOps{
+		hasSessionResult: true,
+	}
+
+	cfg := runtime.Config{
+		Command:              "custom-agent",
+		AcceptStartupDialogs: boolPtr(true),
+	}
+
+	err := doStartSession(context.Background(), ops, "test", cfg, DefaultConfig().SetupTimeout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assertCallSequence(t, ops, []string{
+		"createSession",
+		"setRemainOnExit",
+		"acceptStartupDialogs",
+		"acceptStartupDialogs",
+		"hasSession",
+	})
+}
+
 func TestShouldAcceptStartupDialogsProviderResolution(t *testing.T) {
 	tests := []struct {
 		name string
@@ -600,20 +627,23 @@ func TestShouldAcceptStartupDialogsProviderResolution(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "explicit kimi skips startup dialogs",
+			name: "explicit runtime config skips startup dialogs",
 			cfg: runtime.Config{
-				ProviderName: "kimi",
-				ProcessNames: []string{"kimi"},
+				ProviderName:         "custom-kimi",
+				Command:              "sh -c 'kimi --yolo'",
+				ProcessNames:         []string{"kimi"},
+				AcceptStartupDialogs: boolPtr(false),
 			},
 			want: false,
 		},
 		{
-			name: "wrapped command resolves kimi",
+			name: "explicit runtime config accepts startup dialogs",
 			cfg: runtime.Config{
-				Command:      "/usr/local/bin/kimi --yolo",
-				ProcessNames: []string{"kimi"},
+				ProviderName:         "custom-provider",
+				ProcessNames:         []string{"custom"},
+				AcceptStartupDialogs: boolPtr(true),
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "empty command keeps conservative dialog acceptance",

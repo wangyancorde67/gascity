@@ -172,8 +172,11 @@ func TestBuiltinProvidersKimi(t *testing.T) {
 	if p.ResumeStyle != "flag" {
 		t.Errorf("ResumeStyle = %q, want flag", p.ResumeStyle)
 	}
-	if !reflect.DeepEqual(p.ACPArgs, []string{"acp"}) {
-		t.Errorf("ACPArgs = %v, want [acp]", p.ACPArgs)
+	if p.AcceptStartupDialogs == nil || *p.AcceptStartupDialogs {
+		t.Errorf("AcceptStartupDialogs = %v, want false", p.AcceptStartupDialogs)
+	}
+	if !reflect.DeepEqual(p.ACPArgs, []string{"--yolo", "--no-thinking", "acp"}) {
+		t.Errorf("ACPArgs = %v, want [--yolo --no-thinking acp]", p.ACPArgs)
 	}
 	if !reflect.DeepEqual(p.PrintArgs, []string{"--quiet", "--prompt"}) {
 		t.Errorf("PrintArgs = %v, want [--quiet --prompt]", p.PrintArgs)
@@ -393,6 +396,15 @@ func TestACPCommandString(t *testing.T) {
 				ACPArgs:    []string{},
 			},
 			want: "opencode-acp",
+		},
+		{
+			name: "BuiltinKimiPreservesGlobalFlags",
+			rp: ResolvedProvider{
+				Command: "kimi",
+				Args:    []string{"--yolo", "--no-thinking"},
+				ACPArgs: []string{"--yolo", "--no-thinking", "acp"},
+			},
+			want: "kimi --yolo --no-thinking acp",
 		},
 	}
 

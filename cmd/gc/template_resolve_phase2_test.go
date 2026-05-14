@@ -27,6 +27,7 @@ type phase2ProviderCase struct {
 	wantReadyPromptPrefix string
 	wantProcessNames      []string
 	wantEmitsPermission   bool
+	wantAcceptDialogs     *bool
 	wantModelOverride     string
 	wantModelOverrideArgs []string
 }
@@ -96,6 +97,7 @@ func selectedPhase2ProviderCases(t *testing.T) []phase2ProviderCase {
 			wantReadyDelayMs:      5000,
 			wantReadyPromptPrefix: "",
 			wantProcessNames:      []string{"kimi", "python"},
+			wantAcceptDialogs:     phase2BoolPtr(false),
 			wantModelOverride:     "kimi-k2.6",
 			wantModelOverrideArgs: []string{"--model", "kimi-k2.6"},
 		},

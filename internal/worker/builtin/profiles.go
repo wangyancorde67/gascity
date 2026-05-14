@@ -42,6 +42,7 @@ type BuiltinProviderSpec struct {
 	ReadyPromptPrefix      string
 	ProcessNames           []string
 	EmitsPermissionWarning bool
+	AcceptStartupDialogs   *bool
 	Env                    map[string]string
 	PathCheck              string
 	SupportsACP            bool
@@ -59,6 +60,8 @@ type BuiltinProviderSpec struct {
 	ACPCommand             string
 	ACPArgs                []string
 }
+
+func boolPtr(b bool) *bool { return &b }
 
 // ProfileIdentity captures the explicit production identity for a canonical
 // worker profile.
@@ -267,19 +270,20 @@ var builtinProviderSpecs = map[string]BuiltinProviderSpec{
 		},
 	},
 	"kimi": {
-		DisplayName:      "Kimi Code CLI",
-		Command:          "kimi",
-		Args:             []string{"--yolo", "--no-thinking"},
-		PromptMode:       "none",
-		ReadyDelayMs:     5000,
-		ProcessNames:     []string{"kimi", "python"},
-		SupportsACP:      true,
-		InstructionsFile: "AGENTS.md",
-		ResumeFlag:       "--session",
-		ResumeStyle:      "flag",
-		PrintArgs:        []string{"--quiet", "--prompt"},
-		TitleModel:       "kimi-k2.6",
-		ACPArgs:          []string{"acp"},
+		DisplayName:          "Kimi Code CLI",
+		Command:              "kimi",
+		Args:                 []string{"--yolo", "--no-thinking"},
+		PromptMode:           "none",
+		ReadyDelayMs:         5000,
+		ProcessNames:         []string{"kimi", "python"},
+		AcceptStartupDialogs: boolPtr(false),
+		SupportsACP:          true,
+		InstructionsFile:     "AGENTS.md",
+		ResumeFlag:           "--session",
+		ResumeStyle:          "flag",
+		PrintArgs:            []string{"--quiet", "--prompt"},
+		TitleModel:           "kimi-k2.6",
+		ACPArgs:              []string{"--yolo", "--no-thinking", "acp"},
 		OptionsSchema: []BuiltinProviderOption{
 			{
 				Key:   "model",

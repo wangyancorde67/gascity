@@ -631,22 +631,13 @@ func (o *tmuxStartOps) acceptStartupDialogs(ctx context.Context, name string) er
 }
 
 func shouldAcceptStartupDialogs(cfg runtime.Config) bool {
+	if cfg.AcceptStartupDialogs != nil {
+		return *cfg.AcceptStartupDialogs
+	}
 	if len(cfg.ProcessNames) == 0 && !cfg.EmitsPermissionWarning {
 		return false
 	}
-	provider := strings.TrimSpace(cfg.ProviderName)
-	if provider == "" {
-		provider = commandProviderName(cfg.Command)
-	}
-	return provider != "kimi"
-}
-
-func commandProviderName(command string) string {
-	fields := strings.Fields(strings.TrimSpace(command))
-	if len(fields) == 0 {
-		return ""
-	}
-	return filepath.Base(fields[0])
+	return true
 }
 
 func (o *tmuxStartOps) waitForReady(ctx context.Context, name string, rc *RuntimeConfig, timeout time.Duration) error {
@@ -714,6 +705,7 @@ func doStartSession(ctx context.Context, ops startOps, name string, cfg runtime.
 
 	hasHints := cfg.ReadyPromptPrefix != "" || cfg.ReadyDelayMs > 0 ||
 		len(cfg.ProcessNames) > 0 || cfg.EmitsPermissionWarning ||
+		cfg.AcceptStartupDialogs != nil ||
 		cfg.Nudge != "" || len(cfg.PreStart) > 0 || len(cfg.SessionSetup) > 0 || cfg.SessionSetupScript != "" ||
 		len(cfg.SessionLive) > 0
 

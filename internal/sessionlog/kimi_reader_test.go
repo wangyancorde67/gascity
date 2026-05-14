@@ -1,10 +1,13 @@
 package sessionlog
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -69,6 +72,21 @@ func TestReadKimiFileReportsOpenNativeToolCallTail(t *testing.T) {
 	}
 	if !sess.OrphanedToolUseIDs["call-open"] {
 		t.Fatalf("OrphanedToolUseIDs = %#v, want call-open", sess.OrphanedToolUseIDs)
+	}
+}
+
+func TestReadKimiFileNormalizesEmptyOrphanedToolUseIDs(t *testing.T) {
+	path := writeKimiContext(t, filepath.Join(t.TempDir(), "sessions", "hash", "session-123", "context.jsonl"), []string{
+		`{"role":"user","content":"hello"}`,
+		`{"role":"assistant","content":"done"}`,
+	})
+
+	sess, err := ReadKimiFile(path, 0)
+	if err != nil {
+		t.Fatalf("ReadKimiFile: %v", err)
+	}
+	if sess.OrphanedToolUseIDs != nil {
+		t.Fatalf("OrphanedToolUseIDs = %#v, want nil for no orphaned tools", sess.OrphanedToolUseIDs)
 	}
 }
 
@@ -222,6 +240,56 @@ func TestFindKimiSessionFileByIDUsesSessionKey(t *testing.T) {
 	}
 }
 
+func TestFindKimiSessionFileFollowsSymlinkedRoots(t *testing.T) {
+	base := t.TempDir()
+	accountRoot := t.TempDir()
+	workDir := "/tmp/gascity/phase1/kimi"
+	workHash := kimiWorkDirHash(workDir)
+	want := writeKimiContext(t, filepath.Join(accountRoot, workHash, "session-key", "context.jsonl"), []string{
+		`{"role":"user","content":"via symlink"}`,
+	})
+	if err := os.Symlink(accountRoot, filepath.Join(base, "account-a")); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := FindKimiSessionFile([]string{base}, workDir); got != want {
+		t.Fatalf("FindKimiSessionFile() = %q, want symlinked root transcript %q", got, want)
+	}
+	if got := FindKimiSessionFileByID([]string{base}, workDir, "session-key"); got != want {
+		t.Fatalf("FindKimiSessionFileByID() = %q, want symlinked root transcript %q", got, want)
+	}
+}
+
+func TestFindKimiSessionFileLogsMissingWorkDirHashDiagnostic(t *testing.T) {
+	var logs bytes.Buffer
+	oldWriter := log.Writer()
+	oldFlags := log.Flags()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(oldWriter)
+		log.SetFlags(oldFlags)
+	}()
+
+	base := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base, "other-workdir-hash", "session-1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workDir := "/tmp/gascity/missing-kimi-workdir"
+	workHash := kimiWorkDirHash(workDir)
+
+	if got := FindKimiSessionFile([]string{base}, workDir); got != "" {
+		t.Fatalf("FindKimiSessionFile() = %q, want empty", got)
+	}
+	logText := logs.String()
+	if !strings.Contains(logText, "expected workdir hash "+`"`+workHash+`"`) {
+		t.Fatalf("missing Kimi hash diagnostic %q in logs:\n%s", workHash, logText)
+	}
+	if !strings.Contains(logText, "check Kimi CLI version and workdir path hashing") {
+		t.Fatalf("missing Kimi version/hash guidance in logs:\n%s", logText)
+	}
+}
+
 func TestFindKimiSessionFileByIDRejectsTraversalSessionID(t *testing.T) {
 	base := t.TempDir()
 	workDir := "/tmp/gascity/phase1/kimi"
@@ -250,6 +318,39 @@ func TestReadProviderFileNewerDispatchesKimi(t *testing.T) {
 	}
 }
 
+func TestReadProviderFileKimiAppliesMessageIDCursors(t *testing.T) {
+	path := writeKimiContext(t, filepath.Join(t.TempDir(), "sessions", "hash", "session-123", "context.jsonl"), []string{
+		`{"role":"user","content":"first"}`,
+		`{"role":"assistant","content":"second"}`,
+		`{"role":"user","content":"third"}`,
+		`{"role":"assistant","content":"fourth"}`,
+	})
+
+	newer, err := ReadProviderFileNewer("kimi/tmux-cli", path, 0, "kimi-1")
+	if err != nil {
+		t.Fatalf("ReadProviderFileNewer: %v", err)
+	}
+	if got := kimiEntryIDs(newer.Messages); !reflect.DeepEqual(got, []string{"kimi-2", "kimi-3"}) {
+		t.Fatalf("newer Kimi message IDs = %v, want [kimi-2 kimi-3]", got)
+	}
+
+	older, err := ReadProviderFileOlder("kimi/tmux-cli", path, 0, "kimi-2")
+	if err != nil {
+		t.Fatalf("ReadProviderFileOlder: %v", err)
+	}
+	if got := kimiEntryIDs(older.Messages); !reflect.DeepEqual(got, []string{"kimi-0", "kimi-1"}) {
+		t.Fatalf("older Kimi message IDs = %v, want [kimi-0 kimi-1]", got)
+	}
+
+	rawNewer, err := ReadProviderFileRawNewer("kimi/tmux-cli", path, 0, "kimi-2")
+	if err != nil {
+		t.Fatalf("ReadProviderFileRawNewer: %v", err)
+	}
+	if got := kimiEntryIDs(rawNewer.Messages); !reflect.DeepEqual(got, []string{"kimi-3"}) {
+		t.Fatalf("raw newer Kimi message IDs = %v, want [kimi-3]", got)
+	}
+}
+
 func writeKimiContext(t *testing.T, path string, lines []string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -263,4 +364,12 @@ func writeKimiContext(t *testing.T, path string, lines []string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func kimiEntryIDs(entries []*Entry) []string {
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		ids = append(ids, entry.UUID)
+	}
+	return ids
 }

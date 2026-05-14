@@ -89,11 +89,21 @@ func TestWaitsForIdleAfterInterrupt_Kimi(t *testing.T) {
 	kimi := beads.Bead{Metadata: map[string]string{
 		"provider": "kimi",
 	}}
-	if waitsForIdleAfterInterrupt(kimi) {
-		t.Error("kimi interrupt handling should not opt into codex/gemini interrupt-boundary wait")
+	if !waitsForIdleAfterInterrupt(kimi) {
+		t.Error("kimi interrupt handling should wait for idle after interrupt")
 	}
-	if usesSoftEscapeInterrupt(kimi) {
-		t.Error("kimi interrupt handling should not use soft escape")
+	if !usesSoftEscapeInterrupt(kimi) {
+		t.Error("kimi interrupt handling should use soft escape")
+	}
+	wrapped := beads.Bead{Metadata: map[string]string{
+		"builtin_ancestor": "kimi",
+		"provider":         "kimi-safe",
+	}}
+	if !waitsForIdleAfterInterrupt(wrapped) {
+		t.Error("wrapped kimi should wait for idle after interrupt")
+	}
+	if !usesSoftEscapeInterrupt(wrapped) {
+		t.Error("wrapped kimi should use soft escape")
 	}
 }
 

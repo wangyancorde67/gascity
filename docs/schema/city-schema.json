@@ -1642,6 +1642,10 @@
           "minimum": 0,
           "description": "ReadyDelayMs overrides the ready delay in milliseconds."
         },
+        "accept_startup_dialogs": {
+          "type": "boolean",
+          "description": "AcceptStartupDialogs overrides startup dialog acceptance behavior."
+        },
         "env": {
           "additionalProperties": {
             "type": "string"
@@ -1737,6 +1741,10 @@
         "emits_permission_warning": {
           "type": "boolean",
           "description": "EmitsPermissionWarning is tri-state: nil = inherit, \u0026true = enable,\n\u0026false = explicit disable."
+        },
+        "accept_startup_dialogs": {
+          "type": "boolean",
+          "description": "AcceptStartupDialogs is tri-state: nil = default startup dialog handling,\n\u0026true = force dialog acceptance, \u0026false = suppress it for providers that\nhandle permissions entirely through launch flags."
         },
         "env": {
           "additionalProperties": {
