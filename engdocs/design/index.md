@@ -23,6 +23,7 @@ lives in the [Architecture](../architecture/index.md) section.
 | `beads-dolt-contract-redesign` | Accepted | Canonical bd+Dolt contract, topology commands, migration, and provider-boundary redesign |
 | `idle-session-sleep` | Accepted | Idle-sleep policy, precedence, and wake mechanics |
 | `named-configured-sessions` | Accepted | Explicit canonical named sessions backed by reusable templates; partially superseded by `session-model-unification` |
+| `pack-and-registry-cli-surface` | Proposed | Unified `gc pack` / `gc registry` proposal, mirrored here for design review before implementation |
 | `session-model-unification` | Accepted | Unified post-pool session model: config factories, canonical named identities, exact session ownership, and `scale_check`-only controller demand |
 | `session-lifecycle-domain-cleanup-plan` | Implemented with hardening | Red-green-refactor plan for centralizing session lifecycle projection and transition writes behind typed abstractions |
 | `external-messaging-fabric` | Implemented | Provider-neutral external conversation bindings, delivery context, and group sessions |
