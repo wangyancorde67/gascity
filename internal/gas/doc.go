@@ -1,25 +1,27 @@
-// Package gas provides utilities for estimating and working with
-// Ethereum gas prices across multiple speed tiers (slow, average, fast).
+// Package gas provides utilities for working with Ethereum gas prices.
 //
-// # Overview
+// # Gas Price
 //
-// The primary type is [GasPrice], which holds wei-denominated gas price
-// estimates for three named levels:
+// A [GasPrice] holds slow, standard, and fast fee estimates expressed in Gwei.
+// Use [NewGasPrice] to construct a validated instance, and [GasPrice.ForLevel]
+// to retrieve the Wei value for a specific [Level].
 //
-//   - [PriceLevelSlow]    — lower cost, longer confirmation time
-//   - [PriceLevelAverage] — balanced cost and confirmation time
-//   - [PriceLevelFast]    — higher cost, faster confirmation
+// # Price History
 //
-// # Usage
+// [PriceHistory] maintains a bounded, chronologically-ordered ring of
+// [PriceRecord] snapshots. Each record pairs a [GasPrice] with the UTC
+// timestamp at which it was observed.
 //
-//	gp, err := gas.NewGasPrice(10, 20, 40) // values in gwei
+// Example usage:
+//
+//	h, err := gas.NewPriceHistory(100)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
 //
-//	price, err := gp.ForLevel(gas.PriceLevelFast)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	fmt.Println("fast gas price (wei):", price)
+//	price, _ := gas.NewGasPrice(20, 30, 50)
+//	h.Add(price)
+//
+//	latest, _ := h.Latest()
+//	fmt.Println(latest.Timestamp, latest.Price)
 package gas
